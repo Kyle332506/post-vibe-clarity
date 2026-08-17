@@ -38,138 +38,204 @@ function isAssignmentEquals(line: string, index: number): boolean {
   return previous !== '=' && previous !== '!' && previous !== '<' && previous !== '>' && next !== '=' && next !== '>';
 }
 
-interface CandidateScan {
-  matched: boolean;
-  nextIndex: number;
+type TokenKind = 'identifier' | 'quoted' | 'symbol';
+
+interface LineToken {
+  kind: TokenKind;
+  start: number;
+  end: number;
+  terminated: boolean;
 }
 
-function skipWhitespace(line: string, index: number): number {
-  let nextIndex = index;
-  while (line[nextIndex] === ' ' || line[nextIndex] === '\t') nextIndex += 1;
-  return nextIndex;
+interface PendingColon {
+  angleDepth: number;
+  colonTokenIndex: number;
 }
 
-function scanQuotedValue(line: string, start: number): CandidateScan {
-  const quote = line[start];
-  if (quote !== '"' && quote !== "'") return { matched: false, nextIndex: start };
-
-  const end = quotedStringEnd(line, start);
-  return end === undefined ? { matched: false, nextIndex: line.length } : { matched: true, nextIndex: end };
+interface AnnotationAnalysis {
+  annotationColon: Set<number>;
+  assignmentByColon: Map<number, number>;
+  typeOnlyToken: boolean[];
 }
 
-function scanImmediateQuotedAssignment(line: string, start: number): CandidateScan {
-  const delimiterIndex = skipWhitespace(line, start);
-  const delimiter = line[delimiterIndex];
+function tokenizeLine(line: string): LineToken[] {
+  const tokens: LineToken[] = [];
 
-  if (delimiter === '=' && isAssignmentEquals(line, delimiterIndex)) {
-    return scanQuotedValue(line, skipWhitespace(line, delimiterIndex + 1));
-  }
-  if (delimiter === ':') {
-    return scanQuotedValue(line, skipWhitespace(line, delimiterIndex + 1));
-  }
-
-  return { matched: false, nextIndex: start };
-}
-
-function scanTypeAnnotation(line: string, start: number): CandidateScan {
-  const closingDelimiters: string[] = [];
-
-  for (let index = start; index < line.length; index += 1) {
-    const character = line[index];
-    if (character === undefined) return { matched: false, nextIndex: line.length };
-
-    if (character === '"' || character === "'") {
-      const end = quotedStringEnd(line, index);
-      if (end === undefined) return { matched: false, nextIndex: line.length };
-      if (credentialName.test(line.slice(index + 1, end - 1))) {
-        const nestedCandidate = scanImmediateQuotedAssignment(line, end);
-        if (nestedCandidate.matched) return nestedCandidate;
-      }
-      index = end - 1;
-      continue;
-    }
-
-    if (isIdentifierStart(character)) {
-      let end = index + 1;
-      while (end < line.length && isIdentifierPart(line[end] ?? '')) end += 1;
-      if (credentialName.test(line.slice(index, end))) {
-        const nestedCandidate = scanImmediateQuotedAssignment(line, end);
-        if (nestedCandidate.matched) return nestedCandidate;
-      }
-      index = end - 1;
-      continue;
-    }
-
-    const expectedClosing = character === '<' ? '>' : character === '(' ? ')' : character === '[' ? ']' : character === '{' ? '}' : undefined;
-    if (expectedClosing !== undefined) {
-      closingDelimiters.push(expectedClosing);
-      continue;
-    }
-
-    if (closingDelimiters.at(-1) === character) {
-      closingDelimiters.pop();
-      continue;
-    }
-
-    if (closingDelimiters.length !== 0) continue;
-
-    if (character === '=' && isAssignmentEquals(line, index)) {
-      return scanQuotedValue(line, skipWhitespace(line, index + 1));
-    }
-    if (character === ',' || character === ';' || character === '}') {
-      return { matched: false, nextIndex: index + 1 };
-    }
-  }
-
-  return { matched: false, nextIndex: line.length };
-}
-
-function scanCredentialCandidate(line: string, start: number): CandidateScan {
-  const delimiterIndex = skipWhitespace(line, start);
-  const delimiter = line[delimiterIndex];
-
-  if (delimiter === '=' && isAssignmentEquals(line, delimiterIndex)) {
-    return scanQuotedValue(line, skipWhitespace(line, delimiterIndex + 1));
-  }
-  if (delimiter === ':') {
-    const valueStart = skipWhitespace(line, delimiterIndex + 1);
-    const quotedValue = scanQuotedValue(line, valueStart);
-    return quotedValue.matched || line[valueStart] === '"' || line[valueStart] === "'"
-      ? quotedValue
-      : scanTypeAnnotation(line, valueStart);
-  }
-
-  return { matched: false, nextIndex: start };
-}
-
-function hasQuotedCredentialAssignment(line: string): boolean {
   for (let index = 0; index < line.length;) {
     const character = line[index];
-    if (character === undefined) return false;
+    if (character === undefined) break;
 
-    if (character === '"' || character === "'") {
-      const end = quotedStringEnd(line, index);
-      if (end === undefined) return false;
-      const candidate = scanCredentialCandidate(line, end);
-      if (line[skipWhitespace(line, end)] === ':' && credentialName.test(line.slice(index + 1, end - 1)) && candidate.matched) return true;
-      index = Math.max(end, candidate.nextIndex);
+    if (character === ' ' || character === '\t') {
+      index += 1;
       continue;
     }
 
-    if (isIdentifierStart(character)) {
-      let end = index + 1;
-      while (end < line.length && isIdentifierPart(line[end] ?? '')) end += 1;
-      if (credentialName.test(line.slice(index, end))) {
-        const candidate = scanCredentialCandidate(line, end);
-        if (candidate.matched) return true;
-        index = Math.max(end, candidate.nextIndex);
-        continue;
-      }
+    if (character === '"' || character === "'") {
+      const end = quotedStringEnd(line, index);
+      tokens.push({ kind: 'quoted', start: index, end: end ?? line.length, terminated: end !== undefined });
+      if (end === undefined) break;
       index = end;
       continue;
     }
 
+    if (isIdentifierStart(character)) {
+      let end = index + 1;
+      while (end < line.length && isIdentifierPart(line[end] ?? '')) end += 1;
+      tokens.push({ kind: 'identifier', start: index, end, terminated: true });
+      index = end;
+      continue;
+    }
+
+    tokens.push({ kind: 'symbol', start: index, end: index + 1, terminated: true });
     index += 1;
+  }
+
+  return tokens;
+}
+
+function structuralClosing(character: string): string | undefined {
+  return character === '(' ? ')' : character === '[' ? ']' : character === '{' ? '}' : undefined;
+}
+
+function isTypeAnnotationColon(line: string, tokens: LineToken[], colonIndex: number, scopeClosing?: string): boolean {
+  const name = tokens[colonIndex - 1];
+  const beforeName = tokens[colonIndex - 2];
+  if (name?.kind !== 'identifier' || beforeName === undefined) return false;
+
+  if (beforeName.kind === 'identifier') {
+    const keyword = line.slice(beforeName.start, beforeName.end);
+    return keyword === 'const' || keyword === 'let' || keyword === 'var';
+  }
+
+  const character = line[beforeName.start];
+  return scopeClosing === ')' && (character === '(' || character === ',');
+}
+
+function markTypeOnly(typeOnlyDelta: Int32Array, start: number, end: number): void {
+  typeOnlyDelta[start] = (typeOnlyDelta[start] ?? 0) + 1;
+  typeOnlyDelta[end] = (typeOnlyDelta[end] ?? 0) - 1;
+}
+
+function analyzeTypeAnnotations(line: string, tokens: LineToken[]): AnnotationAnalysis {
+  const annotationColon = new Set<number>();
+  const assignmentByColon = new Map<number, number>();
+  const typeOnlyDelta = new Int32Array(tokens.length + 1);
+  const pendingAnnotationByScope = new Map<number, PendingColon>();
+  const pendingAssignmentByScope = new Map<number, PendingColon>();
+  const scopes: Array<{ closing?: string; id: number }> = [{ id: 0 }];
+  let nextScopeId = 1;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token?.kind !== 'symbol') continue;
+
+    const character = line[token.start];
+    const scope = scopes.at(-1);
+    if (character === undefined || scope === undefined) continue;
+
+    const closing = structuralClosing(character);
+    if (closing !== undefined) {
+      scopes.push({ closing, id: nextScopeId });
+      nextScopeId += 1;
+      continue;
+    }
+
+    if (scope.closing === character) {
+      const annotation = pendingAnnotationByScope.get(scope.id);
+      if (annotation !== undefined && annotation.angleDepth === 0) {
+        annotationColon.add(annotation.colonTokenIndex);
+        markTypeOnly(typeOnlyDelta, annotation.colonTokenIndex + 1, index);
+      }
+      pendingAnnotationByScope.delete(scope.id);
+      pendingAssignmentByScope.delete(scope.id);
+      scopes.pop();
+      continue;
+    }
+
+    const annotation = pendingAnnotationByScope.get(scope.id);
+    const assignment = pendingAssignmentByScope.get(scope.id);
+    if (character === ':') {
+      pendingAssignmentByScope.set(scope.id, { angleDepth: 0, colonTokenIndex: index });
+      if (isTypeAnnotationColon(line, tokens, index, scope.closing)) {
+        pendingAnnotationByScope.set(scope.id, { angleDepth: 0, colonTokenIndex: index });
+      }
+      continue;
+    }
+    if (character === '<') {
+      if (annotation !== undefined) annotation.angleDepth += 1;
+      if (assignment !== undefined) assignment.angleDepth += 1;
+      continue;
+    }
+    if (character === '>') {
+      if (annotation !== undefined && annotation.angleDepth > 0) annotation.angleDepth -= 1;
+      if (assignment !== undefined && assignment.angleDepth > 0) assignment.angleDepth -= 1;
+      continue;
+    }
+    if (character === '=' && isAssignmentEquals(line, token.start)) {
+      if (assignment !== undefined && assignment.angleDepth === 0) {
+        assignmentByColon.set(assignment.colonTokenIndex, index);
+      }
+      if (annotation !== undefined && annotation.angleDepth === 0) {
+        annotationColon.add(annotation.colonTokenIndex);
+        assignmentByColon.set(annotation.colonTokenIndex, index);
+        markTypeOnly(typeOnlyDelta, annotation.colonTokenIndex + 1, index);
+      }
+      if (assignment?.angleDepth === 0) pendingAssignmentByScope.delete(scope.id);
+      if (annotation?.angleDepth === 0) pendingAnnotationByScope.delete(scope.id);
+      continue;
+    }
+    if (character === ',' || character === ';') {
+      if (assignment?.angleDepth === 0) pendingAssignmentByScope.delete(scope.id);
+      if (annotation !== undefined && annotation.angleDepth === 0) {
+        annotationColon.add(annotation.colonTokenIndex);
+        markTypeOnly(typeOnlyDelta, annotation.colonTokenIndex + 1, index);
+        pendingAnnotationByScope.delete(scope.id);
+      }
+    }
+  }
+
+  const typeOnlyToken = new Array<boolean>(tokens.length);
+  let typeOnlyDepth = 0;
+  for (let index = 0; index < tokens.length; index += 1) {
+    typeOnlyDepth += typeOnlyDelta[index] ?? 0;
+    typeOnlyToken[index] = typeOnlyDepth > 0;
+  }
+
+  return { annotationColon, assignmentByColon, typeOnlyToken };
+}
+
+function isCredentialToken(line: string, token: LineToken): boolean {
+  if (token.kind === 'identifier') return credentialName.test(line.slice(token.start, token.end));
+  if (token.kind !== 'quoted' || !token.terminated) return false;
+  return credentialName.test(line.slice(token.start + 1, token.end - 1));
+}
+
+function isQuotedValue(tokens: LineToken[], delimiterIndex: number): boolean {
+  const value = tokens[delimiterIndex + 1];
+  return value?.kind === 'quoted' && value.terminated;
+}
+
+function hasQuotedCredentialAssignment(line: string): boolean {
+  const tokens = tokenizeLine(line);
+  const { annotationColon, assignmentByColon, typeOnlyToken } = analyzeTypeAnnotations(line, tokens);
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === undefined || typeOnlyToken[index] || !isCredentialToken(line, token)) continue;
+
+    const delimiterIndex = index + 1;
+    const delimiter = tokens[delimiterIndex];
+    if (delimiter?.kind !== 'symbol') continue;
+
+    const delimiterCharacter = line[delimiter.start];
+    if (delimiterCharacter === '=' && isAssignmentEquals(line, delimiter.start) && isQuotedValue(tokens, delimiterIndex)) {
+      return true;
+    }
+    if (delimiterCharacter !== ':') continue;
+
+    const assignmentIndex = assignmentByColon.get(delimiterIndex);
+    if (assignmentIndex !== undefined && isQuotedValue(tokens, assignmentIndex)) return true;
+    if (!annotationColon.has(delimiterIndex) && isQuotedValue(tokens, delimiterIndex)) return true;
   }
 
   return false;

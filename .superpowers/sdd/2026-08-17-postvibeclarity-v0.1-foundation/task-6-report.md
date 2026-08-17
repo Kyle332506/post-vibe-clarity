@@ -135,3 +135,37 @@
 ### Concerns
 
 - No new concerns. The check remains intentionally line-based and heuristic as documented above.
+
+## Fix Round 5
+
+### Changes
+
+- Replaced candidate-owned forward scans with a two-pass lexical design: one pass tokenizes and identifies type-only annotation intervals, and a second independently evaluates every credential-like identifier or quoted property name outside those intervals.
+- Declaration and parameter annotations are tracked by balanced structural scope; standalone assignments are paired only at their local depth, while generic angle depth keeps complex types intact.
+- Type-only intervals use a delta array, so nested spans do not cause repeated rescans. Tokenization, annotation analysis, and credential evaluation each remain deterministic and linear in the line length.
+- Kept general colon-to-assignment pairing separate from type-span classification. This preserves typed and destructured runtime assignments without allowing an unmatched outer runtime candidate to hide a nested credential identifier.
+- Findings still contain only the stable rule label and location. Controlled values are checked through opaque booleans and never copied into finding or command output.
+
+### Covering tests
+
+- A typed quoted credential assignment nested inside a balanced runtime function/object expression produces one redacted finding.
+- A credential-named quoted literal property nested inside a TypeScript declaration annotation produces no finding when no credential value is assigned.
+- A credential default nested inside object destructuring remains detectable, guarding the runtime-candidate invariant of the type-span pass.
+- All prior private-key, quoted-assignment, complex-type, operator-exclusion, redaction, and bounded-scan tests remain green.
+
+### RED/GREEN evidence
+
+- RED: the first focused run against the Round 4 parser failed exactly the two required regressions: 2 failed and 10 passed. The nested typed runtime assignment received zero findings, while the type-only member produced only a redacted false finding.
+- RED: a self-review regression test exposed an over-broad first implementation of type spans: 1 failed and 12 passed because a nested object-destructuring default received zero findings.
+- GREEN: after restricting type-only spans to declaration/parameter annotations while retaining separate assignment pairing, the focused suite passed: 1 file, 13 tests.
+
+### Commands and sanitized results
+
+- `pnpm test tests/checks/secret-exposure.test.ts` — passed: 1 file, 13 tests.
+- `pnpm build` — passed with exit code 0.
+- `pnpm test` — passed: 6 files, 24 tests.
+- `git diff --check` — passed with no whitespace errors.
+
+### Concerns
+
+- The check remains intentionally line-based and heuristic. It does not attempt to replace a full TypeScript parser or expand the original quoted-assignment scope.
