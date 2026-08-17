@@ -81,3 +81,30 @@
 
 - RED: the focused suite failed with the prior parser: the nested type declaration was missed and six comparison variants produced false quoted-assignment rules.
 - GREEN: the focused suite passed after the linear parser retained nested type context and recognized only standalone assignment operators.
+
+## Fix Round 3
+
+### Changes
+
+- Replaced persistent line-level credential context with a narrow candidate scan that begins immediately after each credential-like identifier or quoted property name.
+- Type-annotation scanning now tracks balanced generic, parenthesized, bracketed, and object-type delimiters. Only top-level commas, semicolons, and unmatched object-closing braces terminate a candidate.
+- A credential candidate can match only a standalone `=` followed by a quoted value, an immediate colon followed by a quoted property value, or a standalone assignment after its balanced type annotation.
+- The scanner remains deterministic and linear: quoted text is skipped with unambiguous escape handling and a type candidate advances to its own top-level boundary.
+
+### Covering tests
+
+- A typed credential declaration with a semicolon-separated object type produces the quoted-assignment rule.
+- An object literal with a non-quoted credential-named property followed by a benign quoted property produces no rule.
+- Existing tests continue to cover nested generic/object types, comparison operators, redaction, private-key markers, and escape-heavy unterminated values.
+
+### Commands and sanitized outputs
+
+- `pnpm test tests/checks/secret-exposure.test.ts` — passed: 1 file, 9 tests.
+- `pnpm build` — passed.
+- `pnpm test` — passed: 6 files, 20 tests.
+- `git diff --check` — passed with no whitespace errors.
+
+### RED/GREEN evidence
+
+- RED: the focused suite failed with the prior parser: it missed the semicolon-separated object type declaration and reported the object-literal false positive.
+- GREEN: the focused suite passed after candidate-local, delimiter-aware type scanning replaced persistent context.

@@ -51,6 +51,12 @@ describe('secretExposureCheck', () => {
     expect(rule).toBe('quoted-credential-assignment');
   });
 
+  it('reports a credential assignment after an object type with semicolon-separated properties', () => {
+    const rule = detectSecretRule("const serviceToken: { scope: string; region: string } = 'opaque';");
+
+    expect(rule).toBe('quoted-credential-assignment');
+  });
+
   it('does not flag comparisons or arrow functions with credential-named identifiers', () => {
     const rules = [
       "serviceToken == 'opaque'",
@@ -63,6 +69,12 @@ describe('secretExposureCheck', () => {
     ].map((line) => detectSecretRule(line));
 
     expect(rules).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+  });
+
+  it('does not carry a non-quoted object property into a later benign quoted property', () => {
+    const rule = detectSecretRule("const options = { serviceToken: loadToken(), theme: 'light' };");
+
+    expect(rule).toBeUndefined();
   });
 
   it('returns no rule for an unterminated escape-heavy quoted assignment', () => {

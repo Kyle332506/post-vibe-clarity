@@ -38,11 +38,82 @@ function isAssignmentEquals(line: string, index: number): boolean {
   return previous !== '=' && previous !== '!' && previous !== '<' && previous !== '>' && next !== '=' && next !== '>';
 }
 
-function hasQuotedCredentialAssignment(line: string): boolean {
-  let segmentHasCredentialName = false;
-  let typeAnnotation = false;
-  let conditionalExpression = false;
+interface CandidateScan {
+  matched: boolean;
+  nextIndex: number;
+}
 
+function skipWhitespace(line: string, index: number): number {
+  let nextIndex = index;
+  while (line[nextIndex] === ' ' || line[nextIndex] === '\t') nextIndex += 1;
+  return nextIndex;
+}
+
+function scanQuotedValue(line: string, start: number): CandidateScan {
+  const quote = line[start];
+  if (quote !== '"' && quote !== "'") return { matched: false, nextIndex: start };
+
+  const end = quotedStringEnd(line, start);
+  return end === undefined ? { matched: false, nextIndex: line.length } : { matched: true, nextIndex: end };
+}
+
+function scanTypeAnnotation(line: string, start: number): CandidateScan {
+  const closingDelimiters: string[] = [];
+
+  for (let index = start; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === undefined) return { matched: false, nextIndex: line.length };
+
+    if (character === '"' || character === "'") {
+      const end = quotedStringEnd(line, index);
+      if (end === undefined) return { matched: false, nextIndex: line.length };
+      index = end - 1;
+      continue;
+    }
+
+    const expectedClosing = character === '<' ? '>' : character === '(' ? ')' : character === '[' ? ']' : character === '{' ? '}' : undefined;
+    if (expectedClosing !== undefined) {
+      closingDelimiters.push(expectedClosing);
+      continue;
+    }
+
+    if (closingDelimiters.at(-1) === character) {
+      closingDelimiters.pop();
+      continue;
+    }
+
+    if (closingDelimiters.length !== 0) continue;
+
+    if (character === '=' && isAssignmentEquals(line, index)) {
+      return scanQuotedValue(line, skipWhitespace(line, index + 1));
+    }
+    if (character === ',' || character === ';' || character === '}') {
+      return { matched: false, nextIndex: index + 1 };
+    }
+  }
+
+  return { matched: false, nextIndex: line.length };
+}
+
+function scanCredentialCandidate(line: string, start: number): CandidateScan {
+  const delimiterIndex = skipWhitespace(line, start);
+  const delimiter = line[delimiterIndex];
+
+  if (delimiter === '=' && isAssignmentEquals(line, delimiterIndex)) {
+    return scanQuotedValue(line, skipWhitespace(line, delimiterIndex + 1));
+  }
+  if (delimiter === ':') {
+    const valueStart = skipWhitespace(line, delimiterIndex + 1);
+    const quotedValue = scanQuotedValue(line, valueStart);
+    return quotedValue.matched || line[valueStart] === '"' || line[valueStart] === "'"
+      ? quotedValue
+      : scanTypeAnnotation(line, valueStart);
+  }
+
+  return { matched: false, nextIndex: start };
+}
+
+function hasQuotedCredentialAssignment(line: string): boolean {
   for (let index = 0; index < line.length;) {
     const character = line[index];
     if (character === undefined) return false;
@@ -50,58 +121,25 @@ function hasQuotedCredentialAssignment(line: string): boolean {
     if (character === '"' || character === "'") {
       const end = quotedStringEnd(line, index);
       if (end === undefined) return false;
-      if (credentialName.test(line.slice(index + 1, end - 1))) segmentHasCredentialName = true;
-      index = end;
+      const candidate = scanCredentialCandidate(line, end);
+      if (line[skipWhitespace(line, end)] === ':' && credentialName.test(line.slice(index + 1, end - 1)) && candidate.matched) return true;
+      index = Math.max(end, candidate.nextIndex);
       continue;
     }
 
     if (isIdentifierStart(character)) {
       let end = index + 1;
       while (end < line.length && isIdentifierPart(line[end] ?? '')) end += 1;
-      if (credentialName.test(line.slice(index, end))) segmentHasCredentialName = true;
+      if (credentialName.test(line.slice(index, end))) {
+        const candidate = scanCredentialCandidate(line, end);
+        if (candidate.matched) return true;
+        index = Math.max(end, candidate.nextIndex);
+        continue;
+      }
       index = end;
       continue;
     }
 
-    if (character === '=' && isAssignmentEquals(line, index)) {
-      let valueStart = index + 1;
-      while (line[valueStart] === ' ' || line[valueStart] === '\t') valueStart += 1;
-      const valueQuote = line[valueStart];
-
-      if (valueQuote === '"' || valueQuote === "'") {
-        const valueEnd = quotedStringEnd(line, valueStart);
-        if (valueEnd === undefined) return false;
-        if (segmentHasCredentialName) return true;
-        index = valueEnd;
-        continue;
-      }
-
-      segmentHasCredentialName = false;
-      typeAnnotation = false;
-    }
-
-    if (character === ':') {
-      let valueStart = index + 1;
-      while (line[valueStart] === ' ' || line[valueStart] === '\t') valueStart += 1;
-      const valueQuote = line[valueStart];
-
-      if (!conditionalExpression && (valueQuote === '"' || valueQuote === "'")) {
-        const valueEnd = quotedStringEnd(line, valueStart);
-        if (valueEnd === undefined) return false;
-        if (segmentHasCredentialName) return true;
-        index = valueEnd;
-        continue;
-      }
-
-      if (!conditionalExpression) typeAnnotation = true;
-    }
-
-    if (character === '?') conditionalExpression = true;
-    if (character === ';' || (!typeAnnotation && (character === ',' || character === '{' || character === '}'))) {
-      segmentHasCredentialName = false;
-      typeAnnotation = false;
-      conditionalExpression = false;
-    }
     index += 1;
   }
 
