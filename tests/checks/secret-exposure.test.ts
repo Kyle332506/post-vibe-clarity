@@ -77,6 +77,19 @@ describe('secretExposureCheck', () => {
     expect(rule).toBeUndefined();
   });
 
+  it('reports only the nested quoted credential assignment inside a non-quoted credential property', async () => {
+    const findings = await scanTemporarySource(
+      "const options = { serviceToken: loadConfig({ apiKey: 'nested-opaque-value' }) };",
+    );
+
+    const serializedFindings = JSON.stringify(findings);
+    const hasCredentialValue = serializedFindings.includes('nested-opaque-value');
+
+    expect(hasCredentialValue).toBe(false);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.evidence[0]?.summary).toBe('quoted-credential-assignment pattern detected; value redacted');
+  });
+
   it('returns no rule for an unterminated escape-heavy quoted assignment', () => {
     const unterminatedCandidate = `const serviceToken = '${'\\'.repeat(48)}`;
 
