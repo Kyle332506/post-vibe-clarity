@@ -20,7 +20,13 @@ const outcomes: Array<[Outcome, string]> = [
 ];
 
 function renderFinding(finding: Finding): string[] {
-  const lines = [`- **${finding.title}** (${finding.outcome})`, `  - Impact: ${finding.impact}`, `  - Recommendation: ${finding.recommendation}`, `  - Verification: ${finding.verification}`];
+  const lines = [
+    `- **${finding.title}** (${finding.outcome})`,
+    `  - Check: ${finding.checkId} (skill version ${finding.skillVersion})`,
+    `  - Impact: ${finding.impact}`,
+    `  - Recommendation: ${finding.recommendation}`,
+    `  - Verification: ${finding.verification}`,
+  ];
   const locations = finding.evidence.flatMap((evidence) => evidence.location === undefined ? [] : [evidence.location]);
 
   if (locations.length > 0) {

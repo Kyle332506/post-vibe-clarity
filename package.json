@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "check": "pnpm build && pnpm test",
     "review": "tsx src/cli.ts review",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify:foundation": "pnpm check && pnpm review fixtures/web-missing-basics --skills skills --format json"
   },
   "engines": {
     "node": ">=24"
