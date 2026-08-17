@@ -56,3 +56,28 @@
 
 - RED: the focused test with the old matcher did not complete within the 30-second bounded command window because of the escape-heavy candidate; the typed declaration was also outside the old expression's supported shape.
 - GREEN: after replacing the matcher with the deterministic parser, the focused suite completed successfully in a normal run.
+
+## Fix Round 2
+
+### Changes
+
+- Preserved a credential-name context across comma and brace punctuation after a non-quoted colon, allowing it to survive nested generic, tuple, and object type syntax until a real assignment.
+- Added operator-aware handling for `=` so equality, inequality, relational, and arrow operators cannot be treated as assignments.
+- Kept colon handling deterministic: an immediate quoted value is an object-property assignment candidate; a non-quoted value begins type-annotation context.
+
+### Covering tests
+
+- A credential assignment following a nested generic/object type annotation produces the stable quoted-assignment rule.
+- Comparisons using `==`, `===`, `!=`, `!==`, `>=`, and `<=`, plus an arrow expression, produce no rule.
+
+### Commands and sanitized outputs
+
+- `pnpm test tests/checks/secret-exposure.test.ts` — passed: 1 file, 7 tests.
+- `pnpm build` — passed.
+- `pnpm test` — passed: 6 files, 18 tests.
+- `git diff --check` — passed with no whitespace errors.
+
+### RED/GREEN evidence
+
+- RED: the focused suite failed with the prior parser: the nested type declaration was missed and six comparison variants produced false quoted-assignment rules.
+- GREEN: the focused suite passed after the linear parser retained nested type context and recognized only standalone assignment operators.
