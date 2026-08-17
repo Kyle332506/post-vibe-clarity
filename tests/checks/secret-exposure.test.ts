@@ -90,6 +90,39 @@ describe('secretExposureCheck', () => {
     expect(findings[0]?.evidence[0]?.summary).toBe('quoted-credential-assignment pattern detected; value redacted');
   });
 
+  it('reports a nested typed credential assignment inside a balanced runtime expression', async () => {
+    const findings = await scanTemporarySource(
+      "const options = { serviceToken: loadConfig((apiKey: string = 'typed-nested-opaque-value') => apiKey) };",
+    );
+
+    const serializedFindings = JSON.stringify(findings);
+    const hasCredentialValue = serializedFindings.includes('typed-nested-opaque-value');
+
+    expect(hasCredentialValue).toBe(false);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.evidence[0]?.summary).toBe('quoted-credential-assignment pattern detected; value redacted');
+  });
+
+  it('does not report a credential-named quoted literal inside a TypeScript type annotation', async () => {
+    const findings = await scanTemporarySource(
+      "declare const options: { apiKey: 'type-only-opaque-value'; theme: string };",
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('reports a nested credential default assignment inside object destructuring', async () => {
+    const findings = await scanTemporarySource(
+      "const { config: { apiKey = 'destructured-opaque-value' } = {} } = source;",
+    );
+
+    const serializedFindings = JSON.stringify(findings);
+    const hasCredentialValue = serializedFindings.includes('destructured-opaque-value');
+
+    expect(hasCredentialValue).toBe(false);
+    expect(findings).toHaveLength(1);
+  });
+
   it('returns no rule for an unterminated escape-heavy quoted assignment', () => {
     const unterminatedCandidate = `const serviceToken = '${'\\'.repeat(48)}`;
 
