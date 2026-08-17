@@ -1,0 +1,14 @@
+schemaVersion: "0.1"
+id: secret-exposure
+domains:
+  - security-privacy
+appliesTo:
+  anyArtifacts:
+    - web
+    - backend
+modes:
+  - audit
+  - verify
+maxActionLevel: 0
+checks:
+  - secret-exposure.scan

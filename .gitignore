@@ -1,1 +1,2 @@
-.worktrees/
+dist/
+node_modules/
