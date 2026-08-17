@@ -159,3 +159,67 @@ A controlled parser probe reproduced the boundary without printing the input: th
 ### Remaining concerns
 
 None for Fix Round 1. Debug frame labels intentionally trade original filenames for non-disclosure; they still distinguish frame order and line/column locations without echoing caller-controlled content.
+
+## Fix Round 2: fail closed on hostile error-name accessors
+
+### Finding and root cause
+
+The Round 1 formatter used `safeErrorNames.has(error.name) ? error.name : 'Error'`. A changing getter could return an allowlisted category for the membership check and sensitive content for the selected value. In addition, V8 stack materialization consults `error.name`, causing a third getter access. A throwing getter escaped the formatter before its stack guard and left the CLI catch path without a sanitized fallback.
+
+A sanitized behavior probe reported `changingGetterReads: 2`, `selectedContainsControlledValue: true`, and `throwingGetterEscaped: true` for the direct name-selection expression. The focused regression then observed three total reads through the real formatter because stack materialization performed the additional access.
+
+### Changes
+
+- Extracted the formatter unchanged to internal module `src/cli/debug-diagnostic.ts`; this creates a narrow testable boundary without exporting CLI execution or changing its command behavior.
+- Traverses property descriptors without invoking `name` to detect accessor-backed names.
+- Reads `error.name` exactly once, accepts it only when it is a primitive string exactly matching the local allowlist, and otherwise retains fixed `Error`.
+- Skips stack access when `name` is accessor-backed so stack materialization cannot re-read an arbitrary getter.
+- Preserves the guarded stack access and generated frame locations for ordinary data-property error names.
+- Wraps the entire formatter in a final catch that returns only `Review failed.` plus fixed `Error` category text.
+- Does not stringify errors, inspect or serialize causes, reuse arbitrary getter content, or emit original stack text.
+- Added direct behavior tests with changing and throwing `name` getters. Every controlled-content check is reduced to an opaque boolean before assertion.
+
+### RED/GREEN evidence
+
+1. Testable-boundary extraction
+   - Command: `pnpm test tests/cli/cli.test.ts`
+   - PASS: 1 file, 7 tests, confirming extraction alone did not change source, debug, or compiled CLI behavior.
+
+2. Changing getter
+   - RED command: `pnpm test tests/cli/debug-diagnostic.test.ts`
+   - Sanitized RED result: 1 failed. The scalar getter count was 3 instead of 1; no diagnostic or controlled content was printed.
+   - GREEN command: `pnpm test tests/cli/debug-diagnostic.test.ts`
+   - Result: 1 file, 1 test passed. The allowlisted first snapshot was used, controlled second-read content was absent, and total getter reads were exactly one.
+
+3. Throwing getter
+   - RED command: `pnpm test tests/cli/debug-diagnostic.test.ts`
+   - Sanitized RED result: 1 failed, 1 passed. The opaque `formatterThrew` boolean was `true` instead of `false`; no thrown message or controlled content was printed.
+   - GREEN command: `pnpm test tests/cli/debug-diagnostic.test.ts`
+   - Result: 1 file, 2 tests passed. The formatter did not throw, controlled content was absent, and output equaled the fixed fallback.
+
+### Verification
+
+- `pnpm test tests/cli`
+  - PASS: 2 files, 9 tests.
+- `pnpm build`
+  - PASS: `tsc -p tsconfig.json` exited 0.
+- `pnpm test`
+  - PASS: 11 files, 40 tests.
+- `pnpm exec tsx src/cli.ts review fixtures/web-missing-basics --skills tests/fixtures/skills --format json`
+  - PASS: exit 0, schema version `0.1`, two findings, controlled report fixture value absent.
+- `node dist/src/cli.js review fixtures/web-missing-basics --skills tests/fixtures/skills --format markdown`
+  - PASS: exit 0, Markdown heading and exact disclaimer present, controlled report fixture value absent.
+- `git diff --check`
+  - Repeated after this report update and before commit.
+
+### Security self-review
+
+- Accessor detection uses descriptors and prototype traversal without evaluating `name`.
+- The candidate name is captured in one local variable from one guarded getter access; allowlist membership and output both use that snapshot.
+- Non-string primitives, objects, wrapper strings, and unknown strings retain the fixed `Error` category; throwing getters, descriptor/prototype traps, and other formatter failures reach the same fixed result through the outer catch.
+- Accessor-backed errors do not reach stack materialization, eliminating its implicit name re-read. Ordinary error stacks retain the existing guarded, numeric-frame-only path.
+- The formatter never calls `String(error)`, reads `cause`, serializes an error, or emits a raw name, message, stack line, path, or function.
+
+### Remaining concerns
+
+None for Fix Round 2. Accessor-backed errors intentionally omit frame diagnostics to enforce the one-read boundary; the fixed category/fallback remains sufficient to direct a developer to the failing review path without disclosing arbitrary getter content.

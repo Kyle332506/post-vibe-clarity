@@ -3,46 +3,12 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { debugDiagnostic } from './cli/debug-diagnostic.js';
 import { runReview } from './orchestrator/run-review.js';
 import { renderJson } from './report/render-json.js';
 import { renderMarkdown } from './report/render-markdown.js';
 
 class CliUsageError extends Error {}
-
-const safeErrorNames = new Set([
-  'AggregateError',
-  'Error',
-  'RangeError',
-  'SyntaxError',
-  'TypeError',
-  'URIError',
-  'YAMLParseError',
-]);
-
-function debugDiagnostic(error: unknown): string {
-  const errorName = error instanceof Error && safeErrorNames.has(error.name) ? error.name : 'Error';
-  const lines = ['Review failed.', `Error category: ${errorName}`];
-  let stack: string | undefined;
-
-  if (error instanceof Error) {
-    try {
-      stack = error.stack;
-    } catch {
-      stack = undefined;
-    }
-  }
-
-  const frames: string[] = [];
-  for (const line of stack?.split('\n') ?? []) {
-    const location = /^\s*at\b.*?:(\d+):(\d+)\)?\s*$/.exec(line);
-    if (!location) continue;
-    frames.push(`  at frame-${frames.length + 1}:${location[1]}:${location[2]}`);
-    if (frames.length === 12) break;
-  }
-
-  if (frames.length > 0) lines.push('Stack frames:', ...frames);
-  return lines.join('\n');
-}
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
