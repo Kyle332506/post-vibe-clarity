@@ -16,7 +16,7 @@ When local PostVibeClarity tooling is available, run the project review with the
 postvibe review [project-path] --skills [skills-path] --format markdown
 ```
 
-Use the `secret-exposure.scan` finding and keep the run read-only. The foundation scanner checks readable source and configuration files for private-key markers and quoted assignments with credential-like names; it reports rule identifiers and locations, not matched values.
+Use the `secret-exposure.scan` finding and keep the run read-only. The foundation scanner checks an explicit set of readable source and configuration formats, including `.env` variants and common PEM/key files, while skipping binary content. JavaScript and TypeScript are parsed syntax-aware so runtime variable, property, class-field, binding-default, and assignment-expression string values are inspected without treating comments, type nodes, or ambient declarations as runtime secrets. It reports rule identifiers and locations, not matched values.
 
 Treat this as bounded evidence, not a comprehensive secret scan. Record unscanned files, repository history, generated artifacts, deployed bundles, provider state, and inaccessible environments as `unverified` when no separate check covers them.
 

@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { loadSkillCatalog } from '../../src/catalog/load-catalog.js';
@@ -14,6 +17,47 @@ const base: CapabilityManifest = {
   services: [],
   capabilities: [],
 };
+
+function skillDocument(name: string): string {
+  return [
+    '---',
+    `name: ${name}`,
+    'description: Use when exercising a catalog validation fixture.',
+    'license: Apache-2.0',
+    '---',
+    '',
+    `# ${name}`,
+    '',
+  ].join('\n');
+}
+
+function readinessDocument(id: string, check: string): string {
+  return [
+    'schemaVersion: "0.1"',
+    `id: ${id}`,
+    'domains:',
+    '  - security-privacy',
+    'modes:',
+    '  - audit',
+    'maxActionLevel: 0',
+    'checks:',
+    `  - ${check}`,
+    '',
+  ].join('\n');
+}
+
+async function writeCatalogSkill(
+  catalogRoot: string,
+  directoryName: string,
+  frontmatterName: string,
+  sidecarId: string,
+  check: string,
+): Promise<void> {
+  const directory = join(catalogRoot, directoryName);
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, 'SKILL.md'), skillDocument(frontmatterName));
+  await writeFile(join(directory, 'readiness.yaml'), readinessDocument(sidecarId, check));
+}
 
 describe('skill catalog', () => {
   it('loads valid sidecars next to Agent Skills', async () => {
@@ -37,5 +81,78 @@ describe('skill catalog', () => {
       'launch-essentials',
       'secret-exposure',
     ]);
+  });
+
+  it('rejects a SKILL frontmatter name that does not match its directory', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-catalog-identity-'));
+
+    try {
+      await writeCatalogSkill(temporaryRoot, 'directory-name', 'frontmatter-name', 'directory-name', 'directory-name.scan');
+      await expect(loadSkillCatalog(temporaryRoot)).rejects.toThrow(
+        'directory-name/SKILL.md name must match directory name "directory-name"',
+      );
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a sidecar ID that does not match its directory and SKILL identity', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-catalog-sidecar-'));
+
+    try {
+      await writeCatalogSkill(temporaryRoot, 'directory-name', 'directory-name', 'sidecar-name', 'sidecar-name.scan');
+      await expect(loadSkillCatalog(temporaryRoot)).rejects.toThrow(
+        'directory-name/readiness.yaml id must match directory name "directory-name"',
+      );
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a sidecar-bearing skill without YAML frontmatter', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-catalog-frontmatter-'));
+    const directory = join(temporaryRoot, 'missing-frontmatter');
+
+    try {
+      await mkdir(directory);
+      await writeFile(join(directory, 'SKILL.md'), '# Missing frontmatter\n');
+      await writeFile(
+        join(directory, 'readiness.yaml'),
+        readinessDocument('missing-frontmatter', 'missing-frontmatter.scan'),
+      );
+      await expect(loadSkillCatalog(temporaryRoot)).rejects.toThrow(
+        'missing-frontmatter/SKILL.md must contain YAML frontmatter',
+      );
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects duplicate skill IDs across catalog directories', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-catalog-duplicate-skill-'));
+
+    try {
+      await writeCatalogSkill(temporaryRoot, 'first', 'first', 'shared', 'first.scan');
+      await writeCatalogSkill(temporaryRoot, 'second', 'second', 'shared', 'second.scan');
+      await expect(loadSkillCatalog(temporaryRoot)).rejects.toThrow(
+        'Duplicate skill id "shared" is owned by first and second',
+      );
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects duplicate check ownership across skills', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-catalog-duplicate-check-'));
+
+    try {
+      await writeCatalogSkill(temporaryRoot, 'first', 'first', 'first', 'shared.scan');
+      await writeCatalogSkill(temporaryRoot, 'second', 'second', 'second', 'shared.scan');
+      await expect(loadSkillCatalog(temporaryRoot)).rejects.toThrow(
+        'Duplicate check id "shared.scan" is owned by first and second',
+      );
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
   });
 });

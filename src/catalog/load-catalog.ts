@@ -16,9 +16,15 @@ export interface SkillDescriptor {
   directory: string;
 }
 
+interface CatalogCandidate {
+  descriptor: SkillDescriptor;
+  directoryName: string;
+  skillName: string;
+}
+
 export async function loadSkillCatalog(root: string): Promise<SkillDescriptor[]> {
   const entries = await readdir(root, { withFileTypes: true });
-  const skills: SkillDescriptor[] = [];
+  const candidates: CatalogCandidate[] = [];
 
   for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
     const directory = join(root, entry.name);
@@ -31,14 +37,64 @@ export async function loadSkillCatalog(root: string): Promise<SkillDescriptor[]>
       throw error;
     }
 
-    await readFile(join(directory, 'SKILL.md'), 'utf8');
+    const skillSource = await readFile(join(directory, 'SKILL.md'), 'utf8');
+    const skillName = parseSkillName(skillSource, entry.name);
     const input = parse(readiness) as unknown;
     const validation = await validateReadinessManifest(input);
     if (!validation.ok) throw new Error(`${entry.name}/readiness.yaml: ${validation.errors.join('; ')}`);
-    skills.push({ ...(input as Omit<SkillDescriptor, 'directory'>), directory });
+    candidates.push({
+      descriptor: { ...(input as Omit<SkillDescriptor, 'directory'>), directory },
+      directoryName: entry.name,
+      skillName,
+    });
   }
 
-  return skills;
+  validateUniqueOwnership(candidates);
+  for (const { descriptor, directoryName, skillName } of candidates) {
+    if (skillName !== directoryName) {
+      throw new Error(`${directoryName}/SKILL.md name must match directory name "${directoryName}"`);
+    }
+    if (descriptor.id !== directoryName) {
+      throw new Error(`${directoryName}/readiness.yaml id must match directory name "${directoryName}"`);
+    }
+  }
+
+  return candidates.map(({ descriptor }) => descriptor);
+}
+
+function parseSkillName(source: string, directoryName: string): string {
+  const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(source);
+  if (!match?.[1]) throw new Error(`${directoryName}/SKILL.md must contain YAML frontmatter`);
+  const frontmatter = parse(match[1]) as unknown;
+  if (typeof frontmatter !== 'object' || frontmatter === null || Array.isArray(frontmatter)) {
+    throw new Error(`${directoryName}/SKILL.md frontmatter must be a mapping`);
+  }
+  const name: unknown = Reflect.get(frontmatter, 'name');
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new Error(`${directoryName}/SKILL.md frontmatter must contain a name`);
+  }
+  return name;
+}
+
+function validateUniqueOwnership(candidates: CatalogCandidate[]): void {
+  const skillOwners = new Map<string, string>();
+  const checkOwners = new Map<string, string>();
+
+  for (const { descriptor, directoryName } of candidates) {
+    const skillOwner = skillOwners.get(descriptor.id);
+    if (skillOwner) {
+      throw new Error(`Duplicate skill id "${descriptor.id}" is owned by ${skillOwner} and ${directoryName}`);
+    }
+    skillOwners.set(descriptor.id, directoryName);
+
+    for (const check of descriptor.checks) {
+      const checkOwner = checkOwners.get(check);
+      if (checkOwner) {
+        throw new Error(`Duplicate check id "${check}" is owned by ${checkOwner} and ${directoryName}`);
+      }
+      checkOwners.set(check, directoryName);
+    }
+  }
 }
 
 function isMissingFile(error: unknown): error is NodeJS.ErrnoException {

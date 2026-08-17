@@ -10,14 +10,22 @@ PostVibeClarity provides evidence, not certification. This report reduces uncert
 
 The v0.1 foundation currently provides:
 
-- Read-only Node-project discovery for web and CLI signals, Next.js, and likely account-email collection.
-- Capability-driven skill routing through validated `readiness.yaml` sidecars.
-- Redacted inspection for private-key markers and quoted credential assignments in readable source and configuration files.
+- Read-only Node-project discovery for evidence-backed web, mobile, library, CLI, framework, and likely account-email signals.
+- Capability-driven skill routing through validated `readiness.yaml` sidecars with catalog identity and ownership checks.
+- Redacted inspection for private-key markers and quoted credential assignments, including syntax-aware JavaScript/TypeScript scanning and explicit environment/key text-file coverage.
 - Privacy-notice candidate inspection when account-related personal-data collection is detected.
 - Evidence-backed Markdown and JSON reports with explicit unverified coverage.
 - Portable orchestrator, discovery, secret-exposure, and launch-essential Agent Skills with manual fallbacks.
 
-The foundation does not yet implement a remediation engine, a complete nine-domain check catalog, deep artifact packs, framework/provider adapters, deployed-environment verification, or cross-agent runtime acceptance. Unsupported or inaccessible work must remain `unverified`.
+The foundation does not yet implement a remediation engine, a complete nine-domain check catalog, deep artifact packs, framework/provider adapters, deployed-environment verification, or cross-agent runtime acceptance.
+
+Runtime states are intentionally distinct:
+
+- The portable discovery skill provides guided classification for project shapes the deterministic detector does not cover; it does not provide a readiness audit for those shapes.
+- Readiness concerns present only in the design taxonomy are omitted audit coverage and are documented gaps, not per-run findings or passes.
+- A successfully loaded and routed sidecar check with no registered implementation becomes an `unverified` finding and makes the report partial.
+- An unsupported or unregistered domain has no synthetic per-run finding; its absence is documented in the [foundation coverage map](docs/foundation-coverage.md).
+- Unreadable or invalid project/catalog input is fatal before a report is created. The CLI emits only a sanitized failure message, or sanitized diagnostics in debug mode.
 
 ## Architecture and project shapes
 
@@ -28,7 +36,7 @@ Project -> read-only discovery -> capability manifest -> skill routing
         -> deterministic or guided checks -> evidence-backed report
 ```
 
-It is designed to represent web, mobile, desktop, CLI, backend, worker, library, extension, AI-agent, infrastructure, and monorepo projects. Automation depth varies by shape in this foundation: current deterministic discovery recognizes only the Node-oriented signals listed above, while the portable discovery skill guides classification of other shapes. Specialist skills and future adapters add capability-, artifact-, framework-, and provider-specific checks without weakening the shared evidence rules.
+It is designed to represent web, mobile, desktop, CLI, backend, worker, library, extension, AI-agent, infrastructure, and monorepo projects. Automation depth varies by shape in this foundation: deterministic discovery confirms only the documented Node/static signals, React alone does not imply web, and the portable discovery skill guides classification of other or ambiguous shapes. Apart from the packaged secret-exposure and privacy-notice manual fallbacks, the remaining domain lists are taxonomy-only omitted audits until specialist skills and checks are added.
 
 ## Requirements
 

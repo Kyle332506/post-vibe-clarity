@@ -1,0 +1,10 @@
+{
+  "name": "fixture-react-library",
+  "private": true,
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "peerDependencies": {
+    "react": "0.0.0-fixture"
+  }
+}

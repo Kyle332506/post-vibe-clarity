@@ -42,7 +42,16 @@ describe('runReview', () => {
 
     try {
       await mkdir(unavailableSkill);
-      await writeFile(join(unavailableSkill, 'SKILL.md'), '# Unavailable check\n');
+      await writeFile(join(unavailableSkill, 'SKILL.md'), [
+        '---',
+        'name: unavailable-check',
+        'description: Use when testing unavailable routed checks.',
+        'license: Apache-2.0',
+        '---',
+        '',
+        '# Unavailable check',
+        '',
+      ].join('\n'));
       await writeFile(join(unavailableSkill, 'readiness.yaml'), [
         'schemaVersion: "0.1"',
         'id: unavailable-check',
@@ -67,6 +76,7 @@ describe('runReview', () => {
       expect(report.findings[0]).toMatchObject({
         id: 'unavailable-check.missing.unavailable',
         checkId: 'unavailable-check.missing',
+        skillVersion: 'unknown',
         domains: ['reliability-recovery'],
         actionLevel: 'human-review-needed',
         outcome: 'unverified',

@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { detectSecretRule, secretExposureCheck } from '../../src/checks/secret-exposure.js';
 import { discoverProject } from '../../src/discovery/discover-project.js';
+import { summarizeFindings, type ReadinessReport } from '../../src/model/report.js';
+import { renderJson } from '../../src/report/render-json.js';
+import { renderMarkdown } from '../../src/report/render-markdown.js';
 
 const root = fileURLToPath(new URL('../../fixtures/web-missing-basics', import.meta.url));
 const temporaryRoots: string[] = [];
@@ -14,12 +17,34 @@ afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((directory) => rm(directory, { force: true, recursive: true })));
 });
 
-async function scanTemporarySource(source: string) {
+async function scanTemporaryFiles(files: Record<string, string | Uint8Array>) {
   const directory = await mkdtemp(join(tmpdir(), 'postvibe-secret-exposure-'));
   temporaryRoots.push(directory);
-  await writeFile(join(directory, 'config.ts'), source);
+  await Promise.all(Object.entries(files).map(([name, content]) => writeFile(join(directory, name), content)));
   const manifest = await discoverProject(directory, now);
-  return secretExposureCheck.run({ root: directory, manifest });
+  const findings = await secretExposureCheck.run({ root: directory, manifest });
+  return { directory, findings, manifest };
+}
+
+async function scanTemporarySource(source: string) {
+  return (await scanTemporaryFiles({ 'config.ts': source })).findings;
+}
+
+function makeReport(
+  manifest: Awaited<ReturnType<typeof discoverProject>>,
+  findings: Awaited<ReturnType<typeof secretExposureCheck.run>>,
+): ReadinessReport {
+  return {
+    schemaVersion: '0.1',
+    runId: 'pvc-20260817120000000',
+    generatedAt: now(),
+    toolkitVersion: '0.1.0',
+    partial: false,
+    manifest,
+    findings,
+    summary: summarizeFindings(findings),
+    disclaimer: 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
+  };
 }
 
 describe('secretExposureCheck', () => {
@@ -38,43 +63,91 @@ describe('secretExposureCheck', () => {
     });
   });
 
-  it('reports a typed TypeScript credential assignment', async () => {
-    const findings = await scanTemporarySource("const serviceToken: string = 'opaque';");
+  it('reports runtime string assignments across JavaScript and TypeScript assignment forms', async () => {
+    const controlledValues = [
+      'controlled-variable-value-never-emit',
+      'controlled-property-value-never-emit',
+      'controlled-field-value-never-emit',
+      'controlled-binding-value-never-emit',
+      'controlled-assignment-value-never-emit',
+    ];
+    const findings = await scanTemporarySource([
+      `const apiKey: string = '${controlledValues[0]}';`,
+      `const options = { serviceToken: '${controlledValues[1]}' };`,
+      `class RuntimeConfig { password = '${controlledValues[2]}'; }`,
+      `const { apiKey: renamed = '${controlledValues[3]}' } = source;`,
+      `settings['serviceToken'] = '${controlledValues[4]}';`,
+      '',
+    ].join('\n'));
 
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.evidence[0]?.location).toBe('config.ts:1');
+    const findingPayload = JSON.stringify(findings);
+    const payloadContainsControlledValue = controlledValues.some((value) => findingPayload.includes(value));
+    expect(payloadContainsControlledValue).toBe(false);
+    expect(findings.map((finding) => finding.evidence[0]?.location)).toEqual([
+      'config.ts:1',
+      'config.ts:2',
+      'config.ts:3',
+      'config.ts:4',
+      'config.ts:5',
+    ]);
   });
 
-  it('reports a credential assignment after a nested TypeScript type annotation', () => {
-    const rule = detectSecretRule("const serviceToken: Record<string, { scope: string }> = 'opaque';");
+  it('ignores comments, type members, type aliases, and ambient declarations in TypeScript', async () => {
+    const { findings } = await scanTemporaryFiles({
+      'config.ts': [
+        "interface Credentials { apiKey: 'interface-type-value'; }",
+        "type CredentialShape = { serviceToken: 'alias-type-value' };",
+        "declare const password: 'ambient-value';",
+        "declare class AmbientConfig { apiKey: 'ambient-field-value'; }",
+        "// const apiKey = 'line-comment-value';",
+        "/* const serviceToken = 'block-comment-value'; */",
+        '// -----BEGIN PRIVATE KEY-----',
+        '',
+      ].join('\n'),
+      'types.d.ts': "export declare const apiKey: 'declaration-file-value';\n",
+    });
 
-    expect(rule).toBe('quoted-credential-assignment');
+    expect(findings).toEqual([]);
   });
 
-  it('reports a credential assignment after an object type with semicolon-separated properties', () => {
-    const rule = detectSecretRule("const serviceToken: { scope: string; region: string } = 'opaque';");
+  it('scans environment variants and common text key files while skipping binary key data', async () => {
+    const binaryKey = new Uint8Array([
+      0, 1, 2, 3,
+      ...Buffer.from('-----BEGIN PRIVATE KEY-----', 'utf8'),
+    ]);
+    const { findings } = await scanTemporaryFiles({
+      '.env': "API_KEY='env-value'\n",
+      '.env.local': "SERVICE_TOKEN='local-value'\n",
+      '.env.production': "password='production-value'\n",
+      'binary.key': binaryKey,
+      'certificate.pem': '-----BEGIN PRIVATE KEY-----\nredacted-fixture\n',
+      'server.key': '-----BEGIN EC PRIVATE KEY-----\nredacted-fixture\n',
+      'settings.json': '{"apiKey":"json-value"}\n',
+    });
 
-    expect(rule).toBe('quoted-credential-assignment');
+    expect(findings.map((finding) => finding.evidence[0]?.location)).toEqual([
+      '.env:1',
+      '.env.local:1',
+      '.env.production:1',
+      'certificate.pem:1',
+      'server.key:1',
+      'settings.json:1',
+    ]);
   });
 
-  it('does not flag comparisons or arrow functions with credential-named identifiers', () => {
-    const rules = [
-      "serviceToken == 'opaque'",
-      "serviceToken === 'opaque'",
-      "serviceToken != 'opaque'",
-      "serviceToken !== 'opaque'",
-      "serviceToken >= 'opaque'",
-      "serviceToken <= 'opaque'",
-      "serviceToken => 'opaque'",
-    ].map((line) => detectSecretRule(line));
+  it('keeps controlled values out of finding payloads and JSON and Markdown reports', async () => {
+    const controlledValue = 'controlled-render-value-never-emit';
+    const { findings, manifest } = await scanTemporaryFiles({
+      '.env.local': `API_KEY='${controlledValue}'\n`,
+    });
+    const report = makeReport(manifest, findings);
+    const leakState = {
+      findingPayload: JSON.stringify(findings).includes(controlledValue),
+      json: renderJson(report).includes(controlledValue),
+      markdown: renderMarkdown(report).includes(controlledValue),
+    };
 
-    expect(rules).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
-  });
-
-  it('does not carry a non-quoted object property into a later benign quoted property', () => {
-    const rule = detectSecretRule("const options = { serviceToken: loadToken(), theme: 'light' };");
-
-    expect(rule).toBeUndefined();
+    expect(leakState).toEqual({ findingPayload: false, json: false, markdown: false });
   });
 
   it('reports only the nested quoted credential assignment inside a non-quoted credential property', async () => {
@@ -90,27 +163,6 @@ describe('secretExposureCheck', () => {
     expect(findings[0]?.evidence[0]?.summary).toBe('quoted-credential-assignment pattern detected; value redacted');
   });
 
-  it('reports a nested typed credential assignment inside a balanced runtime expression', async () => {
-    const findings = await scanTemporarySource(
-      "const options = { serviceToken: loadConfig((apiKey: string = 'typed-nested-opaque-value') => apiKey) };",
-    );
-
-    const serializedFindings = JSON.stringify(findings);
-    const hasCredentialValue = serializedFindings.includes('typed-nested-opaque-value');
-
-    expect(hasCredentialValue).toBe(false);
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.evidence[0]?.summary).toBe('quoted-credential-assignment pattern detected; value redacted');
-  });
-
-  it('does not report a credential-named quoted literal inside a TypeScript type annotation', async () => {
-    const findings = await scanTemporarySource(
-      "declare const options: { apiKey: 'type-only-opaque-value'; theme: string };",
-    );
-
-    expect(findings).toEqual([]);
-  });
-
   it('reports a nested credential default assignment inside object destructuring', async () => {
     const findings = await scanTemporarySource(
       "const { config: { apiKey = 'destructured-opaque-value' } = {} } = source;",
@@ -123,13 +175,7 @@ describe('secretExposureCheck', () => {
     expect(findings).toHaveLength(1);
   });
 
-  it('returns no rule for an unterminated escape-heavy quoted assignment', () => {
-    const unterminatedCandidate = `const serviceToken = '${'\\'.repeat(48)}`;
-
-    expect(detectSecretRule(unterminatedCandidate)).toBeUndefined();
-  });
-
-  it('reports a private-key marker by location and rule', async () => {
+  it('reports a private-key marker in a runtime string by location and rule', async () => {
     const findings = await scanTemporarySource('const certificate = "-----BEGIN PRIVATE KEY-----";');
 
     expect(findings).toHaveLength(1);
@@ -143,5 +189,11 @@ describe('secretExposureCheck', () => {
     const findings = await scanTemporarySource("export const theme = 'light';");
 
     expect(findings).toEqual([]);
+  });
+
+  it('keeps the generic rule contract for non-JavaScript configuration text', () => {
+    expect(detectSecretRule("API_KEY='opaque'")).toBe('quoted-credential-assignment');
+    expect(detectSecretRule('-----BEGIN PRIVATE KEY-----')).toBe('private-key-marker');
+    expect(detectSecretRule("theme='light'")).toBeUndefined();
   });
 });
