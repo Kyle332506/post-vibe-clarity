@@ -64,3 +64,16 @@ All commands passed. The focused and complete suites each reported 1 passing tes
 ## Concerns
 
 - None for this task. The validator recompiles and rereads the schema on every invocation, which is intentionally minimal for this initial baseline and may be optimized later if call volume warrants it.
+
+## Fix Round 1
+
+Restored the existing `.worktrees/` ignore rule while retaining the Task 1 `dist/` and `node_modules/` generated/dependency artifact rules.
+
+Coverage and verification commands:
+
+```bash
+git check-ignore -v .worktrees/example dist/example node_modules/example
+git diff --check
+```
+
+`git check-ignore -v` reported `.gitignore:1:.worktrees/` for `.worktrees/example`, `.gitignore:2:dist/` for `dist/example`, and `.gitignore:3:node_modules/` for `node_modules/example`. `git diff --check` completed with no output (success).
