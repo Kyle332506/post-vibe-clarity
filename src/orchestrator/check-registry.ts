@@ -1,0 +1,18 @@
+import type { CapabilityManifest } from '../model/capability.js';
+import type { Finding } from '../model/finding.js';
+
+export type RequiredAccess = 'filesystem-read' | 'local-command' | 'network' | 'test-account' | 'credential';
+
+export interface CheckContext {
+  root: string;
+  manifest: CapabilityManifest;
+}
+
+export interface CheckImplementation {
+  id: string;
+  actionLevel: 0 | 1 | 2 | 3 | 4;
+  requiredAccess: RequiredAccess[];
+  run(context: CheckContext): Promise<Finding[]>;
+}
+
+export type CheckRegistry = ReadonlyMap<string, CheckImplementation>;
