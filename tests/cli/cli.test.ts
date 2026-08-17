@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const controlledFixtureValue = 'fixture-secret-value-never-use';
+const controlledParserValue = 'sk_test_controlled_cli_error_never_emit';
 
 interface CliResult {
   code: number | null;
@@ -35,6 +36,30 @@ function runProcess(command: string, args: string[], environment: NodeJS.Process
 
 function runCli(args: string[], environment: NodeJS.ProcessEnv = process.env): Promise<CliResult> {
   return runProcess('pnpm', ['exec', 'tsx', 'src/cli.ts', ...args], environment);
+}
+
+async function runMalformedCatalog(environment: NodeJS.ProcessEnv): Promise<CliResult> {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-malformed-'));
+  const malformedSkill = join(temporaryRoot, 'malformed');
+
+  try {
+    await mkdir(malformedSkill);
+    await writeFile(join(malformedSkill, 'SKILL.md'), '# Malformed fixture\n');
+    await writeFile(
+      join(malformedSkill, 'readiness.yaml'),
+      `schemaVersion: "0.1"\nid: "${controlledParserValue}\n`,
+    );
+    return await runCli([
+      'review',
+      'fixtures/cli-clean',
+      '--skills',
+      temporaryRoot,
+      '--format',
+      'json',
+    ], environment);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
 }
 
 describe('postvibe review CLI', () => {
@@ -130,6 +155,35 @@ describe('postvibe review CLI', () => {
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain('Expected --format markdown or --format json.');
     expect(stderrContainsStackFrame).toBe(false);
+  });
+
+  it('hides malformed catalog content behind a stable normal-mode execution error', async () => {
+    const { POSTVIBE_DEBUG: _debug, ...environment } = process.env;
+    const result = await runMalformedCatalog(environment);
+    const stdoutIsEmpty = result.stdout.length === 0;
+    const stderrContainsControlledValue = result.stderr.includes(controlledParserValue);
+    const stderrIsStableGenericMessage = result.stderr === 'Review failed. Set POSTVIBE_DEBUG=1 for sanitized diagnostics.\n';
+
+    expect(result.code).toBe(1);
+    expect(stdoutIsEmpty).toBe(true);
+    expect(stderrContainsControlledValue).toBe(false);
+    expect(stderrIsStableGenericMessage).toBe(true);
+  });
+
+  it('limits debug diagnostics to a sanitized category and stack-frame locations', async () => {
+    const result = await runMalformedCatalog({ ...process.env, POSTVIBE_DEBUG: '1' });
+    const stdoutIsEmpty = result.stdout.length === 0;
+    const stderrContainsControlledValue = result.stderr.includes(controlledParserValue);
+    const stderrContainsRawParserMessage = result.stderr.includes('Missing closing');
+    const stderrHasSanitizedCategory = result.stderr.startsWith('Review failed.\nError category: YAMLParseError\nStack frames:\n');
+    const stderrHasStackFrameLocation = /\n  at (?:file:\/\/)?[^\n]+:\d+:\d+\n/.test(result.stderr);
+
+    expect(result.code).toBe(1);
+    expect(stdoutIsEmpty).toBe(true);
+    expect(stderrContainsControlledValue).toBe(false);
+    expect(stderrContainsRawParserMessage).toBe(false);
+    expect(stderrHasSanitizedCategory).toBe(true);
+    expect(stderrHasStackFrameLocation).toBe(true);
   });
 
   it('runs the compiled executable with its readiness schema available', async () => {

@@ -100,3 +100,62 @@ The `postvibe review` CLI supports the specified project, skills, format, and ou
 - CLI subprocess tests need `tsx` to create a local IPC pipe; this required running those tests outside the restricted sandbox. This is a test-runner environment constraint, not application network access.
 - The existing Task 6 heuristic limitation for an uncommon semicolonless ambient TypeScript literal type remains unchanged and outside Task 9 scope.
 - No open Task 9 functional or security concern remains after the final verification run.
+
+## Fix Round 1: sanitize CLI execution errors
+
+### Finding and root cause
+
+The original catch block treated locally authored usage errors and untrusted execution errors identically. In normal mode it wrote `error.message` verbatim, and in debug mode it wrote `error.stack` verbatim. A real YAML parser error includes the malformed source line in both fields, so a sensitive value in a caller-supplied sidecar reached stderr.
+
+A controlled parser probe reproduced the boundary without printing the input: the sanitized probe result reported `messageContainsNeedle: true` and `stackContainsNeedle: true`.
+
+### Changes
+
+- Added a private `CliUsageError` type for fixed, locally authored command, positional, and format validation messages.
+- Unexpected normal-mode errors now emit only `Review failed. Set POSTVIBE_DEBUG=1 for sanitized diagnostics.`
+- Unexpected debug-mode errors now emit an allowlisted error category and at most 12 generated `frame-N:line:column` locations.
+- Debug formatting never writes the raw message, source line, original path/function text, serialized cause, or arbitrary error name.
+- Added a real temporary malformed `readiness.yaml` subprocess fixture for both normal and debug modes.
+- All secret/output containment assertions reduce results to booleans before assertion; no full stderr/stdout value or controlled sensitive value is an assertion operand.
+
+### RED/GREEN evidence
+
+1. Normal mode
+   - RED command: `pnpm test tests/cli/cli.test.ts`
+   - Sanitized RED result: 1 failed, 5 passed. The opaque `stderrContainsControlledValue` boolean was `true` instead of `false`; no stderr payload was printed.
+   - GREEN command: `pnpm test tests/cli/cli.test.ts`
+   - Result: 1 file passed, 6 tests passed. The stable generic message, stdout purity, exit code 1, and trusted invalid-format message all passed.
+
+2. Debug mode
+   - RED command: `pnpm test tests/cli/cli.test.ts`
+   - Sanitized RED result: 1 failed, 6 passed. The opaque `stderrContainsControlledValue` boolean was `true` instead of `false`; no stderr payload was printed.
+   - GREEN command: `pnpm test tests/cli/cli.test.ts`
+   - Result: 1 file passed, 7 tests passed. Controlled content and the raw YAML parser message were absent; the allowlisted category and generated frame locations were present.
+
+### Verification
+
+- `pnpm test tests/cli/cli.test.ts tests/orchestrator/run-review.test.ts`
+  - PASS: 2 files, 9 tests.
+- `pnpm build`
+  - PASS: `tsc -p tsconfig.json` exited 0.
+- `pnpm test`
+  - PASS: 10 files, 38 tests.
+- `pnpm exec tsx src/cli.ts review fixtures/web-missing-basics --skills tests/fixtures/skills --format json`
+  - PASS: exit 0, schema version `0.1`, two findings, controlled report fixture value absent.
+- `node dist/src/cli.js review fixtures/web-missing-basics --skills tests/fixtures/skills --format markdown`
+  - PASS: exit 0, Markdown heading and exact disclaimer present, controlled report fixture value absent.
+- `git diff --check`
+  - Repeated after this report update and before commit.
+
+### Security self-review
+
+- Only three fixed internal validation messages can enter the trusted usage-error path; `parseArgs`, catalog loading, YAML parsing, checks, rendering, and filesystem errors use the generic/sanitized execution path.
+- The debug category is selected from a fixed allowlist; arbitrary `error.name` values become `Error`.
+- Original stack lines are parsed only for numeric line/column pairs. Output labels are generated locally, capped at 12, and do not reuse path, function, message, source, or cause text.
+- Accessing `error.stack` is guarded so a throwing accessor cannot escape the generic diagnostic boundary.
+- No raw unexpected error value is stringified in either mode.
+- No new network, environment-secret, authentication, payment, or data-storage boundary was introduced.
+
+### Remaining concerns
+
+None for Fix Round 1. Debug frame labels intentionally trade original filenames for non-disclosure; they still distinguish frame order and line/column locations without echoing caller-controlled content.
