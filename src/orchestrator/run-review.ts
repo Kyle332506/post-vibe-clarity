@@ -17,6 +17,11 @@ export interface RunReviewOptions {
 
 const disclaimer = 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.';
 
+export const foundationCheckImplementations: readonly CheckImplementation[] = [
+  privacyNoticeCheck,
+  secretExposureCheck,
+];
+
 function compareFindings(left: Finding, right: Finding): number {
   return left.checkId.localeCompare(right.checkId) || left.id.localeCompare(right.id);
 }
@@ -51,8 +56,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
   const manifest = await discoverProject(root, () => generatedAt);
   const catalog = await loadSkillCatalog(skillsRoot);
   const routedSkills = routeSkills(manifest, catalog);
-  const implementations: CheckImplementation[] = [secretExposureCheck, privacyNoticeCheck];
-  const registry: CheckRegistry = new Map(implementations.map((implementation) => [implementation.id, implementation]));
+  const registry: CheckRegistry = new Map(foundationCheckImplementations.map((implementation) => [implementation.id, implementation]));
   const plan = buildReviewPlan(routedSkills, registry);
   const skillsById = new Map(routedSkills.map((skill) => [skill.id, skill]));
   const findings: Finding[] = [];
