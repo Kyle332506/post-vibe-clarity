@@ -23,23 +23,41 @@ function containsControlledFixtureSecret(rendered: string): boolean {
 
 interface OverallScoreInspection {
   hasTopLevelScoreOrReadinessScore: boolean;
-  hasNumericOverallScoreField: boolean;
+  hasProhibitedNumericReadinessScore: boolean;
+}
+
+function isProhibitedReadinessScoreKey(key: string): boolean {
+  const normalizedKey = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  return normalizedKey === 'score'
+    || (normalizedKey.includes('score') && (
+      normalizedKey.includes('readiness') || normalizedKey.includes('production')
+    ));
+}
+
+function containsProhibitedNumericReadinessScore(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsProhibitedNumericReadinessScore);
+  if (typeof value !== 'object' || value === null) return false;
+
+  return Object.keys(value).some((key) => {
+    const fieldValue: unknown = Reflect.get(value, key);
+    return (typeof fieldValue === 'number' && isProhibitedReadinessScoreKey(key))
+      || containsProhibitedNumericReadinessScore(fieldValue);
+  });
 }
 
 function inspectOverallScoreFields(value: unknown): OverallScoreInspection {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return { hasTopLevelScoreOrReadinessScore: false, hasNumericOverallScoreField: false };
+    return {
+      hasTopLevelScoreOrReadinessScore: false,
+      hasProhibitedNumericReadinessScore: containsProhibitedNumericReadinessScore(value),
+    };
   }
 
-  const entries = Object.keys(value).map((key) => [key, Reflect.get(value, key)] as const);
   const topLevelScoreKeys = new Set(['score', 'readinessScore']);
-  const numericOverallScoreKeys = new Set(['score', 'readinessScore', 'overallScore', 'overallReadinessScore']);
 
   return {
-    hasTopLevelScoreOrReadinessScore: entries.some(([key]) => topLevelScoreKeys.has(key)),
-    hasNumericOverallScoreField: entries.some(([key, fieldValue]) => (
-      numericOverallScoreKeys.has(key) && typeof fieldValue === 'number'
-    )),
+    hasTopLevelScoreOrReadinessScore: Object.keys(value).some((key) => topLevelScoreKeys.has(key)),
+    hasProhibitedNumericReadinessScore: containsProhibitedNumericReadinessScore(value),
   };
 }
 
@@ -153,23 +171,29 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     expect(jsonContainsSecret).toBe(false);
     expect(markdownContainsSecret).toBe(false);
     expect(scoreInspection.hasTopLevelScoreOrReadinessScore).toBe(false);
-    expect(scoreInspection.hasNumericOverallScoreField).toBe(false);
+    expect(scoreInspection.hasProhibitedNumericReadinessScore).toBe(false);
     expect(markdownContainsScoreLanguage).toBe(false);
   });
 
-  it('detects normal JSON numeric overall score properties', () => {
+  it('detects numeric readiness scores without rejecting domain-specific metrics', () => {
     expect(inspectOverallScoreFields(JSON.parse('{"score":90}') as unknown)).toEqual({
       hasTopLevelScoreOrReadinessScore: true,
-      hasNumericOverallScoreField: true,
+      hasProhibitedNumericReadinessScore: true,
     });
     expect(inspectOverallScoreFields(JSON.parse('{"readinessScore":90}') as unknown)).toEqual({
       hasTopLevelScoreOrReadinessScore: true,
-      hasNumericOverallScoreField: true,
+      hasProhibitedNumericReadinessScore: true,
     });
     expect(inspectOverallScoreFields(JSON.parse('{"overallReadinessScore":90}') as unknown)).toEqual({
       hasTopLevelScoreOrReadinessScore: false,
-      hasNumericOverallScoreField: true,
+      hasProhibitedNumericReadinessScore: true,
     });
+    expect(inspectOverallScoreFields(JSON.parse('{"summary":{"score":90}}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
+    expect(inspectOverallScoreFields(JSON.parse('{"summary":{"readinessScore":90}}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
+    expect(inspectOverallScoreFields(JSON.parse('{"summary":{"readiness_score":90}}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
+    expect(inspectOverallScoreFields(JSON.parse('{"sections":[{"readiness-score":90}]}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
+    expect(inspectOverallScoreFields(JSON.parse('{"productionReadinessScore":90}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
+    expect(inspectOverallScoreFields(JSON.parse('{"security":{"cvssScore":9.8}}') as unknown).hasProhibitedNumericReadinessScore).toBe(false);
   });
 
   it('renders report timestamps, toolkit and check metadata, and the required disclaimer', () => {
