@@ -1,0 +1,15 @@
+schemaVersion: "0.1"
+id: launch-essentials
+domains:
+  - policy-business-essentials
+  - security-privacy
+appliesTo:
+  allCapabilities:
+    - collects-personal-data
+modes:
+  - audit
+  - propose
+  - verify
+maxActionLevel: 0
+checks:
+  - launch-essentials.privacy-notice
