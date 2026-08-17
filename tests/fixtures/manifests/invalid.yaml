@@ -1,0 +1,8 @@
+schemaVersion: "0.1"
+id: Secret Exposure
+domains:
+  - unknown-domain
+modes:
+  - certify
+maxActionLevel: 9
+checks: []
