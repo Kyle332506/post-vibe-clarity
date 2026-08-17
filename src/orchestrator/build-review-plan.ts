@@ -2,7 +2,7 @@ import type { SkillDescriptor } from '../catalog/load-catalog.js';
 import type { CheckRegistry, RequiredAccess } from './check-registry.js';
 
 export type ReviewPlanItem =
-  | { checkId: string; skillId: string; status: 'ready'; actionLevel: 0 | 1; requiredAccess: RequiredAccess[] }
+  | { checkId: string; skillId: string; status: 'ready'; actionLevel: 0 | 1; requiredAccess: readonly RequiredAccess[] }
   | { checkId: string; skillId: string; status: 'unavailable'; reason: string };
 
 export function buildReviewPlan(skills: SkillDescriptor[], registry: CheckRegistry): ReviewPlanItem[] {

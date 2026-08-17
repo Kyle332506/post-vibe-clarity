@@ -2,7 +2,7 @@
 
 This document describes the implemented foundation, not the complete PostVibeClarity product. The governing contracts and intended architecture are in the approved [PostVibeClarity design specification](./superpowers/specs/2026-08-17-postvibeclarity-design.md).
 
-Missing, inaccessible, unsupported, or unavailable coverage is reported as `unverified`; it is never converted into a pass or a readiness claim.
+The runner emits an `unverified` finding when a check ID from a successfully loaded and routed sidecar has no registered implementation. Unsupported or unregistered domains are documented below as foundation coverage gaps; v0.1 does not automatically emit one per-run finding for every such gap. Unreadable project input and unreadable, incomplete, or invalid catalog data abort the review, and the normal-mode CLI returns a sanitized failure instead of a partial `unverified` report. None of these states is converted into a pass or a readiness claim.
 
 ## Implemented and automated
 
