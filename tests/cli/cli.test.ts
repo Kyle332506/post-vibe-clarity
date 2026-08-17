@@ -44,7 +44,16 @@ async function runMalformedCatalog(environment: NodeJS.ProcessEnv): Promise<CliR
 
   try {
     await mkdir(malformedSkill);
-    await writeFile(join(malformedSkill, 'SKILL.md'), '# Malformed fixture\n');
+    await writeFile(join(malformedSkill, 'SKILL.md'), [
+      '---',
+      'name: malformed',
+      'description: Use when exercising sanitized malformed-catalog failures.',
+      'license: Apache-2.0',
+      '---',
+      '',
+      '# Malformed fixture',
+      '',
+    ].join('\n'));
     await writeFile(
       join(malformedSkill, 'readiness.yaml'),
       `schemaVersion: "0.1"\nid: "${controlledParserValue}\n`,

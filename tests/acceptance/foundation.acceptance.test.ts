@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { privacyNoticeCheck } from '../../src/checks/launch-essentials.js';
+import { secretExposureCheck } from '../../src/checks/secret-exposure.js';
 import {
   foundationCheckImplementations,
   runReview,
@@ -64,7 +66,16 @@ function inspectOverallScoreFields(value: unknown): OverallScoreInspection {
 async function writeUnknownWebCheckCatalog(root: string): Promise<void> {
   const skillRoot = join(root, 'web-unknown');
   await mkdir(skillRoot);
-  await writeFile(join(skillRoot, 'SKILL.md'), '# Web unknown\n');
+  await writeFile(join(skillRoot, 'SKILL.md'), [
+    '---',
+    'name: web-unknown',
+    'description: Use when testing unavailable routed web checks.',
+    'license: Apache-2.0',
+    '---',
+    '',
+    '# Web unknown',
+    '',
+  ].join('\n'));
   await writeFile(join(skillRoot, 'readiness.yaml'), [
     'schemaVersion: "0.1"',
     'id: web-unknown',
@@ -80,6 +91,20 @@ async function writeUnknownWebCheckCatalog(root: string): Promise<void> {
     '  - web-unknown.missing',
     '',
   ].join('\n'));
+}
+
+function isReachableGraphFrozen(value: unknown, seen = new Set<object>()): boolean {
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return true;
+  if (seen.has(value)) return true;
+  seen.add(value);
+  if (!Object.isFrozen(value)) return false;
+
+  return Reflect.ownKeys(value).every((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor) return true;
+    if ('value' in descriptor && !isReachableGraphFrozen(descriptor.value, seen)) return false;
+    return isReachableGraphFrozen(descriptor.get, seen) && isReachableGraphFrozen(descriptor.set, seen);
+  });
 }
 
 describe('PostVibeClarity v0.1 foundation acceptance', () => {
@@ -133,10 +158,39 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     expect(Object.isFrozen(foundationCheckImplementations)).toBe(true);
     expect(foundationCheckImplementations.every((implementation) => Object.isFrozen(implementation))).toBe(true);
     expect(foundationCheckImplementations.every(({ requiredAccess }) => Object.isFrozen(requiredAccess))).toBe(true);
+    expect(foundationCheckImplementations.every(({ run }) => Object.isFrozen(run))).toBe(true);
+    expect(isReachableGraphFrozen(foundationCheckImplementations)).toBe(true);
+    expect(firstRegistration.run).not.toBe(privacyNoticeCheck.run);
+    expect(secondRegistration.run).not.toBe(secretExposureCheck.run);
     expect(arrayMutationApplied).toBe(false);
     expect(actionLevelMutationApplied).toBe(false);
     expect(runMutationApplied).toBe(false);
     expect(accessMutationApplied).toBe(false);
+  });
+
+  it('keeps running captured implementations after an imported check object is mutated', async () => {
+    const originalRun = privacyNoticeCheck.run;
+    const replacementRun = async () => [];
+    const mutationApplied = Reflect.set(privacyNoticeCheck, 'run', replacementRun)
+      && privacyNoticeCheck.run === replacementRun;
+
+    try {
+      const report = await runReview({
+        root: fixture('web-missing-basics'),
+        skillsRoot,
+        now: () => fixedTimestamp,
+      });
+      const retainedPrivacyFinding = report.findings.some(
+        ({ checkId }) => checkId === 'launch-essentials.privacy-notice',
+      );
+
+      expect({ mutationApplied, retainedPrivacyFinding }).toEqual({
+        mutationApplied: true,
+        retainedPrivacyFinding: true,
+      });
+    } finally {
+      Reflect.set(privacyNoticeCheck, 'run', originalRun);
+    }
   });
 
   it('routes real web and CLI fixtures to deterministic artifact-specific checks', () => {
@@ -231,6 +285,7 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
       expect(webUnknownReport.findings).toHaveLength(1);
       expect(webUnknownReport.findings[0]).toMatchObject({
         checkId: 'web-unknown.missing',
+        skillVersion: 'unknown',
         outcome: 'unverified',
         unverifiedBoundaries: ['No check implementation is registered.'],
       });

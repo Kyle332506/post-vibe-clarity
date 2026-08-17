@@ -18,9 +18,13 @@ export interface RunReviewOptions {
 const disclaimer = 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.';
 
 function freezeRegistration(implementation: CheckImplementation): CheckImplementation {
+  const capturedRun = implementation.run;
+  const run: CheckImplementation['run'] = Object.freeze((context) => capturedRun(context));
   return Object.freeze({
-    ...implementation,
+    id: implementation.id,
+    actionLevel: implementation.actionLevel,
     requiredAccess: Object.freeze([...implementation.requiredAccess]),
+    run,
   });
 }
 
@@ -40,7 +44,7 @@ function unavailableFinding(
   return {
     id: `${item.checkId}.unavailable`,
     checkId: item.checkId,
-    skillVersion: '0.1.0',
+    skillVersion: 'unknown',
     domains: skill.domains,
     actionLevel: 'human-review-needed',
     outcome: 'unverified',
