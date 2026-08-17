@@ -43,6 +43,15 @@ async function loadSkill(skillName: string): Promise<ParsedSkill> {
   };
 }
 
+function loadSection(body: string, heading: string): string {
+  const marker = `## ${heading}`;
+  const start = body.indexOf(marker);
+  if (start < 0) throw new Error(`Missing section: ${heading}`);
+  const remainder = body.slice(start + marker.length);
+  const nextHeading = remainder.search(/\r?\n## /);
+  return (nextHeading < 0 ? remainder : remainder.slice(0, nextHeading)).trim();
+}
+
 describe('foundation skill packages', () => {
   it('contains the canonical foundation skill directories', async () => {
     const entries = await readdir(skillsRoot, { withFileTypes: true });
@@ -133,5 +142,42 @@ describe('foundation skill packages', () => {
     expect(body).toMatch(/services/i);
     expect(body).toMatch(/sensitive capabilities/i);
     expect(body).toMatch(/verification environments/i);
+  });
+
+  it('secret-exposure: stops rather than exposing content when safe search output is unavailable', async () => {
+    const { body } = await loadSkill('secret-exposure');
+    const manualFallback = loadSection(body, 'Manual fallback');
+    const unavailableSearchRule = manualFallback
+      .split(/\r?\n/)
+      .find((line) => /location-only|safely redacted|cannot suppress matching content/i.test(line));
+
+    expect(unavailableSearchRule).toBeDefined();
+    expect(unavailableSearchRule).toMatch(/\bstop\b/i);
+    expect(unavailableSearchRule).toMatch(/\bunverified\b/i);
+    expect(unavailableSearchRule).toMatch(/(?:never|do not)[\s\S]*content-revealing/i);
+    expect(manualFallback).not.toMatch(/inspect locally/i);
+  });
+
+  it('secret-exposure: requires issuer rotation and fresh verification before resolution', async () => {
+    const { body } = await loadSkill('secret-exposure');
+    const responseAndVerification = loadSection(body, 'Response and verification');
+
+    expect(responseAndVerification).toMatch(
+      /resolved only after[\s\S]{0,300}issuer-side rotation[\s\S]{0,300}fresh[\s\S]{0,80}scan[\s\S]{0,200}application tests pass/i,
+    );
+    expect(responseAndVerification).toMatch(
+      /revocation[\s\S]{0,180}(?:additional|containment)[\s\S]{0,180}(?:not|never)[\s\S]{0,80}(?:substitute|replacement)/i,
+    );
+  });
+
+  it('launch-essentials: treats policy candidates as existence-only evidence requiring human review', async () => {
+    const { body } = await loadSkill('launch-essentials');
+    const deterministicPath = loadSection(body, 'Deterministic path');
+    const manualFallback = loadSection(body, 'Manual fallback');
+
+    expect(deterministicPath).toMatch(
+      /(?:file|route) candidate[\s\S]{0,240}(?:does not|not evidence)[\s\S]{0,200}(?:accuracy|legal sufficiency|compliance)/i,
+    );
+    expect(manualFallback).toMatch(/require[\s\S]{0,120}(?:privacy owner|qualified counsel|human review)/i);
   });
 });
