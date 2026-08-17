@@ -21,8 +21,26 @@ function containsControlledFixtureSecret(rendered: string): boolean {
   return rendered.includes('fixture-secret-value-never-use');
 }
 
-function containsNumericReadinessScore(rendered: string): boolean {
-  return /(?:readiness\s*)?score\s*[":]\s*\d/i.test(rendered);
+interface OverallScoreInspection {
+  hasTopLevelScoreOrReadinessScore: boolean;
+  hasNumericOverallScoreField: boolean;
+}
+
+function inspectOverallScoreFields(value: unknown): OverallScoreInspection {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { hasTopLevelScoreOrReadinessScore: false, hasNumericOverallScoreField: false };
+  }
+
+  const entries = Object.keys(value).map((key) => [key, Reflect.get(value, key)] as const);
+  const topLevelScoreKeys = new Set(['score', 'readinessScore']);
+  const numericOverallScoreKeys = new Set(['score', 'readinessScore', 'overallScore', 'overallReadinessScore']);
+
+  return {
+    hasTopLevelScoreOrReadinessScore: entries.some(([key]) => topLevelScoreKeys.has(key)),
+    hasNumericOverallScoreField: entries.some(([key, fieldValue]) => (
+      numericOverallScoreKeys.has(key) && typeof fieldValue === 'number'
+    )),
+  };
 }
 
 async function writeUnknownWebCheckCatalog(root: string): Promise<void> {
@@ -64,6 +82,45 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     ]);
   });
 
+  it('keeps the runtime registration boundary deeply immutable', () => {
+    const firstRegistration = foundationCheckImplementations[0];
+    const secondRegistration = foundationCheckImplementations[1];
+    if (!firstRegistration || !secondRegistration) throw new Error('Expected two foundation registrations.');
+
+    const originalRun = firstRegistration.run;
+    const originalActionLevel = firstRegistration.actionLevel;
+    const originalAccess = firstRegistration.requiredAccess[0];
+    const replacementRun = async () => [];
+    let arrayMutationApplied = false;
+    let actionLevelMutationApplied = false;
+    let runMutationApplied = false;
+    let accessMutationApplied = false;
+
+    try {
+      arrayMutationApplied = Reflect.set(foundationCheckImplementations, '0', secondRegistration)
+        && foundationCheckImplementations[0] === secondRegistration;
+      actionLevelMutationApplied = Reflect.set(firstRegistration, 'actionLevel', 4)
+        && firstRegistration.actionLevel === 4;
+      runMutationApplied = Reflect.set(firstRegistration, 'run', replacementRun)
+        && firstRegistration.run === replacementRun;
+      accessMutationApplied = Reflect.set(firstRegistration.requiredAccess, '0', 'network')
+        && firstRegistration.requiredAccess[0] === 'network';
+    } finally {
+      if (arrayMutationApplied) Reflect.set(foundationCheckImplementations, '0', firstRegistration);
+      if (actionLevelMutationApplied) Reflect.set(firstRegistration, 'actionLevel', originalActionLevel);
+      if (runMutationApplied) Reflect.set(firstRegistration, 'run', originalRun);
+      if (accessMutationApplied) Reflect.set(firstRegistration.requiredAccess, '0', originalAccess);
+    }
+
+    expect(Object.isFrozen(foundationCheckImplementations)).toBe(true);
+    expect(foundationCheckImplementations.every((implementation) => Object.isFrozen(implementation))).toBe(true);
+    expect(foundationCheckImplementations.every(({ requiredAccess }) => Object.isFrozen(requiredAccess))).toBe(true);
+    expect(arrayMutationApplied).toBe(false);
+    expect(actionLevelMutationApplied).toBe(false);
+    expect(runMutationApplied).toBe(false);
+    expect(accessMutationApplied).toBe(false);
+  });
+
   it('routes real web and CLI fixtures to deterministic artifact-specific checks', () => {
     expect(webReport.manifest.artifacts.map(({ value }) => value)).toEqual(['web']);
     expect(webReport.findings.map(({ checkId }) => checkId)).toEqual([
@@ -87,15 +144,32 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
   it('renders real reports without disclosing a controlled secret or numeric readiness score', () => {
     const json = renderJson(webReport);
     const markdown = renderMarkdown(webReport);
+    const scoreInspection = inspectOverallScoreFields(JSON.parse(json) as unknown);
     const jsonContainsSecret = containsControlledFixtureSecret(json);
     const markdownContainsSecret = containsControlledFixtureSecret(markdown);
-    const jsonContainsNumericScore = containsNumericReadinessScore(json);
-    const markdownContainsNumericScore = containsNumericReadinessScore(markdown);
+    const markdownContainsScoreLanguage = markdown.toLowerCase().includes('readiness score')
+      || markdown.toLowerCase().includes('overall score');
 
     expect(jsonContainsSecret).toBe(false);
     expect(markdownContainsSecret).toBe(false);
-    expect(jsonContainsNumericScore).toBe(false);
-    expect(markdownContainsNumericScore).toBe(false);
+    expect(scoreInspection.hasTopLevelScoreOrReadinessScore).toBe(false);
+    expect(scoreInspection.hasNumericOverallScoreField).toBe(false);
+    expect(markdownContainsScoreLanguage).toBe(false);
+  });
+
+  it('detects normal JSON numeric overall score properties', () => {
+    expect(inspectOverallScoreFields(JSON.parse('{"score":90}') as unknown)).toEqual({
+      hasTopLevelScoreOrReadinessScore: true,
+      hasNumericOverallScoreField: true,
+    });
+    expect(inspectOverallScoreFields(JSON.parse('{"readinessScore":90}') as unknown)).toEqual({
+      hasTopLevelScoreOrReadinessScore: true,
+      hasNumericOverallScoreField: true,
+    });
+    expect(inspectOverallScoreFields(JSON.parse('{"overallReadinessScore":90}') as unknown)).toEqual({
+      hasTopLevelScoreOrReadinessScore: false,
+      hasNumericOverallScoreField: true,
+    });
   });
 
   it('renders report timestamps, toolkit and check metadata, and the required disclaimer', () => {

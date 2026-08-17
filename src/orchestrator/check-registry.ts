@@ -9,10 +9,10 @@ export interface CheckContext {
 }
 
 export interface CheckImplementation {
-  id: string;
-  actionLevel: 0 | 1 | 2 | 3 | 4;
-  requiredAccess: RequiredAccess[];
-  run(context: CheckContext): Promise<Finding[]>;
+  readonly id: string;
+  readonly actionLevel: 0 | 1 | 2 | 3 | 4;
+  readonly requiredAccess: readonly RequiredAccess[];
+  readonly run: (context: CheckContext) => Promise<Finding[]>;
 }
 
 export type CheckRegistry = ReadonlyMap<string, CheckImplementation>;
