@@ -1,0 +1,10 @@
+schemaVersion: "0.1"
+id: secret-exposure
+domains:
+  - security-privacy
+modes:
+  - audit
+  - verify
+maxActionLevel: 0
+checks:
+  - secret-exposure.scan
