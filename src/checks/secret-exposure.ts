@@ -31,8 +31,17 @@ function quotedStringEnd(line: string, start: number): number | undefined {
   return undefined;
 }
 
+function isAssignmentEquals(line: string, index: number): boolean {
+  const previous = line[index - 1];
+  const next = line[index + 1];
+
+  return previous !== '=' && previous !== '!' && previous !== '<' && previous !== '>' && next !== '=' && next !== '>';
+}
+
 function hasQuotedCredentialAssignment(line: string): boolean {
   let segmentHasCredentialName = false;
+  let typeAnnotation = false;
+  let conditionalExpression = false;
 
   for (let index = 0; index < line.length;) {
     const character = line[index];
@@ -54,7 +63,7 @@ function hasQuotedCredentialAssignment(line: string): boolean {
       continue;
     }
 
-    if (character === '=' || character === ':') {
+    if (character === '=' && isAssignmentEquals(line, index)) {
       let valueStart = index + 1;
       while (line[valueStart] === ' ' || line[valueStart] === '\t') valueStart += 1;
       const valueQuote = line[valueStart];
@@ -66,10 +75,32 @@ function hasQuotedCredentialAssignment(line: string): boolean {
         index = valueEnd;
         continue;
       }
+
+      segmentHasCredentialName = false;
+      typeAnnotation = false;
     }
 
-    if (character === ';' || character === ',' || character === '{' || character === '}') {
+    if (character === ':') {
+      let valueStart = index + 1;
+      while (line[valueStart] === ' ' || line[valueStart] === '\t') valueStart += 1;
+      const valueQuote = line[valueStart];
+
+      if (!conditionalExpression && (valueQuote === '"' || valueQuote === "'")) {
+        const valueEnd = quotedStringEnd(line, valueStart);
+        if (valueEnd === undefined) return false;
+        if (segmentHasCredentialName) return true;
+        index = valueEnd;
+        continue;
+      }
+
+      if (!conditionalExpression) typeAnnotation = true;
+    }
+
+    if (character === '?') conditionalExpression = true;
+    if (character === ';' || (!typeAnnotation && (character === ',' || character === '{' || character === '}'))) {
       segmentHasCredentialName = false;
+      typeAnnotation = false;
+      conditionalExpression = false;
     }
     index += 1;
   }

@@ -45,6 +45,26 @@ describe('secretExposureCheck', () => {
     expect(findings[0]?.evidence[0]?.location).toBe('config.ts:1');
   });
 
+  it('reports a credential assignment after a nested TypeScript type annotation', () => {
+    const rule = detectSecretRule("const serviceToken: Record<string, { scope: string }> = 'opaque';");
+
+    expect(rule).toBe('quoted-credential-assignment');
+  });
+
+  it('does not flag comparisons or arrow functions with credential-named identifiers', () => {
+    const rules = [
+      "serviceToken == 'opaque'",
+      "serviceToken === 'opaque'",
+      "serviceToken != 'opaque'",
+      "serviceToken !== 'opaque'",
+      "serviceToken >= 'opaque'",
+      "serviceToken <= 'opaque'",
+      "serviceToken => 'opaque'",
+    ].map((line) => detectSecretRule(line));
+
+    expect(rules).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+  });
+
   it('returns no rule for an unterminated escape-heavy quoted assignment', () => {
     const unterminatedCandidate = `const serviceToken = '${'\\'.repeat(48)}`;
 
