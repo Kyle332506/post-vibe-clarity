@@ -5,12 +5,81 @@ import type { Finding } from '../model/finding.js';
 import type { CheckImplementation } from '../orchestrator/check-registry.js';
 
 const privateKeyMarker = /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY(?: BLOCK)?-----/;
-const quotedCredentialAssignment = /(?:["'][^"'\r\n]*(?:apiKey|api_key|secret|token|password)[^"'\r\n]*["']|\b(?=[\w$]*(?:apiKey|api_key|secret|token|password))[A-Za-z_$][\w$]*)\s*(?:=|:)\s*(['"])(?:\\.|(?!\1)[^\r\n])*\1/i;
+const credentialName = /apiKey|api_key|secret|token|password/i;
 const scannableFile = /\.(?:env|js|jsx|ts|tsx|py|rb|go|rs|java|kt|swift|json|ya?ml|toml)$/;
+
+function isIdentifierStart(character: string): boolean {
+  return /[A-Za-z_$]/.test(character);
+}
+
+function isIdentifierPart(character: string): boolean {
+  return /[A-Za-z0-9_$]/.test(character);
+}
+
+function quotedStringEnd(line: string, start: number): number | undefined {
+  const quote = line[start];
+  if (quote === undefined) return undefined;
+
+  for (let index = start + 1; index < line.length; index += 1) {
+    if (line[index] === '\\') {
+      index += 1;
+      continue;
+    }
+    if (line[index] === quote) return index + 1;
+  }
+
+  return undefined;
+}
+
+function hasQuotedCredentialAssignment(line: string): boolean {
+  let segmentHasCredentialName = false;
+
+  for (let index = 0; index < line.length;) {
+    const character = line[index];
+    if (character === undefined) return false;
+
+    if (character === '"' || character === "'") {
+      const end = quotedStringEnd(line, index);
+      if (end === undefined) return false;
+      if (credentialName.test(line.slice(index + 1, end - 1))) segmentHasCredentialName = true;
+      index = end;
+      continue;
+    }
+
+    if (isIdentifierStart(character)) {
+      let end = index + 1;
+      while (end < line.length && isIdentifierPart(line[end] ?? '')) end += 1;
+      if (credentialName.test(line.slice(index, end))) segmentHasCredentialName = true;
+      index = end;
+      continue;
+    }
+
+    if (character === '=' || character === ':') {
+      let valueStart = index + 1;
+      while (line[valueStart] === ' ' || line[valueStart] === '\t') valueStart += 1;
+      const valueQuote = line[valueStart];
+
+      if (valueQuote === '"' || valueQuote === "'") {
+        const valueEnd = quotedStringEnd(line, valueStart);
+        if (valueEnd === undefined) return false;
+        if (segmentHasCredentialName) return true;
+        index = valueEnd;
+        continue;
+      }
+    }
+
+    if (character === ';' || character === ',' || character === '{' || character === '}') {
+      segmentHasCredentialName = false;
+    }
+    index += 1;
+  }
+
+  return false;
+}
 
 export function detectSecretRule(line: string): string | undefined {
   if (privateKeyMarker.test(line)) return 'private-key-marker';
-  if (quotedCredentialAssignment.test(line)) return 'quoted-credential-assignment';
+  if (hasQuotedCredentialAssignment(line)) return 'quoted-credential-assignment';
   return undefined;
 }
 

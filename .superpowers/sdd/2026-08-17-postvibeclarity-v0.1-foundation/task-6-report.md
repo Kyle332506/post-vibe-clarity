@@ -29,3 +29,30 @@
 ## Concerns
 
 - This intentionally narrow heuristic does not detect unquoted, multi-line, encoded, or entropy-based secrets; those are outside this check's specified contract.
+
+## Fix Round 1
+
+### Changes
+
+- Replaced the quoted-assignment regular expression with a deterministic line parser.
+- The parser retains credential-name context across a TypeScript type annotation until it reaches the quoted assignment value.
+- Escaped characters now advance the parser unambiguously, so an unterminated quoted candidate is consumed in linear time without regex backtracking.
+- Reworked the redaction assertion to test an opaque boolean before any assertion that could display finding data.
+
+### Covering tests
+
+- A typed TypeScript credential assignment produces a finding.
+- An unterminated, escape-heavy credential candidate produces no rule and completes through the parser's bounded scan.
+- Existing integration coverage continues to check private-key markers, benign quoted assignments, and redaction.
+
+### Commands and sanitized outputs
+
+- `pnpm test tests/checks/secret-exposure.test.ts` — passed: 1 file, 5 tests.
+- `pnpm build` — passed.
+- `pnpm test` — passed: 6 files, 16 tests.
+- `git diff --check` — passed with no whitespace errors.
+
+### RED/GREEN evidence
+
+- RED: the focused test with the old matcher did not complete within the 30-second bounded command window because of the escape-heavy candidate; the typed declaration was also outside the old expression's supported shape.
+- GREEN: after replacing the matcher with the deterministic parser, the focused suite completed successfully in a normal run.
