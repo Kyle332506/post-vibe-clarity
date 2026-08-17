@@ -108,3 +108,30 @@
 
 - RED: the focused suite failed with the prior parser: it missed the semicolon-separated object type declaration and reported the object-literal false positive.
 - GREEN: the focused suite passed after candidate-local, delimiter-aware type scanning replaced persistent context.
+
+## Fix Round 4
+
+### Changes
+
+- Kept the existing balanced candidate scan, but made it recognize nested credential identifiers and quoted property names with immediate quoted `:` or standalone `=` assignments during the same forward pass.
+- An unmatched non-quoted outer credential property can no longer hide a nested quoted credential assignment inside balanced delimiters.
+- Nested matching returns only the stable rule label; credential values remain absent from findings and assertion output.
+
+### Covering test
+
+- A non-quoted credential-named outer property whose nested expression contains a different quoted credential assignment produces exactly one redacted finding for the line.
+
+### RED/GREEN evidence
+
+- RED: `pnpm test tests/checks/secret-exposure.test.ts` failed with the prior parser: 1 file failed; 1 test failed and 9 passed. The regression received zero findings instead of one.
+- GREEN: `pnpm test tests/checks/secret-exposure.test.ts` passed: 1 file, 10 tests.
+
+### Commands and sanitized results
+
+- `pnpm build` — passed with exit code 0.
+- `pnpm test` — passed: 6 files, 21 tests.
+- `git diff --check` — passed with exit code 0 and no output.
+
+### Concerns
+
+- No new concerns. The check remains intentionally line-based and heuristic as documented above.

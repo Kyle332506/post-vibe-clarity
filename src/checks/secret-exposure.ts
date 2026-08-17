@@ -57,6 +57,20 @@ function scanQuotedValue(line: string, start: number): CandidateScan {
   return end === undefined ? { matched: false, nextIndex: line.length } : { matched: true, nextIndex: end };
 }
 
+function scanImmediateQuotedAssignment(line: string, start: number): CandidateScan {
+  const delimiterIndex = skipWhitespace(line, start);
+  const delimiter = line[delimiterIndex];
+
+  if (delimiter === '=' && isAssignmentEquals(line, delimiterIndex)) {
+    return scanQuotedValue(line, skipWhitespace(line, delimiterIndex + 1));
+  }
+  if (delimiter === ':') {
+    return scanQuotedValue(line, skipWhitespace(line, delimiterIndex + 1));
+  }
+
+  return { matched: false, nextIndex: start };
+}
+
 function scanTypeAnnotation(line: string, start: number): CandidateScan {
   const closingDelimiters: string[] = [];
 
@@ -67,6 +81,21 @@ function scanTypeAnnotation(line: string, start: number): CandidateScan {
     if (character === '"' || character === "'") {
       const end = quotedStringEnd(line, index);
       if (end === undefined) return { matched: false, nextIndex: line.length };
+      if (credentialName.test(line.slice(index + 1, end - 1))) {
+        const nestedCandidate = scanImmediateQuotedAssignment(line, end);
+        if (nestedCandidate.matched) return nestedCandidate;
+      }
+      index = end - 1;
+      continue;
+    }
+
+    if (isIdentifierStart(character)) {
+      let end = index + 1;
+      while (end < line.length && isIdentifierPart(line[end] ?? '')) end += 1;
+      if (credentialName.test(line.slice(index, end))) {
+        const nestedCandidate = scanImmediateQuotedAssignment(line, end);
+        if (nestedCandidate.matched) return nestedCandidate;
+      }
       index = end - 1;
       continue;
     }
