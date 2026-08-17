@@ -1,0 +1,5 @@
+{
+  "name": "fixture-cli-clean",
+  "private": true,
+  "bin": { "fixture-cli": "./src/cli.ts" }
+}
