@@ -28,7 +28,7 @@ interface OverallScoreInspection {
 
 function isProhibitedReadinessScoreKey(key: string): boolean {
   const normalizedKey = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
-  return normalizedKey === 'score'
+  return normalizedKey === 'score' || normalizedKey === 'overallscore'
     || (normalizedKey.includes('score') && (
       normalizedKey.includes('readiness') || normalizedKey.includes('production')
     ));
@@ -193,6 +193,8 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     expect(inspectOverallScoreFields(JSON.parse('{"summary":{"readiness_score":90}}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
     expect(inspectOverallScoreFields(JSON.parse('{"sections":[{"readiness-score":90}]}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
     expect(inspectOverallScoreFields(JSON.parse('{"productionReadinessScore":90}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
+    expect(inspectOverallScoreFields(JSON.parse('{"overallScore":90}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
+    expect(inspectOverallScoreFields(JSON.parse('{"summary":{"overall-score":90}}') as unknown).hasProhibitedNumericReadinessScore).toBe(true);
     expect(inspectOverallScoreFields(JSON.parse('{"security":{"cvssScore":9.8}}') as unknown).hasProhibitedNumericReadinessScore).toBe(false);
   });
 
