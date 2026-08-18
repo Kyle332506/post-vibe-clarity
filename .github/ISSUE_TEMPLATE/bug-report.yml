@@ -1,0 +1,65 @@
+name: Bug report
+description: Report reproducible incorrect behavior in PostVibeClarity.
+title: "[Bug] "
+labels:
+  - bug
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, private keys, personal data, or other sensitive values.
+  - type: input
+    id: version
+    attributes:
+      label: PostVibeClarity version
+    validations:
+      required: true
+  - type: dropdown
+    id: project-shape
+    attributes:
+      label: Project shape
+      options:
+        - Web
+        - Native mobile
+        - Desktop
+        - CLI
+        - Backend or API
+        - Worker or scheduled job
+        - Library or SDK
+        - Browser extension
+        - AI agent
+        - Infrastructure
+        - Monorepo
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Safe reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Include locations and rule IDs, never secret values.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed secrets and personal data from this report.
+          required: true

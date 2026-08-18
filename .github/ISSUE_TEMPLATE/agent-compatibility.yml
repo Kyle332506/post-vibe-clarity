@@ -1,0 +1,54 @@
+name: Agent compatibility report
+description: Submit evidence from an agent installation and read-only review.
+title: "[Agent compatibility] "
+labels:
+  - agent-compatibility
+  - triage
+body:
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and exact version
+    validations:
+      required: true
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system
+    validations:
+      required: true
+  - type: input
+    id: install-path
+    attributes:
+      label: Project-scoped installation path
+    validations:
+      required: true
+  - type: dropdown
+    id: discovery
+    attributes:
+      label: Were all four skills discovered?
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+  - type: input
+    id: invocation
+    attributes:
+      label: Invocation used
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Read-only review result
+      description: Describe behavior and provide redacted evidence only.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: The review was read-only and this report contains no sensitive values.
+          required: true

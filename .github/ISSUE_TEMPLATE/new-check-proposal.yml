@@ -1,0 +1,54 @@
+name: New check proposal
+description: Propose an evidence-backed production-preparation check.
+title: "[Check proposal] "
+labels:
+  - check-proposal
+  - triage
+body:
+  - type: input
+    id: domain
+    attributes:
+      label: Readiness domain
+    validations:
+      required: true
+  - type: textarea
+    id: applicability
+    attributes:
+      label: Applicability rule
+      description: State which project evidence makes this check applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence source
+      description: State what can be inspected without exposing sensitive values.
+    validations:
+      required: true
+  - type: dropdown
+    id: action-level
+    attributes:
+      label: Maximum proposed action level
+      options:
+        - Stop before launch
+        - Resolve before launch
+        - Plan soon
+        - Improve when appropriate
+        - Human review needed
+    validations:
+      required: true
+  - type: textarea
+    id: error-boundaries
+    attributes:
+      label: False-positive and false-negative boundaries
+    validations:
+      required: true
+  - type: dropdown
+    id: human-review
+    attributes:
+      label: Is human review required?
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
