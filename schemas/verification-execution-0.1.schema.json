@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://postvibeclarity.dev/schemas/verification-execution-0.1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaId",
+    "schemaVersion",
+    "executionId",
+    "status",
+    "planId",
+    "planFingerprint",
+    "toolkitVersion",
+    "projectRoot",
+    "startedAt",
+    "completedAt",
+    "removedEnvironmentVariables",
+    "results",
+    "coverageGaps",
+    "containmentWarning",
+    "disclaimer"
+  ],
+  "properties": {
+    "schemaId": { "const": "postvibe-verification-execution/0.1" },
+    "schemaVersion": { "const": "0.1" },
+    "executionId": { "$ref": "#/$defs/id" },
+    "status": { "enum": ["completed", "partial"] },
+    "planId": { "$ref": "#/$defs/id" },
+    "planFingerprint": { "$ref": "#/$defs/sha256" },
+    "toolkitVersion": { "$ref": "#/$defs/version" },
+    "projectRoot": { "type": "string", "minLength": 1 },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "removedEnvironmentVariables": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "results": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/result" }
+    },
+    "coverageGaps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/coverageGap" }
+    },
+    "containmentWarning": { "type": "string", "minLength": 1 },
+    "disclaimer": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9:._-]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(?:unknown|[0-9]+\\.[0-9]+\\.[0-9]+)$"
+    },
+    "category": {
+      "enum": ["build", "test", "type-check", "lint"]
+    },
+    "coverageGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "reason"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "category": { "$ref": "#/$defs/category" },
+        "reason": { "type": "string", "minLength": 1 },
+        "workspace": { "type": "string", "minLength": 1 }
+      }
+    },
+    "fileChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["added", "modified", "removed"] }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commandId", "status", "exitCode", "signal", "output", "outputTruncated", "fileChanges"],
+      "properties": {
+        "commandId": { "$ref": "#/$defs/id" },
+        "status": { "enum": ["passed", "failed", "timed-out", "could-not-start", "interrupted", "unverified"] },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "exitCode": { "type": ["integer", "null"] },
+        "signal": { "type": ["string", "null"] },
+        "output": { "type": "string", "maxLength": 262144 },
+        "outputTruncated": { "type": "boolean" },
+        "fileChanges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fileChange" }
+        },
+        "unverifiedReason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

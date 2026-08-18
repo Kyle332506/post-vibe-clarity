@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://postvibeclarity.dev/schemas/verification-plan-0.1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaId",
+    "schemaVersion",
+    "planId",
+    "fingerprint",
+    "toolkitVersion",
+    "generatedAt",
+    "projectRoot",
+    "skillsRoot",
+    "planningReport",
+    "inputDigests",
+    "skillDigests",
+    "commands",
+    "excludedCommands",
+    "categoryAssessments",
+    "coverageGaps",
+    "executionPolicy",
+    "containmentWarning",
+    "disclaimer"
+  ],
+  "properties": {
+    "schemaId": { "const": "postvibe-verification-plan/0.1" },
+    "schemaVersion": { "const": "0.1" },
+    "planId": { "$ref": "#/$defs/id" },
+    "fingerprint": { "$ref": "#/$defs/sha256" },
+    "toolkitVersion": { "$ref": "#/$defs/version" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "projectRoot": { "type": "string", "minLength": 1 },
+    "skillsRoot": { "type": "string", "minLength": 1 },
+    "planningReport": { "$ref": "https://postvibeclarity.dev/schemas/report-0.1.json" },
+    "inputDigests": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/inputDigest" }
+    },
+    "skillDigests": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/inputDigest" }
+    },
+    "commands": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/command" }
+    },
+    "excludedCommands": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/command" }
+    },
+    "categoryAssessments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/categoryAssessment" }
+    },
+    "coverageGaps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/coverageGap" }
+    },
+    "executionPolicy": { "$ref": "#/$defs/executionPolicy" },
+    "containmentWarning": { "type": "string", "minLength": 1 },
+    "disclaimer": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9:._-]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(?:unknown|[0-9]+\\.[0-9]+\\.[0-9]+)$"
+    },
+    "category": {
+      "enum": ["build", "test", "type-check", "lint"]
+    },
+    "inputDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["location", "sha256"],
+      "properties": {
+        "location": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "commandSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "location", "declaration", "sha256"],
+      "properties": {
+        "kind": { "enum": ["package-script", "portable-config"] },
+        "location": { "type": "string", "minLength": 1 },
+        "declaration": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "argv", "cwd", "timeoutSeconds", "requiredAccess", "source"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "category": { "$ref": "#/$defs/category" },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "cwd": { "type": "string", "minLength": 1 },
+        "timeoutSeconds": { "type": "number", "minimum": 1, "maximum": 3600 },
+        "requiredAccess": {
+          "type": "array",
+          "prefixItems": [{ "const": "local-command" }],
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "source": { "$ref": "#/$defs/commandSource" }
+      }
+    },
+    "coverageGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "reason"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "category": { "$ref": "#/$defs/category" },
+        "reason": { "type": "string", "minLength": 1 },
+        "workspace": { "type": "string", "minLength": 1 }
+      }
+    },
+    "categoryAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "state", "reason"],
+      "properties": {
+        "category": { "$ref": "#/$defs/category" },
+        "state": { "enum": ["applicable", "not-applicable", "unverified"] },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "executionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environmentPolicyVersion", "outputLimitBytes", "executor"],
+      "properties": {
+        "environmentPolicyVersion": { "const": "env-filter/0.1" },
+        "outputLimitBytes": { "const": 262144 },
+        "executor": { "const": "local-process/0.1" }
+      }
+    }
+  }
+}
