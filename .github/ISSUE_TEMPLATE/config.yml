@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support guidance
+    url: https://github.com/Kyle332506/post-vibe-clarity/blob/main/SUPPORT.md
+    about: Choose the right support or issue path before filing.
+  - name: Private security reporting
+    url: https://github.com/Kyle332506/post-vibe-clarity/security/advisories/new
+    about: Report suspected vulnerabilities privately and omit secret values.
