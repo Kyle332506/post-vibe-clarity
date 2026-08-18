@@ -168,3 +168,13 @@ The [compatibility manifest](docs/installation/compatibility.yaml) is the source
 ## License
 
 PostVibeClarity is available under the [Apache License 2.0](LICENSE).
+
+## Community and project policies
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) explains how to prepare evidence-backed contributions and verify them.
+- [SUPPORT.md](SUPPORT.md) routes usage questions, defects, compatibility results, security reports, and conduct concerns.
+- [SECURITY.md](SECURITY.md) explains how to report vulnerabilities privately and the security support boundary.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) describes the community standards and confidential conduct-reporting route.
+- [ROADMAP.md](ROADMAP.md) describes planned work and the current scope of the project.
+- [DISCLAIMER.md](DISCLAIMER.md) states the limits of the evidence provided by PostVibeClarity.
+- [LICENSE](LICENSE) contains the Apache License 2.0 governing use of the project.
