@@ -9,6 +9,7 @@ const expectedSkills = [
   'post-vibe-clarity',
   'project-discovery',
   'secret-exposure',
+  'universal-verification',
 ] as const;
 const skillsWithSidecars = new Set(['launch-essentials', 'secret-exposure']);
 
@@ -142,6 +143,21 @@ describe('foundation skill packages', () => {
     expect(body).toMatch(/services/i);
     expect(body).toMatch(/sensitive capabilities/i);
     expect(body).toMatch(/verification environments/i);
+  });
+
+  it('universal-verification: exposes the verify-only sidecar contract', async () => {
+    const input = parse(await readFile(new URL('universal-verification/readiness.yaml', skillsRoot), 'utf8')) as unknown;
+
+    expect(await validateReadinessManifest(input)).toEqual({ ok: true });
+    expect(input).toMatchObject({
+      schemaVersion: '0.1',
+      id: 'universal-verification',
+      skillVersion: '0.1.0',
+      domains: ['data-correctness', 'maintainability-change-safety', 'release-delivery'],
+      modes: ['verify'],
+      maxActionLevel: 1,
+      checks: ['universal-verification.commands'],
+    });
   });
 
   it('secret-exposure: stops rather than exposing content when safe search output is unavailable', async () => {

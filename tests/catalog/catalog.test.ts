@@ -31,7 +31,11 @@ function skillDocument(name: string): string {
   ].join('\n');
 }
 
-function readinessDocument(id: string, check: string): string {
+function readinessDocument(
+  id: string,
+  check: string,
+  mode: 'audit' | 'propose' | 'remediate' | 'verify' = 'audit',
+): string {
   return [
     'schemaVersion: "0.1"',
     `id: ${id}`,
@@ -39,7 +43,7 @@ function readinessDocument(id: string, check: string): string {
     'domains:',
     '  - security-privacy',
     'modes:',
-    '  - audit',
+    `  - ${mode}`,
     'maxActionLevel: 0',
     'checks:',
     `  - ${check}`,
@@ -53,11 +57,12 @@ async function writeCatalogSkill(
   frontmatterName: string,
   sidecarId: string,
   check: string,
+  mode: 'audit' | 'propose' | 'remediate' | 'verify' = 'audit',
 ): Promise<void> {
   const directory = join(catalogRoot, directoryName);
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, 'SKILL.md'), skillDocument(frontmatterName));
-  await writeFile(join(directory, 'readiness.yaml'), readinessDocument(sidecarId, check));
+  await writeFile(join(directory, 'readiness.yaml'), readinessDocument(sidecarId, check, mode));
 }
 
 describe('skill catalog', () => {
@@ -70,6 +75,27 @@ describe('skill catalog', () => {
   it('skips instruction-only skill directories without an error', async () => {
     const catalog = await loadSkillCatalog(root);
     expect(catalog.map((skill) => skill.id)).not.toContain('instruction-only');
+  });
+
+  it('loads a verify-only sidecar', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-catalog-verify-mode-'));
+
+    try {
+      await writeCatalogSkill(
+        temporaryRoot,
+        'verify-only',
+        'verify-only',
+        'verify-only',
+        'verify-only.check',
+        'verify',
+      );
+
+      await expect(loadSkillCatalog(temporaryRoot)).resolves.toMatchObject([
+        { id: 'verify-only', modes: ['verify'] },
+      ]);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
   });
 
   it('routes universal skills and matching capability skills', async () => {

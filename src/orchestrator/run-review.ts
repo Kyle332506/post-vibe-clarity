@@ -110,7 +110,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
   const generatedAt = (options.now ?? (() => new Date().toISOString()))();
   const manifest = await discoverProject(root, () => generatedAt);
   const catalog = await loadSkillCatalog(skillsRoot);
-  const routedSkills = routeSkills(manifest, catalog);
+  const routedSkills = routeSkills(manifest, catalog, 'audit');
   const registeredImplementations = options.checkImplementations === undefined
     ? foundationCheckImplementations
     : options.checkImplementations.map(freezeRegistration);

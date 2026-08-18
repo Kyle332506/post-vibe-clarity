@@ -1,0 +1,12 @@
+schemaVersion: "0.1"
+id: universal-verification
+skillVersion: "0.1.0"
+domains:
+  - data-correctness
+  - maintainability-change-safety
+  - release-delivery
+modes:
+  - verify
+maxActionLevel: 1
+checks:
+  - universal-verification.commands

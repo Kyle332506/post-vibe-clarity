@@ -126,6 +126,11 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     ]);
   });
 
+  it('does not include the verify-only skill in a normal review report', () => {
+    expect(webReport.checkExecutions.map(({ skillId }) => skillId)).not.toContain('universal-verification');
+    expect(cliReport.checkExecutions.map(({ skillId }) => skillId)).not.toContain('universal-verification');
+  });
+
   it('keeps the runtime registration boundary deeply immutable', () => {
     const firstRegistration = foundationCheckImplementations[0];
     const secondRegistration = foundationCheckImplementations[1];
