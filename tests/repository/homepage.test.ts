@@ -17,6 +17,7 @@ describe('repository homepage', () => {
     expect(headingPosition(readme, 'Install with your coding agent')).toBeLessThan(headingPosition(readme, 'How it works'));
     expect(readme).toContain('v0.1 · Stable foundation');
     expect(readme).toContain('[Install](#install-with-your-coding-agent)');
+    expect(readme).toContain('[Example project](examples/launch-candidate/README.md)');
     expect(readme).toContain('[Example report](docs/examples/sample-report.md)');
     expect(readme).toContain('[Current coverage](docs/foundation-coverage.md)');
   });
