@@ -4,11 +4,16 @@ import { validateVerificationPlan } from '../validation/verification-plan-schema
 import { TOOLKIT_VERSION } from '../version.js';
 import { selectedSkillInputLocations } from './build-verification-plan.js';
 import { discoverVerificationCommands } from './discover-commands.js';
-import { digestInputLocations } from './input-digests.js';
+import { collectProjectInputDigests, digestInputLocations } from './input-digests.js';
 import { canonicalJson, fingerprintPlan } from './plan-fingerprint.js';
 import { resolveProjectRoot } from './project-path.js';
 
 export const STALE_PLAN_ERROR = 'Verification plan is stale; create and approve a new plan.';
+
+export interface ValidatePlanStateContext {
+  /** The current plan JSON artifact path, used only to exclude that exact file from the live input inventory. */
+  planArtifactPath?: string;
+}
 
 function requireEqual(left: unknown, right: unknown): void {
   if (canonicalJson(left) !== canonicalJson(right)) throw new Error(STALE_PLAN_ERROR);
@@ -20,7 +25,10 @@ async function resolveSkillsRoot(path: string): Promise<string> {
   return resolved;
 }
 
-export async function validatePlanState(plan: VerificationPlan): Promise<void> {
+export async function validatePlanState(
+  plan: VerificationPlan,
+  context: ValidatePlanStateContext = {},
+): Promise<void> {
   try {
     const validation = await validateVerificationPlan(plan);
     if (!validation.ok) throw new Error(STALE_PLAN_ERROR);
@@ -44,7 +52,7 @@ export async function validatePlanState(plan: VerificationPlan): Promise<void> {
     if (discovery.inputLocations.some((location) => !recordedInputLocations.has(location))) {
       throw new Error(STALE_PLAN_ERROR);
     }
-    requireEqual(await digestInputLocations(projectRoot, [...recordedInputLocations]), plan.inputDigests);
+    requireEqual(await collectProjectInputDigests(projectRoot, context.planArtifactPath), plan.inputDigests);
 
     const skillLocations = await selectedSkillInputLocations(skillsRoot, plan.planningReport.manifest);
     requireEqual(skillLocations, plan.skillDigests.map(({ location }) => location));

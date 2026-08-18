@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -59,5 +59,21 @@ describe('input digests', () => {
 
     await rm(join(root, 'src', 'index.ts'));
     await expect(digestInputLocations(root, ['src/index.ts'])).rejects.toThrow();
+  });
+
+  it('excludes a real output path when the project root is an equivalent symlink', async () => {
+    const root = await temporaryProject({
+      'src/index.ts': 'export const answer = 42;\n',
+      'reports/plan.json': 'selected output',
+    });
+    const aliasParent = await mkdtemp(join(tmpdir(), 'postvibe-input-alias-'));
+    temporaryDirectories.push(aliasParent);
+    const aliasRoot = join(aliasParent, 'project');
+    await symlink(root, aliasRoot, process.platform === 'win32' ? 'junction' : 'dir');
+    const realOutputPath = await realpath(join(root, 'reports', 'plan.json'));
+
+    const digests = await collectProjectInputDigests(aliasRoot, realOutputPath);
+
+    expect(digests.map(({ location }) => location)).toEqual(['src/index.ts']);
   });
 });

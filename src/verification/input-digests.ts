@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { listProjectFiles } from '../discovery/file-index.js';
 import type { InputDigest } from '../model/verification.js';
 import { resolveExistingFileInsideProject, resolveProjectRoot } from './project-path.js';
@@ -11,6 +11,23 @@ function normalizeLocation(location: string): string {
 
 function digestBytes(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+async function resolveThroughExistingAncestor(path: string): Promise<string> {
+  let candidate = resolve(path);
+  const missingSegments: string[] = [];
+
+  while (true) {
+    try {
+      return resolve(await realpath(candidate), ...missingSegments);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const parent = dirname(candidate);
+      if (parent === candidate) throw error;
+      missingSegments.unshift(basename(candidate));
+      candidate = parent;
+    }
+  }
 }
 
 export async function digestInputLocations(root: string, locations: readonly string[]): Promise<InputDigest[]> {
@@ -26,12 +43,14 @@ export async function digestInputLocations(root: string, locations: readonly str
   return digests;
 }
 
-export async function collectProjectInputDigests(root: string, outputPath: string): Promise<InputDigest[]> {
-  const requestedRoot = resolve(root);
+export async function collectProjectInputDigests(root: string, outputPath?: string): Promise<InputDigest[]> {
   const resolvedRoot = await resolveProjectRoot(root);
-  const absoluteOutputPath = resolve(requestedRoot, outputPath);
-  const outputRelative = relative(requestedRoot, absoluteOutputPath);
-  const excludedLocation = outputRelative !== ''
+  const resolvedOutputPath = outputPath === undefined
+    ? undefined
+    : await resolveThroughExistingAncestor(resolve(root, outputPath));
+  const outputRelative = resolvedOutputPath === undefined ? undefined : relative(resolvedRoot, resolvedOutputPath);
+  const excludedLocation = outputRelative !== undefined
+    && outputRelative !== ''
     && !outputRelative.startsWith(`..${sep}`)
     && outputRelative !== '..'
     && !isAbsolute(outputRelative)

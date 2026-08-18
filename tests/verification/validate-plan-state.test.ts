@@ -142,6 +142,32 @@ describe('validatePlanState', () => {
     await expect(validatePlanState(fixture.plan)).rejects.toThrow(STALE_ERROR);
   });
 
+  it('rejects a newly added ordinary source input', async () => {
+    const fixture = await plannedFixture();
+    await writeFiles(fixture.root, {
+      'src/new-module.ts': 'export const newlyAdded = true;\n',
+    });
+
+    await expect(validatePlanState(fixture.plan)).rejects.toThrow(STALE_ERROR);
+  });
+
+  it('excludes the saved plan artifact only through runtime validation context', async () => {
+    const fixture = await plannedFixture();
+    const planArtifactPath = join(fixture.root, 'reports', 'approved-plan.json');
+    const plan = await buildVerificationPlan({
+      root: fixture.root,
+      skillsRoot: fixture.skillsRoot,
+      excludedCommandIds: new Set(),
+      outputPath: planArtifactPath,
+      now: () => '2026-08-18T12:00:00.000Z',
+    });
+    await writeFiles(fixture.root, {
+      'reports/approved-plan.json': `${JSON.stringify(plan, null, 2)}\n`,
+    });
+
+    await expect(validatePlanState(plan, { planArtifactPath })).resolves.toBeUndefined();
+  });
+
   it('rejects a moved project root', async () => {
     const fixture = await plannedFixture();
     const movedRoot = `${fixture.root}-moved`;
