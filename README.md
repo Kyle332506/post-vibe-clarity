@@ -6,7 +6,7 @@ PostVibeClarity discovers your project's shape, applies relevant launch-review s
 
 `v0.1 · Stable foundation` · [Apache-2.0](LICENSE)
 
-[Install](#install-with-your-coding-agent) · [Example report](docs/examples/sample-report.md) · [Current coverage](docs/foundation-coverage.md)
+[Install](#install-with-your-coding-agent) · [Example project](examples/launch-candidate/README.md) · [Example report](docs/examples/sample-report.md) · [Current coverage](docs/foundation-coverage.md)
 
 PostVibeClarity provides evidence and next actions. It does not certify that a project is production-ready, secure, compliant, or defect-free.
 
@@ -57,6 +57,8 @@ Report evidence, missing work, and unknowns
 ## Example report
 
 Read the renderer-backed [sample report](docs/examples/sample-report.md) to see how evidence, findings, and uncertainty are recorded. It is not a launch verdict or a certification.
+
+For a runnable comparison, use the [before-and-after launch candidate](examples/launch-candidate/README.md). It demonstrates two findings being resolved while the report continues to disclose unverified production domains.
 
 Reports use plain labels:
 
