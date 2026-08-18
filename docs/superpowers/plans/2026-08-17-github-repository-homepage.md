@@ -25,7 +25,7 @@
 - The review invoked from installation instructions is read-only by default.
 - `docs/foundation-coverage.md` remains the source of truth for implemented coverage.
 - GitHub Pages, paid support, sponsorship, and universal marketplace packages are out of scope.
-- Public repository creation, settings changes, branch protection, and release publication each require explicit user approval at the external-state gate.
+- Public repository creation and release publication each require explicit user approval at their external-state gate. After creation, repository settings, security controls, branch protection, and manual social-preview upload each require their own separate target/effect preview and explicit user approval; none inherits repository-creation approval.
 - Expected repository owner: `Kyle332506`, resolved from the authenticated GitHub account on 2026-08-17. Reconfirm it before external mutations; committed URLs use this literal login.
 
 ---
@@ -73,6 +73,7 @@
 - Create `tests/repository/community-health.test.ts` — community files and routing boundaries.
 - Create `tests/repository/github-metadata.test.ts` — issue forms, CI, Dependabot, and protection payload.
 - Create `tests/repository/social-preview.test.ts` — PNG dimensions and size.
+- Create `tests/repository/repository-settings.test.ts` — external-state gates and complete settings audit contract.
 - Create `tests/fixtures/sample-readiness-report.ts` — typed report fixture shared by renderer and repository tests.
 - Modify `tests/report/render-report.test.ts` — import the shared sample fixture.
 
@@ -156,6 +157,19 @@ describe('repository homepage', () => {
     expect(headingPosition(readme, 'Install with your coding agent')).toBeGreaterThan(0);
     expect(headingPosition(readme, 'Install with your coding agent')).toBeLessThan(headingPosition(readme, 'How it works'));
     expect(readme).toContain('v0.1 · Stable foundation');
+    expect(readme).toContain('[Install](#install-with-your-coding-agent)');
+    expect(readme).toContain('[Example report](docs/examples/sample-report.md)');
+    expect(readme).toContain('[Current coverage](docs/foundation-coverage.md)');
+  });
+
+  it('puts the guide table directly after the prompt and the roadmap before community links', async () => {
+    const readme = await readRepositoryFile('README.md');
+    const prompt = readme.indexOf('> Install PostVibeClarity');
+    const table = readme.indexOf('| Agent | Project path | Invocation | Evidence label |');
+    expect(table).toBeGreaterThan(prompt);
+    expect(table).toBeLessThan(headingPosition(readme, 'Important limitation'));
+    expect(table).toBeLessThan(headingPosition(readme, 'How it works'));
+    expect(headingPosition(readme, 'Roadmap')).toBeLessThan(headingPosition(readme, 'Community and project policies'));
   });
 
   it('states the readiness and security boundary without burying it', async () => {
@@ -206,6 +220,8 @@ PostVibeClarity discovers your project's shape, applies relevant launch-review s
 
 `v0.1 · Stable foundation` · [Apache-2.0](LICENSE)
 
+[Install](#install-with-your-coding-agent) · [Example report](docs/examples/sample-report.md) · [Current coverage](docs/foundation-coverage.md)
+
 PostVibeClarity provides evidence and next actions. It does not certify that a project is production-ready, secure, compliant, or defect-free.
 
 ## Install with your coding agent
@@ -213,6 +229,8 @@ PostVibeClarity provides evidence and next actions. It does not certify that a p
 Paste this into your coding agent:
 
 > Install PostVibeClarity for this project from `github.com/Kyle332506/post-vibe-clarity`. Use the instructions for this agent, install the skills only inside the current project, verify all four skills are available, and then run a read-only launch review. Do not change project files during the review.
+
+Immediately below this prompt, render the five-row host-guide table from Task 2. Keep it before the full limitation, architecture, and development material. Add a concise `Roadmap` section before community links once `ROADMAP.md` exists.
 
 ## Important limitation
 
@@ -361,6 +379,10 @@ describe('agent installation documentation', () => {
     }
     expect(guide).toContain('project');
     expect(guide).toContain('read-only');
+    expect(guide).toContain('PVC_VERSION="v0.1.0"');
+    expect(guide).toContain('.postvibeclarity-revision');
+    expect(guide).toContain('diff -qr');
+    expect(guide).toContain('.postvibeclarity-backups');
     expectNoEmoji(guide, path);
     await expectLocalLinksResolve(path, guide);
   });
@@ -384,30 +406,20 @@ skills/secret-exposure
 skills/launch-essentials
 ```
 
-For Codex, Cursor, and Windsurf, use `.agents/skills`. Their POSIX copy sequence is:
+For Codex, Cursor, and Windsurf, use `.agents/skills`; Claude Code uses `.claude/skills`. Every guide starts from a version-pinned source and records the resolved commit:
 
 ```bash
-PVC_SOURCE="$(mktemp -d)/post-vibe-clarity"
 PVC_REPO_URL="https://github.com/Kyle332506/post-vibe-clarity.git"
-git clone --depth 1 "$PVC_REPO_URL" "$PVC_SOURCE"
-mkdir -p .agents/skills
-cp -R "$PVC_SOURCE/skills/post-vibe-clarity" .agents/skills/
-cp -R "$PVC_SOURCE/skills/project-discovery" .agents/skills/
-cp -R "$PVC_SOURCE/skills/secret-exposure" .agents/skills/
-cp -R "$PVC_SOURCE/skills/launch-essentials" .agents/skills/
+PVC_VERSION="v0.1.0"
+PVC_WORK="$(mktemp -d)"
+PVC_SOURCE="$PVC_WORK/post-vibe-clarity"
+git clone --branch "$PVC_VERSION" --depth 1 --single-branch "$PVC_REPO_URL" "$PVC_SOURCE"
+PVC_REVISION="$(git -C "$PVC_SOURCE" rev-parse HEAD)"
 ```
 
-For Claude Code, use the same first two lines followed by:
+Stage exactly the four named skill directories in a unique project-local staging directory. Before installation or update, inspect the four exact destination directories. Compare staged and existing directories with path-only `diff -qr`, move each existing exact directory into a unique bounded `.postvibeclarity-backups/update.XXXXXX` directory, and only then move its staged replacement into place. Never delete existing skill directories as an update step. Record `version=v0.1.0` and `commit=$PVC_REVISION` in the destination's `.postvibeclarity-revision`, preserving the prior marker in the same backup. The fallback guide uses equivalent pin, revision, staging, diff, and bounded-backup semantics for its host-defined project scope.
 
-```bash
-mkdir -p .claude/skills
-cp -R "$PVC_SOURCE/skills/post-vibe-clarity" .claude/skills/
-cp -R "$PVC_SOURCE/skills/project-discovery" .claude/skills/
-cp -R "$PVC_SOURCE/skills/secret-exposure" .claude/skills/
-cp -R "$PVC_SOURCE/skills/launch-essentials" .claude/skills/
-```
-
-Explain that the temporary source can be removed after the copy, but do not include a broad or unresolved destructive command.
+Explain that the unique temporary source is disposable after verification, but do not include a broad or unresolved destructive command.
 
 Each guide's verification step lists the four exact skill names and uses the host invocation from `compatibility.yaml`. If the host does not discover a newly created top-level skill directory, instruct the user to restart that host; do not promise hot reload across all versions.
 
@@ -468,7 +480,7 @@ git commit -m "docs: add agent installation guides"
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: `ReadinessReport` from `src/model/report.ts` and `renderMarkdown(report)` from `src/report/render-markdown.ts`.
+- Consumes: `ReadinessReport`, `summarizeReport(...)`, and `derivePartial(...)` from `src/model/report.ts`; `validateReadinessReport(input)` from `src/validation/report-schema.ts`; and `renderMarkdown(report)` from `src/report/render-markdown.ts`.
 - Produces: `sampleReadinessReport: ReadinessReport` as the canonical documentation fixture.
 
 - [ ] **Step 1: Extract the canonical sample report fixture**
@@ -476,82 +488,84 @@ git commit -m "docs: add agent installation guides"
 Move the existing typed `report` object from `tests/report/render-report.test.ts` into `tests/fixtures/sample-readiness-report.ts`, export it as:
 
 ```ts
-import type { ReadinessReport } from '../../src/model/report.js';
+import {
+  derivePartial,
+  readinessDomains,
+  summarizeReport,
+  type CheckExecution,
+  type CoverageGap,
+  type ReadinessReport,
+} from '../../src/model/report.js';
 
 export const sampleControlledCredential = 'pvc_fixture_credential_not_for_output';
+
+const findings: ReadinessReport['findings'] = [
+  {
+    id: 'secret-exposure.fixture-secret',
+    checkId: 'secret-exposure.scan',
+    checkVersion: '0.1.0',
+    skillVersion: '0.1.0',
+    domains: ['security-privacy'],
+    actionLevel: 'stop-before-launch',
+    outcome: 'failed',
+    title: 'Potential credential in source',
+    impact: 'A credential committed to source may be copied or abused.',
+    evidence: [{ kind: 'file', summary: 'Private key marker detected', location: 'src/config.ts:2' }],
+    evidenceConfidence: 'confirmed',
+    applicability: 'The project contains source files.',
+    recommendation: 'Remove and rotate the credential outside this review.',
+    verification: 'Scan the repository again after removal.',
+    humanReviewRequired: false,
+  },
+  {
+    id: 'launch-essentials.privacy-unverified',
+    checkId: 'launch-essentials.privacy-notice',
+    checkVersion: '0.1.0',
+    skillVersion: '0.1.0',
+    domains: ['policy-business-essentials'],
+    actionLevel: 'human-review-needed',
+    outcome: 'unverified',
+    title: 'Privacy notice could not be verified',
+    impact: 'Users may not understand how their information is handled.',
+    evidence: [],
+    evidenceConfidence: 'insufficient',
+    applicability: 'Personal-data collection was detected.',
+    recommendation: 'Review the data inventory and applicable requirements.',
+    verification: 'Provide reviewed policy text and confirm it is linked.',
+    humanReviewRequired: true,
+    unverifiedBoundaries: ['Legal accuracy requires human review.'],
+  },
+];
+
+const checkExecutions: CheckExecution[] = [
+  { checkId: 'launch-essentials.privacy-notice', checkVersion: '0.1.0', skillId: 'launch-essentials', skillVersion: '0.1.0', domains: ['policy-business-essentials'], status: 'unverified', findingIds: ['launch-essentials.privacy-unverified'] },
+  { checkId: 'secret-exposure.scan', checkVersion: '0.1.0', skillId: 'secret-exposure', skillVersion: '0.1.0', domains: ['security-privacy'], status: 'completed', findingIds: ['secret-exposure.fixture-secret'] },
+];
+const routedDomains = new Set(checkExecutions.flatMap(({ domains }) => domains));
+const coverageGaps: CoverageGap[] = [
+  { id: 'check.launch-essentials.privacy-notice', checkId: 'launch-essentials.privacy-notice', skillId: 'launch-essentials', status: 'unverified', domains: ['policy-business-essentials'], reason: 'Legal accuracy requires human review.' },
+  ...readinessDomains.filter((domain) => !routedDomains.has(domain)).map((domain) => ({ id: `domain.${domain}`, status: 'unverified' as const, domains: [domain], reason: 'No routed check covers this domain in the current review.' })),
+];
 
 export const sampleReadinessReport: ReadinessReport = {
   schemaVersion: '0.1',
   runId: 'pvc-20260817',
   generatedAt: '2026-08-17T12:00:00.000Z',
   toolkitVersion: '0.1.0',
-  partial: true,
   manifest: {
     schemaVersion: '0.1',
     projectRoot: '/example/project',
     generatedAt: '2026-08-17T12:00:00.000Z',
-    artifacts: [{
-      value: 'web',
-      confidence: 'confirmed',
-      evidence: [{ kind: 'file', summary: 'Web manifest found', location: 'package.json' }],
-    }],
+    artifacts: [{ value: 'web', confidence: 'confirmed', evidence: [{ kind: 'file', summary: 'Web manifest found', location: 'package.json' }] }],
     frameworks: [],
     services: [],
-    capabilities: [],
+    capabilities: [{ value: 'collects-personal-data', confidence: 'likely', evidence: [{ kind: 'file', summary: 'Account-related source references an email field', location: 'src/register.ts' }] }],
   },
-  findings: [
-    {
-      id: 'secret-exposure.fixture-secret',
-      checkId: 'secret-exposure.scan',
-      skillVersion: '0.1.0',
-      domains: ['security-privacy'],
-      actionLevel: 'stop-before-launch',
-      outcome: 'failed',
-      title: 'Potential credential in source',
-      impact: 'A credential committed to source may be copied or abused.',
-      evidence: [{ kind: 'file', summary: 'Private key marker detected', location: 'src/config.ts:2' }],
-      evidenceConfidence: 'confirmed',
-      applicability: 'The project contains source files.',
-      recommendation: 'Remove and rotate the credential outside this review.',
-      verification: 'Scan the repository again after removal.',
-      humanReviewRequired: false,
-    },
-    {
-      id: 'launch-essentials.privacy-unverified',
-      checkId: 'launch-essentials.privacy-notice',
-      skillVersion: '0.1.0',
-      domains: ['policy-business-essentials'],
-      actionLevel: 'human-review-needed',
-      outcome: 'unverified',
-      title: 'Privacy notice could not be verified',
-      impact: 'Users may not understand how their information is handled.',
-      evidence: [],
-      evidenceConfidence: 'insufficient',
-      applicability: 'Personal-data collection was detected.',
-      recommendation: 'Review the data inventory and applicable requirements.',
-      verification: 'Provide reviewed policy text and confirm it is linked.',
-      humanReviewRequired: true,
-      unverifiedBoundaries: ['Legal accuracy requires human review.'],
-    },
-  ],
-  summary: {
-    byActionLevel: {
-      'stop-before-launch': 1,
-      'resolve-before-launch': 0,
-      'plan-soon': 0,
-      'improve-when-appropriate': 0,
-      'human-review-needed': 1,
-    },
-    byOutcome: {
-      passed: 0,
-      failed: 1,
-      'likely-issue': 0,
-      unverified: 1,
-      'not-applicable': 0,
-      'risk-accepted': 0,
-      'resolved-and-rechecked': 0,
-    },
-  },
+  checkExecutions,
+  coverageGaps,
+  findings,
+  summary: summarizeReport(findings, checkExecutions, coverageGaps),
+  partial: derivePartial(checkExecutions, coverageGaps),
   disclaimer: 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
 };
 ```
@@ -566,11 +580,13 @@ Create `tests/repository/sample-report.test.ts`:
 import { describe, expect, it } from 'vitest';
 import { sampleControlledCredential, sampleReadinessReport } from '../fixtures/sample-readiness-report.js';
 import { renderMarkdown } from '../../src/report/render-markdown.js';
+import { validateReadinessReport } from '../../src/validation/report-schema.js';
 import { expectNoEmoji, readRepositoryFile } from './repository-docs.js';
 
 describe('sample report documentation', () => {
   it('is exactly the current renderer output for the typed sample report', async () => {
     const sample = await readRepositoryFile('docs/examples/sample-report.md');
+    expect(await validateReadinessReport(sampleReadinessReport)).toEqual({ ok: true });
     expect(sample).toBe(renderMarkdown(sampleReadinessReport));
     expect(sample).not.toContain(sampleControlledCredential);
     expect(sample).toContain('Stop before launch');
@@ -595,7 +611,7 @@ Run this one-off local command:
 pnpm exec tsx -e "import { sampleReadinessReport } from './tests/fixtures/sample-readiness-report.ts'; import { renderMarkdown } from './src/report/render-markdown.ts'; process.stdout.write(renderMarkdown(sampleReadinessReport));"
 ```
 
-Inspect the output for controlled values, then add that exact output to `docs/examples/sample-report.md` with `apply_patch`. Do not hand-author additional findings outside the typed fixture.
+First run `validateReadinessReport(sampleReadinessReport)` and require `{ ok: true }`. Inspect the renderer output for controlled values, then add that exact output to `docs/examples/sample-report.md` with `apply_patch`. Do not hand-author additional findings outside the typed, computed, semantically validated fixture.
 
 - [ ] **Step 5: Complete README explanation and coverage**
 
@@ -1177,6 +1193,7 @@ git commit -m "ci: add repository contribution gates"
 **Files:**
 - Create: `assets/social-preview.png`
 - Create: `tests/repository/social-preview.test.ts`
+- Create: `tests/repository/repository-settings.test.ts`
 - Create: `docs/releases/v0.1.0.md`
 - Create: `docs/repository-settings.md`
 - Modify: `README.md`
@@ -1225,9 +1242,13 @@ Inspect the output at full size. Reject any asset with misspelled text, extra sy
 
 Create `docs/releases/v0.1.0.md` with `Foundation`, `Included checks`, `Installation`, `Known limitations`, `Compatibility evidence`, `Verification`, and `Disclaimer` sections. State that v0.1.0 is the stable foundation release and link to `docs/foundation-coverage.md`, the five installation guides, `DISCLAIMER.md`, and `SECURITY.md`. Do not call applications production-ready or fully secured.
 
-- [ ] **Step 5: Write the repository-settings runbook**
+- [ ] **Step 5: Test and write the repository-settings runbook**
 
-Create `docs/repository-settings.md` with the approved description, eight topics, feature toggles, merge policy, security controls, branch protection, social-preview upload, CI audit, and release gate. Include these exact commands, with `PVC_OWNER` resolved from `gh api user --jq .login`:
+First create `tests/repository/repository-settings.test.ts` and run it RED. Require four distinct approval-gate headings; exactly four `Target`, `Effect`, and explicit-wait statements; the vulnerability-alert enablement call; and audit sections/commands for topics, merge methods, Projects, all security controls, private vulnerability reporting, branch protection, CI, and manual social preview.
+
+Create `docs/repository-settings.md` with the approved description, eight topics, feature toggles, merge policy, security controls, branch protection, social-preview upload, complete state audit, and release gate. Before commands for each mutation class, include a separate heading and show `Target`, `Effect`, exact preview values, and `Wait for explicit user approval before continuing.` for: repository settings; security controls; branch protection; and manual social-preview upload. Repository-creation approval does not satisfy any of these gates.
+
+Include these exact commands, with `PVC_OWNER` resolved from `gh api user --jq .login`:
 
 ```bash
 gh repo edit "$PVC_OWNER/post-vibe-clarity" \
@@ -1245,13 +1266,14 @@ gh repo edit "$PVC_OWNER/post-vibe-clarity" \
 Add one `gh repo edit --add-topic` command containing all eight topics. Add:
 
 ```bash
+gh api --method PUT "repos/$PVC_OWNER/post-vibe-clarity/vulnerability-alerts"
 gh repo edit "$PVC_OWNER/post-vibe-clarity" --enable-secret-scanning=true
 gh repo edit "$PVC_OWNER/post-vibe-clarity" --enable-secret-scanning-push-protection=true
 gh api --method PUT "repos/$PVC_OWNER/post-vibe-clarity/private-vulnerability-reporting"
 gh api --method PUT "repos/$PVC_OWNER/post-vibe-clarity/branches/main/protection" --input .github/branch-protection.json
 ```
 
-State that unsupported controls must be recorded as unavailable, not silently claimed. Social-preview upload remains a documented Settings-page action because GitHub does not expose it through the chosen CLI workflow.
+After approved changes, audit repository identity/features, topics, merge methods, Projects, vulnerability alerts, secret scanning, push protection, private vulnerability reporting, branch protection, CI, and the manual social preview. Use read-only `gh api`/`gh repo view` calls for API-visible settings and record the social-preview asset hash, reviewer, date, and visible state manually. State that every control is recorded as configured, unavailable with response/date, or not approved; never silently claim an unsupported control. Social-preview upload remains a documented Settings-page action because GitHub does not expose it through the chosen CLI workflow.
 
 - [ ] **Step 6: Link release and settings documentation**
 
@@ -1259,14 +1281,14 @@ Add a maintainer-only link to `docs/repository-settings.md` in `CONTRIBUTING.md`
 
 - [ ] **Step 7: Run focused tests**
 
-Run: `pnpm test tests/repository/social-preview.test.ts tests/repository/homepage.test.ts tests/repository/community-health.test.ts`
+Run: `pnpm test tests/repository/social-preview.test.ts tests/repository/repository-settings.test.ts tests/repository/homepage.test.ts tests/repository/community-health.test.ts`
 
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add README.md CONTRIBUTING.md assets/social-preview.png docs/releases/v0.1.0.md docs/repository-settings.md tests/repository/social-preview.test.ts
+git add README.md CONTRIBUTING.md assets/social-preview.png docs/releases/v0.1.0.md docs/repository-settings.md tests/repository/social-preview.test.ts tests/repository/repository-settings.test.ts
 git commit -m "docs: prepare stable foundation release"
 ```
 
@@ -1363,25 +1385,33 @@ gh repo create "$PVC_OWNER/post-vibe-clarity" \
 
 Expected: GitHub returns the new repository URL and `main` is the default branch. If an `origin` remote already exists, stop and reconcile it with the user before running `gh repo create`.
 
-- [ ] **Step 7: Apply and audit repository settings**
+- [ ] **Step 7: Obtain approval for repository settings, then apply only that class**
 
-Follow `docs/repository-settings.md`. Apply topics, feature toggles, merge policy, secret scanning, push protection, private vulnerability reporting, and branch protection. Upload `assets/social-preview.png` through Settings. Record any unavailable control explicitly.
+Show the exact target `$PVC_OWNER/post-vibe-clarity` and the effect on description, topics, Issues, Discussions, wiki, Projects, merge methods, and delete-on-merge. Wait for explicit user approval that is separate from repository creation. Only then run the repository-settings commands in `docs/repository-settings.md`; do not change security, branch protection, or social preview in this step.
 
-Audit with:
+- [ ] **Step 8: Obtain approval for security controls, then apply only that class**
 
-```bash
-gh repo view "$PVC_OWNER/post-vibe-clarity" --json nameWithOwner,visibility,description,defaultBranchRef,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,deleteBranchOnMerge,url
-gh api "repos/$PVC_OWNER/post-vibe-clarity/branches/main/protection"
-gh run list --repo "$PVC_OWNER/post-vibe-clarity" --workflow "Foundation CI" --limit 5
-```
+Show the exact repository target and the effect of enabling vulnerability alerts, secret scanning, push protection, and private vulnerability reporting. Wait for a new explicit user approval. Only then run the four reviewed security commands, including `PUT repos/$PVC_OWNER/post-vibe-clarity/vulnerability-alerts`. Record each result independently as configured, unavailable with response/date, or not approved.
 
-Expected: public visibility, exact description, `main`, issues on, discussions/wiki off, branch deletion on, protection present, and a successful `verify` run.
+- [ ] **Step 9: Obtain approval for branch protection, then apply only that class**
 
-- [ ] **Step 8: Obtain separate approval to publish v0.1.0**
+Show the exact `main` branch target and preview `.github/branch-protection.json`, including the required `verify` check, strict mode, linear history, conversation resolution, and force-push/deletion prohibitions. Wait for a new explicit user approval. Only then apply the payload.
+
+- [ ] **Step 10: Obtain approval for manual social-preview upload, then apply only that class**
+
+Show the exact repository Settings target and preview `assets/social-preview.png`, explaining that it becomes the public social preview. Wait for a new explicit user approval. Only then perform the manual upload and record the asset hash, reviewer, date, and visible result.
+
+- [ ] **Step 11: Audit every requested repository state**
+
+Follow the complete read-only audit in `docs/repository-settings.md`: identity/features, all eight topics, merge methods, Projects, vulnerability alerts, secret scanning, push protection, private vulnerability reporting, branch protection, Foundation CI, and manual social preview. Every item must be recorded as configured, unavailable with the observed response/date, or not approved. Do not infer success from a mutation command's exit code.
+
+Expected: the audit record corresponds exactly to the approvals and observed state; any unavailable or unapproved item remains explicit before a release decision.
+
+- [ ] **Step 12: Obtain separate approval to publish v0.1.0**
 
 Show the user the default-branch CI result, known limitations, compatibility labels, release notes, and disclaimer. Do not create a tag or release without explicit approval.
 
-- [ ] **Step 9: Publish and verify the stable foundation release**
+- [ ] **Step 13: Publish and verify the stable foundation release**
 
 After approval:
 

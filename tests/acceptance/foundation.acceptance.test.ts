@@ -79,6 +79,7 @@ async function writeUnknownWebCheckCatalog(root: string): Promise<void> {
   await writeFile(join(skillRoot, 'readiness.yaml'), [
     'schemaVersion: "0.1"',
     'id: web-unknown',
+    'skillVersion: "0.1.0"',
     'domains:',
     '  - reliability-recovery',
     'appliesTo:',
@@ -259,15 +260,15 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
 
     expect(parsed.generatedAt).toBe(fixedTimestamp);
     expect(parsed.toolkitVersion).toBe('0.1.0');
-    expect(parsed.findings.map(({ checkId, skillVersion }) => ({ checkId, skillVersion }))).toEqual([
-      { checkId: 'launch-essentials.privacy-notice', skillVersion: '0.1.0' },
-      { checkId: 'secret-exposure.scan', skillVersion: '0.1.0' },
+    expect(parsed.findings.map(({ checkId, checkVersion, skillVersion }) => ({ checkId, checkVersion, skillVersion }))).toEqual([
+      { checkId: 'launch-essentials.privacy-notice', checkVersion: '0.1.0', skillVersion: '0.1.0' },
+      { checkId: 'secret-exposure.scan', checkVersion: '0.1.0', skillVersion: '0.1.0' },
     ]);
     expect(parsed.disclaimer).toBe(disclaimer);
     expect(markdown).toContain(`Generated at: ${fixedTimestamp}`);
     expect(markdown).toContain('Toolkit version: 0.1.0');
-    expect(markdown).toContain('Check: launch-essentials.privacy-notice (skill version 0.1.0)');
-    expect(markdown).toContain('Check: secret-exposure.scan (skill version 0.1.0)');
+    expect(markdown).toContain('Check: launch-essentials.privacy-notice (check version 0.1.0; skill version 0.1.0)');
+    expect(markdown).toContain('Check: secret-exposure.scan (check version 0.1.0; skill version 0.1.0)');
     expect(markdown.endsWith(`${disclaimer}\n`)).toBe(true);
   });
 
@@ -285,7 +286,8 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
       expect(webUnknownReport.findings).toHaveLength(1);
       expect(webUnknownReport.findings[0]).toMatchObject({
         checkId: 'web-unknown.missing',
-        skillVersion: 'unknown',
+        checkVersion: 'unknown',
+        skillVersion: '0.1.0',
         outcome: 'unverified',
         unverifiedBoundaries: ['No check implementation is registered.'],
       });
@@ -304,6 +306,7 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
       await writeFile(join(incompleteSkillRoot, 'readiness.yaml'), [
         'schemaVersion: "0.1"',
         'id: incomplete',
+        'skillVersion: "0.1.0"',
         'domains:',
         '  - security-privacy',
         'modes:',

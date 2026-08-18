@@ -38,10 +38,12 @@ tsconfig.json                             TypeScript compiler contract
 vitest.config.ts                          Test discovery and coverage settings
 LICENSE                                   Apache License 2.0 text
 schemas/readiness.schema.json             Sidecar schema
+schemas/report-0.1.schema.json             Versioned report schema
 src/model/capability.ts                   Capability-manifest types
 src/model/finding.ts                      Evidence and finding types
 src/model/report.ts                       Report types and summary aggregation
 src/validation/readiness-schema.ts        Sidecar schema validator
+src/validation/report-schema.ts           Runtime report schema and semantic validator
 src/discovery/file-index.ts               Safe project file enumeration
 src/discovery/discover-project.ts         Artifact and capability detection
 src/catalog/load-catalog.ts               Skill-directory and sidecar loading
@@ -53,6 +55,7 @@ src/checks/secret-exposure.ts             Redacted secret-pattern inspection
 src/checks/launch-essentials.ts            Privacy-notice applicability check
 src/report/render-json.ts                 Machine-readable report rendering
 src/report/render-markdown.ts             Plain-language report rendering
+src/cli/report-output.ts                  Exclusive report-file creation
 src/cli.ts                                `postvibe review` command
 skills/post-vibe-clarity/SKILL.md         Main agent-facing orchestrator
 skills/project-discovery/SKILL.md         Discovery workflow instructions
@@ -160,6 +163,7 @@ Create `tests/fixtures/manifests/valid.yaml`:
 ```yaml
 schemaVersion: "0.1"
 id: secret-exposure
+skillVersion: "0.1.0"
 domains:
   - security-privacy
 appliesTo:
@@ -237,10 +241,11 @@ Create `schemas/readiness.schema.json` with these required fields and enums:
   "$id": "https://postvibeclarity.dev/schemas/readiness-0.1.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "id", "domains", "modes", "maxActionLevel", "checks"],
+  "required": ["schemaVersion", "id", "skillVersion", "domains", "modes", "maxActionLevel", "checks"],
   "properties": {
     "schemaVersion": { "const": "0.1" },
     "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "skillVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
     "domains": {
       "type": "array",
       "minItems": 1,
@@ -346,11 +351,14 @@ git commit -m "chore: initialize PostVibeClarity contracts"
 - Create: `src/model/capability.ts`
 - Create: `src/model/finding.ts`
 - Create: `src/model/report.ts`
+- Create: `schemas/report-0.1.schema.json`
+- Create: `src/validation/report-schema.ts`
 - Create: `tests/model/report.test.ts`
+- Create: `tests/validation/report-schema.test.ts`
 
 **Interfaces:**
 - Consumes: The domain and artifact values established by `schemas/readiness.schema.json`.
-- Produces: `CapabilityManifest`, `Evidence`, `Finding`, `ReadinessReport`, and `summarizeFindings(findings)` for all later tasks.
+- Produces: `CapabilityManifest`, `Evidence`, `Finding`, `ReadinessReport`, `summarizeFindings(findings)`, `summarizeReport(...)`, `derivePartial(...)`, and `validateReadinessReport(input)` for all later tasks.
 
 - [ ] **Step 1: Write the failing report-model tests**
 
@@ -365,6 +373,7 @@ const findings: Finding[] = [
   {
     id: 'secret-exposure.fixture-secret',
     checkId: 'secret-exposure.scan',
+    checkVersion: '0.1.0',
     skillVersion: '0.1.0',
     domains: ['security-privacy'],
     actionLevel: 'stop-before-launch',
@@ -381,6 +390,7 @@ const findings: Finding[] = [
   {
     id: 'launch-essentials.privacy-unverified',
     checkId: 'launch-essentials.privacy-notice',
+    checkVersion: '0.1.0',
     skillVersion: '0.1.0',
     domains: ['policy-business-essentials'],
     actionLevel: 'human-review-needed',
@@ -479,6 +489,7 @@ export interface Evidence {
 export interface Finding {
   id: string;
   checkId: string;
+  checkVersion: string;
   skillVersion: string;
   domains: Domain[];
   actionLevel: ActionLevel;
@@ -499,14 +510,43 @@ Create `src/model/report.ts`:
 
 ```ts
 import type { CapabilityManifest } from './capability.js';
-import type { ActionLevel, Finding, Outcome } from './finding.js';
+import type { ActionLevel, Domain, Finding, Outcome } from './finding.js';
 
 const actionLevels: ActionLevel[] = ['stop-before-launch', 'resolve-before-launch', 'plan-soon', 'improve-when-appropriate', 'human-review-needed'];
 const outcomes: Outcome[] = ['passed', 'failed', 'likely-issue', 'unverified', 'not-applicable', 'risk-accepted', 'resolved-and-rechecked'];
+export const checkExecutionStatuses = ['completed', 'unavailable', 'failed', 'unverified'] as const;
+export const readinessDomains: Domain[] = ['product-ux', 'security-privacy', 'data-correctness', 'reliability-recovery', 'operations-observability', 'performance-cost', 'maintainability-change-safety', 'release-delivery', 'policy-business-essentials'];
+
+export type CheckExecutionStatus = typeof checkExecutionStatuses[number];
+export type IncompleteCheckStatus = Exclude<CheckExecutionStatus, 'completed'>;
+
+export interface CheckExecution {
+  checkId: string;
+  checkVersion: string;
+  skillId: string;
+  skillVersion: string;
+  domains: Domain[];
+  status: CheckExecutionStatus;
+  findingIds: string[];
+}
+
+export interface CoverageGap {
+  id: string;
+  status: IncompleteCheckStatus;
+  domains: Domain[];
+  reason: string;
+  checkId?: string;
+  skillId?: string;
+}
 
 export interface FindingSummary {
   byActionLevel: Record<ActionLevel, number>;
   byOutcome: Record<Outcome, number>;
+}
+
+export interface ReportSummary extends FindingSummary {
+  byCheckStatus: Record<CheckExecutionStatus, number>;
+  byDomain: Record<Domain, Record<CheckExecutionStatus, number>>;
 }
 
 export interface ReadinessReport {
@@ -516,8 +556,10 @@ export interface ReadinessReport {
   toolkitVersion: string;
   partial: boolean;
   manifest: CapabilityManifest;
+  checkExecutions: CheckExecution[];
+  coverageGaps: CoverageGap[];
   findings: Finding[];
-  summary: FindingSummary;
+  summary: ReportSummary;
   disclaimer: string;
 }
 
@@ -534,7 +576,30 @@ export function summarizeFindings(findings: Finding[]): FindingSummary {
   }
   return { byActionLevel, byOutcome };
 }
+
+export function summarizeReport(
+  findings: Finding[],
+  checkExecutions: CheckExecution[],
+  coverageGaps: CoverageGap[],
+): ReportSummary {
+  const byCheckStatus = zeroRecord([...checkExecutionStatuses]);
+  const byDomain = Object.fromEntries(readinessDomains.map((domain) => [domain, zeroRecord([...checkExecutionStatuses])])) as ReportSummary['byDomain'];
+  for (const execution of checkExecutions) {
+    byCheckStatus[execution.status] += 1;
+    for (const domain of execution.domains) byDomain[domain][execution.status] += 1;
+  }
+  for (const gap of coverageGaps.filter(({ checkId }) => checkId === undefined)) {
+    for (const domain of gap.domains) byDomain[domain][gap.status] += 1;
+  }
+  return { ...summarizeFindings(findings), byCheckStatus, byDomain };
+}
+
+export function derivePartial(checkExecutions: CheckExecution[], coverageGaps: CoverageGap[]): boolean {
+  return coverageGaps.length > 0 || checkExecutions.some(({ status }) => status !== 'completed');
+}
 ```
+
+Create `schemas/report-0.1.schema.json` and `src/validation/report-schema.ts`. The schema requires every finding's check and skill version, every routed check execution, coverage gaps, and all action/outcome/check/domain summary fields. Runtime semantic validation must recompute the summary and `partial`, reject duplicate or inconsistent finding/execution linkage, require a matching gap for every non-completed check, require an `unverified` gap for every uncovered domain, and ensure finding check/skill provenance agrees with its execution. Resolve the same package-local schema from source and compiled layouts.
 
 - [ ] **Step 4: Run model tests and type checking**
 
@@ -542,6 +607,7 @@ Run:
 
 ```bash
 pnpm test tests/model/report.test.ts
+pnpm test tests/validation/report-schema.test.ts
 pnpm build
 ```
 
@@ -550,7 +616,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/model tests/model
+git add schemas/report-0.1.schema.json src/model src/validation/report-schema.ts tests/model tests/validation/report-schema.test.ts
 git commit -m "feat: define readiness evidence contracts"
 ```
 
@@ -792,6 +858,7 @@ Create `tests/fixtures/skills/secret-exposure/readiness.yaml`:
 ```yaml
 schemaVersion: "0.1"
 id: secret-exposure
+skillVersion: "0.1.0"
 domains:
   - security-privacy
 modes:
@@ -821,6 +888,7 @@ Create `tests/fixtures/skills/launch-essentials/readiness.yaml`:
 ```yaml
 schemaVersion: "0.1"
 id: launch-essentials
+skillVersion: "0.1.0"
 domains:
   - policy-business-essentials
   - security-privacy
@@ -902,6 +970,7 @@ import { validateReadinessManifest } from '../validation/readiness-schema.js';
 export interface SkillDescriptor {
   schemaVersion: '0.1';
   id: string;
+  skillVersion: string;
   domains: Domain[];
   appliesTo?: { anyArtifacts?: ArtifactType[]; allCapabilities?: string[] };
   modes: Array<'audit' | 'propose' | 'remediate' | 'verify'>;
@@ -986,7 +1055,9 @@ Use this exact expected ready item:
 ```ts
 {
   checkId: 'secret-exposure.scan',
+  checkVersion: '0.1.0',
   skillId: 'secret-exposure',
+  skillVersion: '0.1.0',
   status: 'ready',
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
@@ -1019,10 +1090,11 @@ export interface CheckContext {
 }
 
 export interface CheckImplementation {
-  id: string;
-  actionLevel: 0 | 1 | 2 | 3 | 4;
-  requiredAccess: RequiredAccess[];
-  run(context: CheckContext): Promise<Finding[]>;
+  readonly id: string;
+  readonly version: string;
+  readonly actionLevel: 0 | 1 | 2 | 3 | 4;
+  readonly requiredAccess: readonly RequiredAccess[];
+  readonly run: (context: CheckContext) => Promise<Finding[]>;
 }
 
 export type CheckRegistry = ReadonlyMap<string, CheckImplementation>;
@@ -1037,17 +1109,19 @@ import type { SkillDescriptor } from '../catalog/load-catalog.js';
 import type { CheckRegistry, RequiredAccess } from './check-registry.js';
 
 export type ReviewPlanItem =
-  | { checkId: string; skillId: string; status: 'ready'; actionLevel: 0 | 1; requiredAccess: RequiredAccess[] }
-  | { checkId: string; skillId: string; status: 'unavailable'; reason: string };
+  | { checkId: string; checkVersion: string; skillId: string; skillVersion: string; status: 'ready'; actionLevel: 0 | 1; requiredAccess: readonly RequiredAccess[] }
+  | { checkId: string; checkVersion: 'unknown'; skillId: string; skillVersion: string; status: 'unavailable'; reason: string };
 
 export function buildReviewPlan(skills: SkillDescriptor[], registry: CheckRegistry): ReviewPlanItem[] {
   return skills.flatMap((skill) => skill.checks.map((checkId): ReviewPlanItem => {
     const implementation = registry.get(checkId);
-    if (!implementation) return { checkId, skillId: skill.id, status: 'unavailable', reason: 'No check implementation is registered.' };
+    if (!implementation) return { checkId, checkVersion: 'unknown', skillId: skill.id, skillVersion: skill.skillVersion, status: 'unavailable', reason: 'No check implementation is registered.' };
     if (implementation.actionLevel > 1) throw new Error(`Foundation runner cannot execute Level ${implementation.actionLevel} check ${checkId}`);
     return {
       checkId,
+      checkVersion: implementation.version,
       skillId: skill.id,
+      skillVersion: skill.skillVersion,
       status: 'ready',
       actionLevel: implementation.actionLevel,
       requiredAccess: implementation.requiredAccess,
@@ -1097,7 +1171,7 @@ export const apiKey = 'fixture-secret-value-never-use';
 
 - [ ] **Step 2: Write the failing detection and redaction test**
 
-Create `tests/checks/secret-exposure.test.ts`:
+Create `tests/checks/secret-exposure.test.ts` with positive private-key and quoted-literal cases, negative empty/environment/template-placeholder cases, and JavaScript/TypeScript plus generic-text compound assignment cases (`||=`, `??=`, logical, arithmetic, shift, and bitwise assignment). All assertions must prove that matched values never appear in returned findings:
 
 ```ts
 import { fileURLToPath } from 'node:url';
@@ -1130,13 +1204,14 @@ Expected: FAIL because the secret check does not exist.
 
 - [ ] **Step 4: Implement redacted matching**
 
-Create `src/checks/secret-exposure.ts` with rules for private-key markers and quoted assignments to names containing `apiKey`, `api_key`, `secret`, `token`, or `password`. For every match, store only the rule label and one-based line number.
+Create `src/checks/secret-exposure.ts` with rules for private-key markers and quoted assignments to names containing `apiKey`, `api_key`, `secret`, `token`, or `password`. Support simple and relevant compound assignment operators, including `||=`, `??=`, logical, arithmetic, shift, and bitwise assignment. Omit empty or whitespace-only strings and a bounded documented set of explicit environment/template placeholders; continue to report unknown non-empty literal values conservatively. For every match, store only the rule label and one-based line number.
 
 The exported implementation must use these stable finding fields:
 
 ```ts
 export const secretExposureCheck: CheckImplementation = {
   id: 'secret-exposure.scan',
+  version: '0.1.0',
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
   async run({ root }) {
@@ -1151,6 +1226,7 @@ export const secretExposureCheck: CheckImplementation = {
         findings.push({
           id: `secret-exposure.${file}:${index + 1}.${rule}`,
           checkId: 'secret-exposure.scan',
+          checkVersion: '0.1.0',
           skillVersion: '0.1.0',
           domains: ['security-privacy'],
           actionLevel: 'stop-before-launch',
@@ -1256,6 +1332,7 @@ The missing-policy finding must use this language:
 {
   id: 'launch-essentials.privacy-notice-missing',
   checkId: 'launch-essentials.privacy-notice',
+  checkVersion: '0.1.0',
   skillVersion: '0.1.0',
   domains: ['policy-business-essentials', 'security-privacy'],
   actionLevel: 'human-review-needed',
@@ -1301,7 +1378,7 @@ git commit -m "feat: add privacy launch-essential check"
 - Create: `tests/report/render-report.test.ts`
 
 **Interfaces:**
-- Consumes: `ReadinessReport` and `FindingSummary`.
+- Consumes: `ReadinessReport` and `ReportSummary`.
 - Produces: `renderJson(report): string` and `renderMarkdown(report): string`.
 
 - [ ] **Step 1: Write failing report-rendering tests**
@@ -1347,6 +1424,10 @@ Create `src/report/render-markdown.ts` with these fixed sections:
 
 ## Findings
 
+## Checks performed
+
+## Coverage gaps
+
 ## Unverified areas
 
 ## Scope
@@ -1354,7 +1435,7 @@ Create `src/report/render-markdown.ts` with these fixed sections:
 ## Important limitation
 ```
 
-Render action-level and outcome counts from `report.summary`, group findings by action level, include evidence locations without source snippets, and finish with `report.disclaimer`. Do not infer a verdict from zero blocker findings.
+Render action-level, outcome, and check-status counts from `report.summary`; group findings by action level; show check and skill provenance, every check execution, and every check/domain coverage gap; include evidence locations without source snippets; and finish with `report.disclaimer`. Do not infer a verdict from zero blocker findings or from zero findings overall.
 
 - [ ] **Step 5: Run report and build tests**
 
@@ -1403,6 +1484,8 @@ expect(report.summary.byOutcome['likely-issue']).toBe(1);
 expect(report.disclaimer).toContain('does not certify');
 ```
 
+Also inject controlled check implementations to prove that a zero-finding success is recorded as `completed`, a thrown check is recorded as `failed` without discarding prior findings, an unverified result gets a matching gap, uncovered domains get `unverified` gaps, and `partial` is derived from those execution/gap records. Assert every finding carries the routed check and skill versions and the completed report passes `validateReadinessReport`.
+
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run:
@@ -1422,6 +1505,7 @@ export interface RunReviewOptions {
   root: string;
   skillsRoot: string;
   now?: () => string;
+  checkImplementations?: readonly CheckImplementation[];
 }
 
 export async function runReview(options: RunReviewOptions): Promise<ReadinessReport>
@@ -1434,13 +1518,16 @@ The function must:
 3. Load and route the catalog.
 4. Build a registry containing `secretExposureCheck` and `privacyNoticeCheck`.
 5. Build the review plan.
-6. Convert unavailable plan items into `unverified` findings with their reason.
-7. Run ready checks in deterministic `checkId` order.
-8. Sort findings by `checkId` and then `id`.
-9. Set `partial` when any finding is unverified.
-10. Build `runId` as `pvc-` plus the timestamp with non-digits removed.
-11. Use toolkit version `0.1.0`.
-12. Use the exact report disclaimer from the design specification.
+6. Convert unavailable plan items into `unverified` findings and `unavailable` execution/gap records while preserving sidecar provenance.
+7. Run ready checks in deterministic `checkId` order and record even a zero-finding success as `completed`.
+8. Isolate each thrown check as `failed` with a redacted synthetic finding and gap while retaining all earlier evidence.
+9. Record checks producing unverified findings as `unverified` and create matching check gaps.
+10. Add an `unverified` coverage gap for every domain with no routed check; do not create synthetic domain findings.
+11. Sort findings and gaps deterministically.
+12. Compute the summary and derive `partial` from execution and coverage state.
+13. Build `runId` as `pvc-` plus the timestamp with non-digits removed.
+14. Use toolkit version `0.1.0` and the exact report disclaimer from the design specification.
+15. Validate the completed object against `report-0.1.schema.json` and the semantic invariants before returning it.
 
 - [ ] **Step 4: Run the orchestrator test**
 
@@ -1477,14 +1564,16 @@ Defaults:
 - `--format`: `markdown`
 - no `--output`: write the selected format to stdout
 
-When `--output` is present, create the directory and write `<runId>.md` or `<runId>.json`. Print only the output path to stdout. Validation and execution failures go to stderr and set `process.exitCode = 1` without printing stack traces unless `POSTVIBE_DEBUG=1`.
+When `--output` is present, create the directory and exclusively create `<runId>.md` or `<runId>.json`. If that exact path exists, fail clearly without overwriting it. Print only a newly written output path to stdout. Validation and execution failures go to stderr and set `process.exitCode = 1` without printing stack traces unless `POSTVIBE_DEBUG=1`.
+
+Add `src/cli/report-output.ts` and `tests/cli/report-output.test.ts` to cover real exclusive creation and the no-overwrite collision path.
 
 - [ ] **Step 7: Run CLI, orchestrator, and build tests**
 
 Run:
 
 ```bash
-pnpm test tests/orchestrator/run-review.test.ts tests/cli/cli.test.ts
+pnpm test tests/orchestrator/run-review.test.ts tests/validation/report-schema.test.ts tests/cli/cli.test.ts tests/cli/report-output.test.ts
 pnpm build
 ```
 
@@ -1493,7 +1582,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/orchestrator/run-review.ts src/cli.ts tests/orchestrator/run-review.test.ts tests/cli
+git add src/orchestrator/run-review.ts src/cli.ts src/cli/report-output.ts tests/orchestrator/run-review.test.ts tests/cli
 git commit -m "feat: add end-to-end launch review command"
 ```
 
@@ -1561,6 +1650,7 @@ Use these sidecars:
 ```yaml
 schemaVersion: "0.1"
 id: secret-exposure
+skillVersion: "0.1.0"
 domains:
   - security-privacy
 modes:
@@ -1576,6 +1666,7 @@ checks:
 ```yaml
 schemaVersion: "0.1"
 id: launch-essentials
+skillVersion: "0.1.0"
 domains:
   - policy-business-essentials
   - security-privacy

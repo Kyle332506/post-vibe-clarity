@@ -35,6 +35,7 @@ function readinessDocument(id: string, check: string): string {
   return [
     'schemaVersion: "0.1"',
     `id: ${id}`,
+    'skillVersion: "0.1.0"',
     'domains:',
     '  - security-privacy',
     'modes:',
@@ -63,6 +64,7 @@ describe('skill catalog', () => {
   it('loads valid sidecars next to Agent Skills', async () => {
     const catalog = await loadSkillCatalog(root);
     expect(catalog.map((skill) => skill.id)).toEqual(['launch-essentials', 'secret-exposure']);
+    expect(catalog.map((skill) => skill.skillVersion)).toEqual(['0.1.0', '0.1.0']);
   });
 
   it('skips instruction-only skill directories without an error', async () => {

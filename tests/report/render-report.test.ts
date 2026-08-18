@@ -33,6 +33,12 @@ describe('report renderers', () => {
     expect(markdown).toContain('src/config.ts:2');
     expect(markdown).toContain('## Unverified areas');
     expect(markdown).toContain('Legal accuracy requires human review.');
+    expect(markdown).toContain('## Checks performed');
+    expect(markdown).toContain('secret-exposure.scan: completed');
+    expect(markdown).toContain('launch-essentials.privacy-notice: unverified');
+    expect(markdown).toContain('Check: secret-exposure.scan (check version 0.1.0; skill version 0.1.0)');
+    expect(markdown).toContain('## Coverage gaps');
+    expect(markdown).toContain('Product and user experience: No routed check covers this domain in the current review.');
     expect(markdown).toContain('## Scope');
     expect(markdown).toContain('/example/project');
     expect(markdown).toContain('## Important limitation');

@@ -28,7 +28,7 @@ The hero may show only evidence-backed badges:
 - The Apache-2.0 license badge links to `LICENSE`.
 - The release-positioning badge reads `v0.1 · Stable foundation` and must not use certification or seal-like styling.
 
-The primary link moves to agent installation. Secondary links open the example report and current coverage map.
+The primary hero link moves to agent installation. Secondary hero links open the example report and current coverage map.
 
 ## Non-certification boundary
 
@@ -57,7 +57,7 @@ Generated reports retain their existing disclaimer. The README and related repos
 The README follows this order:
 
 1. Hero, production-preparation promise, evidence-backed badges, and short boundary statement.
-2. Agent-first installation.
+2. Agent-first installation, with the host guide table directly below the copy-paste prompt.
 3. Full disclaimer.
 4. How the review works.
 5. Example report and interpretation guidance.
@@ -93,6 +93,10 @@ Each host guide must contain:
 - Update instructions.
 - Uninstall instructions.
 - The last-tested host version and test date when runtime testing exists.
+- A release tag or commit pin, the resolved installed revision, and a project-local revision record.
+- A preflight of the exact destination directories and staged comparison or bounded backup before any update replaces existing content.
+
+The copy-paste prompt is immediately followed by links to all five installation guides in a compact compatibility table. Architecture, limitations beyond the required installation disclaimer, and development material do not interrupt this first-use path.
 
 The initial guides are:
 
@@ -155,7 +159,7 @@ The interpretation immediately below the example states:
 
 > No overall readiness score is calculated. “No findings” does not mean “production-ready”; it means only that the checks performed did not produce findings from the available evidence.
 
-The canonical full example is stored in `docs/examples/sample-report.md` and must be generated from or validated against the report schema rather than maintained as an unrelated marketing mockup.
+The canonical full example is stored in `docs/examples/sample-report.md` and must be generated from the production renderer over a typed fixture that passes the versioned runtime schema and semantic invariants. Its capability signals, routed checks, provenance, computed summary, `partial` value, and coverage gaps must agree; it is not maintained as an unrelated marketing mockup.
 
 ## Current coverage
 
@@ -248,10 +252,14 @@ Create a public repository named `post-vibe-clarity` under the user's personal G
 - Squash merging enabled as the default merge method.
 - Automatic deletion of merged head branches enabled.
 - Default branch protection or a ruleset that blocks force pushes and deletion and requires the foundation CI check.
-- Dependabot alerts and updates enabled.
+- Dependabot vulnerability alerts and updates enabled.
 - Secret scanning, security advisories, and private vulnerability reporting enabled where the account and repository support them. Any unavailable control is recorded as unavailable rather than presented as configured.
 
 The social-preview asset uses a restrained PostVibeClarity wordmark, the production-preparation tagline, and no emojis, security seals, readiness seals, or certification imagery.
+
+Repository creation does not authorize later settings mutations. After creation, the operator must present the exact target and effect and obtain a separate explicit user approval before each of these four state classes: repository settings and topics; security controls, including vulnerability alerts; branch protection; and manual social-preview upload. These gates cannot be combined with repository-creation approval or with one another.
+
+After approved changes, the runbook audits repository identity and features, all topics, merge methods, Projects, vulnerability alerts, secret scanning and push protection, private vulnerability reporting, branch protection, the required CI workflow, and the manual social preview. Each requested control is recorded as `configured`, `unavailable` with the observed response and date, or `not approved`; unsupported controls are never claimed as enabled.
 
 ## Release presentation
 
@@ -273,6 +281,8 @@ Implementation is complete when:
 8. Issue forms parse as valid GitHub issue-form YAML.
 9. The existing foundation test suite remains green.
 10. The final repository settings are audited against this specification before the `v0.1.0` release is published.
+11. Installation and update examples use a pinned source revision and preserve or visibly reconcile existing project-scoped skill content.
+12. Repository settings, security controls, branch protection, and social-preview upload each have a distinct target/effect approval gate.
 
 ## Out of scope
 

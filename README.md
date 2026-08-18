@@ -6,6 +6,8 @@ PostVibeClarity discovers your project's shape, applies relevant launch-review s
 
 `v0.1 · Stable foundation` · [Apache-2.0](LICENSE)
 
+[Install](#install-with-your-coding-agent) · [Example report](docs/examples/sample-report.md) · [Current coverage](docs/foundation-coverage.md)
+
 PostVibeClarity provides evidence and next actions. It does not certify that a project is production-ready, secure, compliant, or defect-free.
 
 ## Install with your coding agent
@@ -13,6 +15,18 @@ PostVibeClarity provides evidence and next actions. It does not certify that a p
 Paste this into your coding agent:
 
 > Install PostVibeClarity for this project from `github.com/Kyle332506/post-vibe-clarity`. Use the instructions for this agent, install the skills only inside the current project, verify all four skills are available, and then run a read-only launch review. Do not change project files during the review.
+
+Choose the guide for the coding agent used in your project. Each guide installs the four canonical skills from a pinned release into that project's supported skill location.
+
+| Agent | Project path | Invocation | Evidence label |
+| --- | --- | --- | --- |
+| [Codex](docs/installation/codex.md) | `.agents/skills` | `$post-vibe-clarity` | Documented |
+| [Claude Code](docs/installation/claude-code.md) | `.claude/skills` | `/post-vibe-clarity` | Documented |
+| [Cursor](docs/installation/cursor.md) | `.agents/skills` | `/post-vibe-clarity` | Documented |
+| [Windsurf](docs/installation/windsurf.md) | `.agents/skills` | `@post-vibe-clarity` | Documented |
+| [Other Agent Skills hosts](docs/installation/agent-skills.md) | Host-defined | Host-defined | Format compatible |
+
+The [compatibility manifest](docs/installation/compatibility.yaml) is the source for these labels: Tested requires recorded runtime acceptance; Documented means the host documents the required format or location; Format compatible covers documented Agent Skills format without recorded host acceptance; and Not verified means neither evidence type is recorded.
 
 ## Important limitation
 
@@ -98,9 +112,9 @@ The v0.1 foundation currently provides:
 
 - Read-only Node-project discovery for evidence-backed web, mobile, library, CLI, framework, and likely account-email signals.
 - Capability-driven skill routing through validated `readiness.yaml` sidecars with catalog identity and ownership checks.
-- Redacted inspection for private-key markers and quoted credential assignments, including syntax-aware JavaScript/TypeScript scanning and explicit environment/key text-file coverage.
+- Redacted inspection for private-key markers and quoted credential assignments, including compound assignment operators, syntax-aware JavaScript/TypeScript scanning, explicit environment/key text-file coverage, and bounded omission of empty/template values.
 - Privacy-notice candidate inspection when account-related personal-data collection is detected.
-- Evidence-backed Markdown and JSON reports with explicit unverified coverage.
+- Evidence-backed, runtime-validated Markdown and JSON reports with check/skill provenance, per-check execution states, explicit domain coverage gaps, and collision-safe output creation.
 - Portable orchestrator, discovery, secret-exposure, and launch-essential Agent Skills with manual fallbacks.
 
 The foundation does not yet implement a remediation engine, a complete nine-domain check catalog, deep artifact packs, framework/provider adapters, deployed-environment verification, or cross-agent runtime acceptance.
@@ -108,9 +122,9 @@ The foundation does not yet implement a remediation engine, a complete nine-doma
 Runtime states are intentionally distinct:
 
 - The portable discovery skill provides guided classification for project shapes the deterministic detector does not cover; it does not provide a readiness audit for those shapes.
-- Readiness concerns present only in the design taxonomy are omitted audit coverage and are documented gaps, not per-run findings or passes.
-- A successfully loaded and routed sidecar check with no registered implementation becomes an `unverified` finding and makes the report partial.
-- An unsupported or unregistered domain has no synthetic per-run finding; its absence is documented in the [foundation coverage map](docs/foundation-coverage.md).
+- Readiness concerns present only in the design taxonomy do not become synthetic findings; uncovered domains appear as `coverageGaps`, so the report remains partial.
+- Every routed check is recorded as `completed`, `unavailable`, `failed`, or `unverified`. A missing implementation becomes an `unverified` finding, and a thrown check is isolated so earlier evidence remains available.
+- An unsupported or unregistered domain has no synthetic finding, but it has an explicit per-run domain coverage gap and remains documented in the [foundation coverage map](docs/foundation-coverage.md).
 - Unreadable or invalid project/catalog input is fatal before a report is created. The CLI emits only a sanitized failure message, or sanitized diagnostics in debug mode.
 
 ## Requirements
@@ -146,24 +160,16 @@ The CLI contract is:
 postvibe review [project-path] --skills <skills-path> --format <markdown|json> [--output <directory>]
 ```
 
-## Project-scoped skill installation
+## Roadmap
 
-Choose the guide for the coding agent used in your project. Each guide installs the four canonical skills into that project's supported skill location.
+Near-term directions include:
 
-| Agent | Project path | Invocation | Evidence label |
-| --- | --- | --- | --- |
-| [Codex](docs/installation/codex.md) | `.agents/skills` | `$post-vibe-clarity` | Documented |
-| [Claude Code](docs/installation/claude-code.md) | `.claude/skills` | `/post-vibe-clarity` | Documented |
-| [Cursor](docs/installation/cursor.md) | `.agents/skills` | `/post-vibe-clarity` | Documented |
-| [Windsurf](docs/installation/windsurf.md) | `.agents/skills` | `@post-vibe-clarity` | Documented |
-| [Other Agent Skills hosts](docs/installation/agent-skills.md) | Host-defined | Host-defined | Format compatible |
+- Broader production-readiness checks.
+- Framework, provider, deployment, and operational verification.
+- Additional agent-runtime acceptance and approval-gated remediation.
+- Deeper artifact and evidence packs.
 
-The [compatibility manifest](docs/installation/compatibility.yaml) is the source for these labels.
-
-- Tested: runtime acceptance was recorded with a host version and date.
-- Documented: the host documents the required skill format or location.
-- Format compatible: the Agent Skills format is documented, but host runtime acceptance is not recorded.
-- Not verified: neither documentation evidence nor runtime acceptance is recorded.
+These are directions, not current coverage or promised dates. Read the [full roadmap](ROADMAP.md) and use the [foundation coverage map](docs/foundation-coverage.md) for what exists now.
 
 ## License
 

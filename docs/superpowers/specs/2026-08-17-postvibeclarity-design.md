@@ -310,7 +310,7 @@ Rerun the relevant independent checks. Record new evidence and any regression re
 
 ### 9.6 Report
 
-Produce human-readable and machine-readable outputs containing findings, unknowns, accepted risks, changes, evidence, timestamps, environment information, and version information.
+Produce human-readable and machine-readable outputs containing findings, every routed check's execution state, coverage gaps, unknowns, accepted risks, changes, evidence, timestamps, environment information, and toolkit, skill, and check version information.
 
 ## 10. Finding and Evidence Model
 
@@ -356,7 +356,13 @@ Each finding records:
 - Human-review requirement
 - Affected artifacts and locations
 
-### 10.4 Accepted risks
+### 10.4 Required check-execution and coverage fields
+
+Every routed check records a stable check ID, check version, owning skill ID and version, routed domains, one execution state (`completed`, `unavailable`, `failed`, or `unverified`), and the exact finding IDs it produced. A successful check that returns no findings is still recorded as `completed`.
+
+Every unavailable, failed, or unverified check has a matching coverage-gap record with a redacted reason. Every domain without a routed check has an `unverified` domain coverage gap rather than a synthetic finding. A thrown check is isolated: the report retains evidence from checks that already completed and records the failed check without exposing raw exception content.
+
+### 10.5 Accepted risks
 
 Accepting a risk records:
 
@@ -369,7 +375,11 @@ Accepting a risk records:
 
 ## 11. Reporting and Language Policy
 
-PostVibeClarity must not produce an overall numeric readiness score. Reports show counts and coverage by action level, outcome, domain, and completion state.
+PostVibeClarity must not produce an overall numeric readiness score. Reports show counts and coverage by action level, outcome, domain, and completion state. The top-level `partial` field is derived from check execution and coverage state: any coverage gap or non-completed check makes the report partial.
+
+The v0.1 machine-readable report is validated at runtime against a versioned JSON Schema before it is returned or rendered. Semantic validation recomputes summary counts, derives `partial`, checks finding-to-execution linkage and check/skill provenance, requires gaps for incomplete checks and uncovered domains, and rejects contradictory state. Checked-in examples use the same typed model, computed summary functions, semantic validator, and production renderer.
+
+When a CLI report path is requested, the file is created exclusively. A run-ID collision fails with the exact bounded path and leaves the existing report unchanged.
 
 The toolkit must not generate unconditional claims such as:
 
@@ -495,7 +505,7 @@ Each agent guide includes:
 6. A harmless discovery-only test
 7. Update, pin, and uninstall instructions
 
-Opaque `curl | sh` installation is prohibited. Users are encouraged to inspect skills and bundled scripts before granting execution permissions.
+Opaque `curl | sh` installation is prohibited. Installations resolve a version-pinned tag or commit, record the installed version and revision, preflight exact destination directories, and stage plus diff or make bounded backups before replacing an existing skill. Update procedures preserve local changes or stop for reconciliation; they do not remove moving-default-branch installations in place. Users are encouraged to inspect skills and bundled scripts before granting execution permissions.
 
 User-facing agent support labels are:
 
@@ -515,6 +525,9 @@ Every status display states:
 - A failed check records the failure and retains prior evidence.
 - A check that cannot start is unverified.
 - A canceled run produces a partial report.
+- A successful zero-finding check is recorded as completed rather than disappearing from the report.
+- Every routed check records one durable execution state, and omitted domains produce explicit coverage gaps.
+- The `partial` flag is computed from those execution and coverage records rather than inferred only from findings.
 - A remediation failure records files changed and the observed resulting state.
 - PostVibeClarity never claims rollback occurred unless rollback was performed and verified.
 - Unsupported frameworks receive portable checks and explicit coverage gaps.
@@ -594,6 +607,8 @@ New skills and adapters include:
 - Cost and abuse boundaries
 - Accessibility and neglected UX states
 - Maintenance and architecture warning signs
+
+The foundation secret-exposure implementation is deliberately bounded: it detects private-key markers and non-empty string literals assigned to credential-like names, including relevant simple and compound assignment operators. It omits empty values and a documented set of explicit environment/template placeholders rather than turning them into launch blockers. Unknown non-empty literal assignments remain conservative findings, ambiguous custom placeholders require human judgment, and matched values never enter findings or reports.
 
 ### 17.3 Version 0.1 artifact recognition
 

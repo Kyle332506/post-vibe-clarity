@@ -10,6 +10,7 @@ export interface CheckContext {
 
 export interface CheckImplementation {
   readonly id: string;
+  readonly version: string;
   readonly actionLevel: 0 | 1 | 2 | 3 | 4;
   readonly requiredAccess: readonly RequiredAccess[];
   readonly run: (context: CheckContext) => Promise<Finding[]>;
