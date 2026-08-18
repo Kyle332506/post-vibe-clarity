@@ -87,17 +87,22 @@ postvibe review [project-path] --skills <skills-path> --format <markdown|json> [
 
 ## Project-scoped skill installation
 
-Inspect the skill contents, then manually copy the four canonical directories into the target project's `.agents/skills` directory:
+Choose the guide for the coding agent used in your project. Each guide installs the four canonical skills into that project's supported skill location.
 
-```bash
-mkdir -p /path/to/project/.agents/skills
-cp -R skills/post-vibe-clarity /path/to/project/.agents/skills/
-cp -R skills/project-discovery /path/to/project/.agents/skills/
-cp -R skills/secret-exposure /path/to/project/.agents/skills/
-cp -R skills/launch-essentials /path/to/project/.agents/skills/
-```
+| Agent | Project path | Invocation | Evidence label |
+| --- | --- | --- | --- |
+| [Codex](docs/installation/codex.md) | `.agents/skills` | `$post-vibe-clarity` | Documented |
+| [Claude Code](docs/installation/claude-code.md) | `.claude/skills` | `/post-vibe-clarity` | Documented |
+| [Cursor](docs/installation/cursor.md) | `.agents/skills` | `/post-vibe-clarity` | Documented |
+| [Windsurf](docs/installation/windsurf.md) | `.agents/skills` | `@post-vibe-clarity` | Documented |
+| [Other Agent Skills hosts](docs/installation/agent-skills.md) | Host-defined | Host-defined | Format compatible |
 
-Start a new agent session after installation if the host discovers skills only at startup. Host-specific installation automation, metadata overlays, verification, updates, and uninstall behavior belong to a separate agent-distribution implementation plan; they are intentionally not part of this foundation.
+The [compatibility manifest](docs/installation/compatibility.yaml) is the source for these labels.
+
+- Tested: runtime acceptance was recorded with a host version and date.
+- Documented: the host documents the required skill format or location.
+- Format compatible: the Agent Skills format is documented, but host runtime acceptance is not recorded.
+- Not verified: neither documentation evidence nor runtime acceptance is recorded.
 
 ## License
 
