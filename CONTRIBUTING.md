@@ -37,6 +37,10 @@ Submit agent compatibility results through the Agent compatibility form describe
 
 Keep pull requests focused. Explain the problem, the proposed change, the evidence supporting it, and the verification you ran. Update affected documentation and tests in the same pull request. Maintainers may ask for a smaller scope, clearer evidence, or an explicit statement of what remains unverified.
 
+## Maintainer repository settings
+
+Maintainers applying GitHub presentation, security controls, branch protection, CI audits, or release gates should follow the [repository settings runbook](docs/repository-settings.md). This is an operator-only procedure; it does not make claims about application readiness or security.
+
 ## No certification claims
 
 PostVibeClarity provides evidence and next actions; it does not certify that a project is production-ready, secure, compliant, or defect-free. Do not describe a check, report, fixture, or compatibility result as a certification, guarantee, complete audit, or proof that risk has been eliminated.
