@@ -1,6 +1,16 @@
+import { spawnSync } from 'node:child_process';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parse } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { expectLocalLinksResolve, expectNoEmoji, readRepositoryFile } from './repository-docs.js';
+
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map((directory) => rm(directory, { force: true, recursive: true })));
+});
 
 interface AgentEntry {
   id: string;
@@ -60,6 +70,63 @@ describe('agent installation documentation', () => {
     expect(guide).toContain('diff -qr "$PVC_INSTALL_ROOT/$PVC_SKILL" "$PVC_STAGE/$PVC_SKILL"');
     expect(guide).toContain('mv "$PVC_INSTALL_ROOT/$PVC_SKILL" "$PVC_BACKUP_ROOT/$PVC_SKILL"');
     expect(guide).not.toContain('Before copying, remove exactly');
+  });
+
+  it.each([
+    ['codex', '.agents/skills'],
+    ['claude-code', '.claude/skills'],
+    ['cursor', '.agents/skills'],
+    ['windsurf', '.agents/skills'],
+  ])('%s leaves the live installation untouched when staging is incomplete', async (id, projectPath) => {
+    const guide = await readRepositoryFile(`docs/installation/${id}.md`);
+    const installBlock = /```bash\n([\s\S]*?)\n```/.exec(guide)?.[1];
+    expect(installBlock).toBeDefined();
+
+    const directory = await mkdtemp(join(tmpdir(), 'postvibe-install-failure-'));
+    temporaryRoots.push(directory);
+    const fakeBin = join(directory, 'fake-bin');
+    const installRoot = join(directory, projectPath);
+    const skillNames = ['post-vibe-clarity', 'project-discovery', 'secret-exposure', 'launch-essentials'];
+    await mkdir(fakeBin, { recursive: true });
+    for (const skillName of skillNames) {
+      const skillDirectory = join(installRoot, skillName);
+      await mkdir(skillDirectory, { recursive: true });
+      await writeFile(join(skillDirectory, 'sentinel.txt'), `original-${skillName}\n`, 'utf8');
+    }
+
+    const fakeGit = join(fakeBin, 'git');
+    await writeFile(fakeGit, [
+      '#!/bin/sh',
+      'if [ "$1" = "clone" ]; then',
+      '  for PVC_ARGUMENT in "$@"; do PVC_DESTINATION="$PVC_ARGUMENT"; done',
+      '  for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure; do',
+      '    mkdir -p "$PVC_DESTINATION/skills/$PVC_SKILL"',
+      '    printf "staged-%s\\n" "$PVC_SKILL" > "$PVC_DESTINATION/skills/$PVC_SKILL/SKILL.md"',
+      '  done',
+      '  exit 0',
+      'fi',
+      'if [ "$1" = "-C" ]; then',
+      '  printf "0123456789abcdef0123456789abcdef01234567\\n"',
+      '  exit 0',
+      'fi',
+      'exit 2',
+      '',
+    ].join('\n'), 'utf8');
+    await chmod(fakeGit, 0o755);
+
+    const scriptPath = join(directory, 'install.sh');
+    await writeFile(scriptPath, `${installBlock}\n`, 'utf8');
+    const result = spawnSync('/bin/sh', [scriptPath], {
+      cwd: directory,
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+    });
+
+    expect(result.status).not.toBe(0);
+    for (const skillName of skillNames) {
+      await expect(readFile(join(installRoot, skillName, 'sentinel.txt'), 'utf8'))
+        .resolves.toBe(`original-${skillName}\n`);
+    }
   });
 
   it('gives the fallback guide equivalent pinned provenance and preservation semantics', async () => {

@@ -136,6 +136,20 @@ describe('secretExposureCheck', () => {
     expect(detectSecretRule("CLIENT_SECRET='${CLIENT_SECRET}'")).toBeUndefined();
   });
 
+  it('continues past a generic placeholder to report a later credential on the same line', async () => {
+    const controlledValue = 'controlled-later-value-never-emit';
+    const { findings } = await scanTemporaryFiles({
+      'settings.json': `{"apiKey":"placeholder","serviceToken":"${controlledValue}"}\n`,
+    });
+
+    expect(JSON.stringify(findings)).not.toContain(controlledValue);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.evidence[0]).toMatchObject({
+      location: 'settings.json:1',
+      summary: 'quoted-credential-assignment pattern detected; value redacted',
+    });
+  });
+
   it('reports literal compound assignments without returning their values', async () => {
     const controlledValues = [
       'controlled-or-assignment-never-emit',
