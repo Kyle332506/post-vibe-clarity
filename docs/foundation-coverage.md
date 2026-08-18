@@ -1,6 +1,6 @@
 # PostVibeClarity v0.1 foundation coverage
 
-This document describes the implemented foundation, not the complete PostVibeClarity product. The governing contracts and intended architecture are in the approved [PostVibeClarity design specification](./superpowers/specs/2026-08-17-postvibeclarity-design.md).
+This document is the source of truth for the implemented v0.1 foundation behavior and its explicit boundaries.
 
 ## Runtime state semantics
 
