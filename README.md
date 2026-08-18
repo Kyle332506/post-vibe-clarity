@@ -22,14 +22,75 @@ Read the complete [disclaimer](DISCLAIMER.md) before relying on a report.
 
 ## How it works
 
-PostVibeClarity follows this discovery-to-report pipeline:
+PostVibeClarity follows this discovery-to-report flow:
 
 ```text
-Project -> read-only discovery -> capability manifest -> skill routing
-        -> deterministic or guided checks -> evidence-backed report
+Discover project
+      |
+      v
+Identify capabilities and production concerns
+      |
+      v
+Route applicable review skills
+      |
+      v
+Run safe checks and guided reviews
+      |
+      v
+Report evidence, missing work, and unknowns
 ```
 
-It is designed to represent web, mobile, desktop, CLI, backend, worker, library, extension, AI-agent, infrastructure, and monorepo projects. Automation depth varies by shape in this foundation: deterministic discovery confirms only the documented Node/static signals, React alone does not imply web, and the portable discovery skill guides classification of other or ambiguous shapes. Apart from the packaged secret-exposure and privacy-notice manual fallbacks, the remaining domain lists are taxonomy-only omitted audits until specialist skills and checks are added.
+## Example report
+
+Read the renderer-backed [sample report](docs/examples/sample-report.md) to see how evidence, findings, and uncertainty are recorded. It is not a launch verdict or a certification.
+
+Reports use plain labels:
+
+```text
+Stop before launch
+Potential credential found in project configuration.
+
+Human review needed
+Personal-data collection detected, but no privacy notice was found.
+
+Unverified
+Deployment configuration could not be inspected.
+
+Evidence recorded
+Project shape and applicable checks were identified.
+```
+
+> No overall readiness score is calculated. “No findings” does not mean “production-ready”; it means only that the checks performed did not produce findings from the available evidence.
+
+## Current coverage
+
+The [foundation coverage map](docs/foundation-coverage.md) is the source of truth for the implemented foundation. The [sample report](docs/examples/sample-report.md) shows its renderer output.
+
+| Capability | v0.1 status | Boundary |
+| --- | --- | --- |
+| Project discovery | Automated for documented Node and static-project signals | Other or ambiguous project shapes require guided classification |
+| Secret exposure checks | Automated, redacted scanning with a manual fallback | Not a complete security audit or proof of hardening |
+| Privacy-notice check | Automated when personal-data signals are detected | Not legal advice or a compliance determination |
+| Evidence reports | Markdown and JSON reports with explicit unknowns | No overall readiness score |
+| Broader readiness domains | Taxonomy established | Most specialist audits are not yet implemented |
+| Agent compatibility | Labeled as tested, documented, format-compatible, or not verified | No blanket cross-agent support claim |
+
+## Project shapes represented by the architecture
+
+The architecture is designed to represent:
+
+- Web and native mobile projects.
+- Desktop applications.
+- CLI tools.
+- Backend-only services and APIs.
+- Workers and scheduled jobs.
+- Libraries and SDKs.
+- Browser extensions.
+- AI agents.
+- Infrastructure repositories.
+- Monorepos.
+
+Representation in the model does not mean every shape has equivalent deterministic coverage. Deterministic discovery confirms only documented Node/static signals, React alone does not imply web, and the portable discovery skill guides classification of other or ambiguous shapes. Apart from the packaged secret-exposure and privacy-notice manual fallbacks, the remaining domain lists are taxonomy-only omitted audits until specialist skills and checks are added.
 
 ## Foundation scope
 

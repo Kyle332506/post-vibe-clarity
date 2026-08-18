@@ -1,0 +1,78 @@
+import type { ReadinessReport } from '../../src/model/report.js';
+
+export const sampleControlledCredential = 'pvc_fixture_credential_not_for_output';
+
+export const sampleReadinessReport: ReadinessReport = {
+  schemaVersion: '0.1',
+  runId: 'pvc-20260817',
+  generatedAt: '2026-08-17T12:00:00.000Z',
+  toolkitVersion: '0.1.0',
+  partial: true,
+  manifest: {
+    schemaVersion: '0.1',
+    projectRoot: '/example/project',
+    generatedAt: '2026-08-17T12:00:00.000Z',
+    artifacts: [{
+      value: 'web',
+      confidence: 'confirmed',
+      evidence: [{ kind: 'file', summary: 'Web manifest found', location: 'package.json' }],
+    }],
+    frameworks: [],
+    services: [],
+    capabilities: [],
+  },
+  findings: [
+    {
+      id: 'secret-exposure.fixture-secret',
+      checkId: 'secret-exposure.scan',
+      skillVersion: '0.1.0',
+      domains: ['security-privacy'],
+      actionLevel: 'stop-before-launch',
+      outcome: 'failed',
+      title: 'Potential credential in source',
+      impact: 'A credential committed to source may be copied or abused.',
+      evidence: [{ kind: 'file', summary: 'Private key marker detected', location: 'src/config.ts:2' }],
+      evidenceConfidence: 'confirmed',
+      applicability: 'The project contains source files.',
+      recommendation: 'Remove and rotate the credential outside this review.',
+      verification: 'Scan the repository again after removal.',
+      humanReviewRequired: false,
+    },
+    {
+      id: 'launch-essentials.privacy-unverified',
+      checkId: 'launch-essentials.privacy-notice',
+      skillVersion: '0.1.0',
+      domains: ['policy-business-essentials'],
+      actionLevel: 'human-review-needed',
+      outcome: 'unverified',
+      title: 'Privacy notice could not be verified',
+      impact: 'Users may not understand how their information is handled.',
+      evidence: [],
+      evidenceConfidence: 'insufficient',
+      applicability: 'Personal-data collection was detected.',
+      recommendation: 'Review the data inventory and applicable requirements.',
+      verification: 'Provide reviewed policy text and confirm it is linked.',
+      humanReviewRequired: true,
+      unverifiedBoundaries: ['Legal accuracy requires human review.'],
+    },
+  ],
+  summary: {
+    byActionLevel: {
+      'stop-before-launch': 1,
+      'resolve-before-launch': 0,
+      'plan-soon': 0,
+      'improve-when-appropriate': 0,
+      'human-review-needed': 1,
+    },
+    byOutcome: {
+      passed: 0,
+      failed: 1,
+      'likely-issue': 0,
+      unverified: 1,
+      'not-applicable': 0,
+      'risk-accepted': 0,
+      'resolved-and-rechecked': 0,
+    },
+  },
+  disclaimer: 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
+};
