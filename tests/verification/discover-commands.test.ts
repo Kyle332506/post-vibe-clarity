@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -104,6 +104,17 @@ describe('discoverVerificationCommands', () => {
     expect((await discoverVerificationCommands(root, new Set())).commands[0]?.argv).toEqual(['npm', 'run', 'test']);
   });
 
+  it('rejects a root package.json symlink whose target leaves the project', async () => {
+    const root = await temporaryProject({});
+    const outside = await mkdtemp(join(tmpdir(), 'postvibe-command-discovery-outside-'));
+    temporaryDirectories.push(outside);
+    const outsideManifest = join(outside, 'package.json');
+    await writeFile(outsideManifest, packageJson({ packageManager: 'npm@11.5.1', scripts: { test: 'external-test' } }));
+    await symlink(outsideManifest, join(root, 'package.json'));
+
+    await expect(discoverVerificationCommands(root, new Set())).rejects.toThrow(/inside the project/i);
+  });
+
   it.each([
     ['conflicting lockfiles', {}, { 'package-lock.json': '{}', 'pnpm-lock.yaml': 'lockfileVersion: 9\n' }, /conflicting package-manager evidence/i],
     ['unsupported packageManager', { packageManager: 'deno@2.0.0' }, { 'package-lock.json': '{}' }, /unsupported packageManager/i],
@@ -136,6 +147,82 @@ describe('discoverVerificationCommands', () => {
     expect(result.categoryAssessments.find(({ category }) => category === 'type-check')).toMatchObject({
       state: 'unverified',
       reason: expect.stringMatching(/both typecheck and type-check/i),
+    });
+  });
+
+  it('preserves type-check ambiguity as a gap when a portable type-check command is applicable', async () => {
+    const root = await temporaryProject({
+      'package.json': packageJson({
+        packageManager: 'pnpm@9.12.0',
+        scripts: { typecheck: 'first', 'type-check': 'second' },
+      }),
+      'postvibe.verification.yaml': [
+        'schemaVersion: "0.1"',
+        'commands:',
+        '  - id: portable-type-check',
+        '    category: type-check',
+        '    argv: ["tsc", "--noEmit"]',
+        '    cwd: "."',
+        '',
+      ].join('\n'),
+    });
+
+    const result = await discoverVerificationCommands(root, new Set());
+
+    expect(result.categoryAssessments.find(({ category }) => category === 'type-check')?.state).toBe('applicable');
+    expect(result.coverageGaps).toContainEqual({
+      id: 'category.type-check',
+      category: 'type-check',
+      reason: 'Both typecheck and type-check scripts are declared; neither was selected.',
+    });
+  });
+
+  it('preserves a malformed package script gap when a portable command makes the category applicable', async () => {
+    const root = await temporaryProject({
+      'package.json': packageJson({ packageManager: 'npm@11.5.1', scripts: { lint: 42 } }),
+      'postvibe.verification.yaml': [
+        'schemaVersion: "0.1"',
+        'commands:',
+        '  - id: portable-lint',
+        '    category: lint',
+        '    argv: ["eslint", "."]',
+        '    cwd: "."',
+        '',
+      ].join('\n'),
+    });
+
+    const result = await discoverVerificationCommands(root, new Set());
+
+    expect(result.categoryAssessments.find(({ category }) => category === 'lint')?.state).toBe('applicable');
+    expect(result.coverageGaps).toContainEqual({
+      id: 'category.lint',
+      category: 'lint',
+      reason: 'package.json#scripts.lint is not a non-empty string.',
+    });
+  });
+
+  it('preserves conflicting package-manager evidence when a portable command makes the category applicable', async () => {
+    const root = await temporaryProject({
+      'package.json': packageJson({ packageManager: 'pnpm@9.12.0', scripts: { test: 'package-test' } }),
+      'package-lock.json': '{}',
+      'postvibe.verification.yaml': [
+        'schemaVersion: "0.1"',
+        'commands:',
+        '  - id: portable-tests',
+        '    category: test',
+        '    argv: ["vitest", "run"]',
+        '    cwd: "."',
+        '',
+      ].join('\n'),
+    });
+
+    const result = await discoverVerificationCommands(root, new Set());
+
+    expect(result.categoryAssessments.find(({ category }) => category === 'test')?.state).toBe('applicable');
+    expect(result.coverageGaps).toContainEqual({
+      id: 'category.test',
+      category: 'test',
+      reason: 'Conflicting package-manager evidence; use postvibe.verification.yaml.',
     });
   });
 
@@ -241,5 +328,28 @@ describe('discoverVerificationCommands', () => {
       expect.objectContaining({ id: 'category.type-check', category: 'type-check' }),
       expect.objectContaining({ id: 'category.lint', category: 'lint' }),
     ]));
+  });
+
+  it('does not treat an index.html directory as evidence that build is not applicable', async () => {
+    const root = await temporaryProject({ 'index.html/placeholder.txt': 'not an HTML file' });
+
+    const result = await discoverVerificationCommands(root, new Set());
+
+    expect(result.categoryAssessments.find(({ category }) => category === 'build')).toMatchObject({
+      state: 'unverified',
+      reason: 'No declared build command was discovered.',
+    });
+    expect(result.inputLocations).not.toContain('index.html');
+  });
+
+  it('rejects an index.html symlink whose target leaves the project', async () => {
+    const root = await temporaryProject({});
+    const outside = await mkdtemp(join(tmpdir(), 'postvibe-static-html-outside-'));
+    temporaryDirectories.push(outside);
+    const outsideIndex = join(outside, 'index.html');
+    await writeFile(outsideIndex, '<!doctype html><title>Outside</title>');
+    await symlink(outsideIndex, join(root, 'index.html'));
+
+    await expect(discoverVerificationCommands(root, new Set())).rejects.toThrow(/inside the project/i);
   });
 });

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -55,6 +55,40 @@ describe('discoverWorkspaceRoots', () => {
         'pnpm-workspace.yaml',
       ],
     });
+  });
+
+  it('records an existing pnpm workspace file even when its package list is empty', async () => {
+    const root = await temporaryProject({ 'pnpm-workspace.yaml': 'packages: []\n' });
+
+    expect(await discoverWorkspaceRoots(root)).toEqual({
+      workspaceRoots: [],
+      inputLocations: ['pnpm-workspace.yaml'],
+    });
+  });
+
+  it('rejects a pnpm workspace declaration symlink whose target leaves the project', async () => {
+    const root = await temporaryProject({ 'apps/api/package.json': '{}' });
+    const outside = await mkdtemp(join(tmpdir(), 'postvibe-workspace-discovery-outside-'));
+    temporaryDirectories.push(outside);
+    const outsideWorkspace = join(outside, 'pnpm-workspace.yaml');
+    await writeFile(outsideWorkspace, 'packages:\n  - "apps/*"\n');
+    await symlink(outsideWorkspace, join(root, 'pnpm-workspace.yaml'));
+
+    await expect(discoverWorkspaceRoots(root)).rejects.toThrow(/inside the project/i);
+  });
+
+  it('rejects a matched workspace package.json symlink whose target leaves the project', async () => {
+    const root = await temporaryProject({
+      'package.json': JSON.stringify({ workspaces: ['packages/*'] }),
+      'packages/api/placeholder': '',
+    });
+    const outside = await mkdtemp(join(tmpdir(), 'postvibe-workspace-manifest-outside-'));
+    temporaryDirectories.push(outside);
+    const outsideManifest = join(outside, 'package.json');
+    await writeFile(outsideManifest, '{}');
+    await symlink(outsideManifest, join(root, 'packages/api/package.json'));
+
+    await expect(discoverWorkspaceRoots(root)).rejects.toThrow(/inside the project/i);
   });
 
   it('ignores dependency, VCS, artifact, coverage, and distribution directories', async () => {

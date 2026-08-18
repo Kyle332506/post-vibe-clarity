@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { relative, sep } from 'node:path';
 import { parse } from 'yaml';
 import type { CommandCategory } from '../model/verification.js';
-import { resolveInsideProject, resolveProjectRoot } from './project-path.js';
+import { resolveExistingFileInsideProject, resolveInsideProject, resolveProjectRoot } from './project-path.js';
 
 export interface PortableVerificationConfig {
   schemaVersion: '0.1';
@@ -37,11 +37,12 @@ function configError(message: string): Error {
 
 export async function loadVerificationConfig(root: string): Promise<PortableVerificationConfig | undefined> {
   const resolvedRoot = await resolveProjectRoot(root);
+  const configPath = await resolveExistingFileInsideProject(resolvedRoot, CONFIG_LOCATION);
+  if (configPath === undefined) return undefined;
   let source: string;
   try {
-    source = await readFile(join(resolvedRoot, CONFIG_LOCATION), 'utf8');
+    source = await readFile(configPath, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
 

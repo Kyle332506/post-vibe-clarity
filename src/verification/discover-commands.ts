@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import type {
   CommandCategory,
   VerificationCategoryAssessment,
@@ -8,7 +7,7 @@ import type {
   VerificationCoverageGap,
 } from '../model/verification.js';
 import { loadVerificationConfig, type PortableVerificationConfig } from './load-verification-config.js';
-import { resolveProjectRoot } from './project-path.js';
+import { isContainedRegularFile, resolveExistingFileInsideProject, resolveProjectRoot } from './project-path.js';
 import { discoverWorkspaceRoots } from './discover-workspaces.js';
 
 export interface CommandDiscoveryResult {
@@ -40,23 +39,13 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw error;
-  }
-}
-
 async function packageManagerEvidence(
   root: string,
   manifest: Record<string, unknown>,
 ): Promise<{ manager?: PackageManager; problem?: string; locations: string[] }> {
   const presentLockfiles: Array<[string, PackageManager]> = [];
   for (const lockfile of LOCKFILES) {
-    if (await exists(join(root, lockfile[0]))) presentLockfiles.push(lockfile);
+    if (await resolveExistingFileInsideProject(root, lockfile[0]) !== undefined) presentLockfiles.push(lockfile);
   }
   const locations = presentLockfiles.map(([location]) => location);
   const lockManagers = new Set(presentLockfiles.map(([, manager]) => manager));
@@ -141,9 +130,9 @@ export async function discoverVerificationCommands(
   const inputLocations = new Set<string>();
   const discovered: VerificationCommand[] = [];
   const categoryProblems = new Map<CommandCategory, string>();
-  const packagePath = join(resolvedRoot, 'package.json');
+  const packagePath = await resolveExistingFileInsideProject(resolvedRoot, 'package.json');
 
-  if (await exists(packagePath)) {
+  if (packagePath !== undefined) {
     inputLocations.add('package.json');
     let manifest: unknown;
     try {
@@ -193,7 +182,7 @@ export async function discoverVerificationCommands(
       }
     } else {
       for (const [location] of LOCKFILES) {
-        if (await exists(join(resolvedRoot, location))) inputLocations.add(location);
+        if (await resolveExistingFileInsideProject(resolvedRoot, location) !== undefined) inputLocations.add(location);
       }
     }
   }
@@ -222,19 +211,23 @@ export async function discoverVerificationCommands(
     workspace: command.cwd,
   }));
 
-  const hasRootIndex = await exists(join(resolvedRoot, 'index.html'));
+  const hasRootIndex = await isContainedRegularFile(resolvedRoot, 'index.html');
   if (hasRootIndex) inputLocations.add('index.html');
   const staticHtml = hasRootIndex
-    && !await exists(packagePath)
+    && packagePath === undefined
     && portable === undefined;
   const categoryAssessments: VerificationCategoryAssessment[] = CATEGORY_ORDER.map((category) => {
+    const categoryProblem = categoryProblems.get(category);
     if (discovered.some((command) => command.category === category)) {
+      if (categoryProblem !== undefined) {
+        coverageGaps.push({ id: `category.${category}`, category, reason: categoryProblem });
+      }
       return { category, state: 'applicable', reason: `A ${category} command is declared.` };
     }
     if (category === 'build' && staticHtml) {
       return { category, state: 'not-applicable', reason: 'The root is a static HTML project with no declared build system.' };
     }
-    const reason = categoryProblems.get(category) ?? `No declared ${category} command was discovered.`;
+    const reason = categoryProblem ?? `No declared ${category} command was discovered.`;
     coverageGaps.push({ id: `category.${category}`, category, reason });
     return { category, state: 'unverified', reason };
   });

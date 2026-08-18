@@ -1,7 +1,7 @@
 import { glob, readFile } from 'node:fs/promises';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, relative, sep } from 'node:path';
 import { parse } from 'yaml';
-import { resolveInsideProject, resolveProjectRoot } from './project-path.js';
+import { resolveExistingFileInsideProject, resolveInsideProject, resolveProjectRoot } from './project-path.js';
 
 export interface WorkspaceDiscoveryResult {
   workspaceRoots: string[];
@@ -20,13 +20,9 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-async function readOptional(path: string): Promise<string | undefined> {
-  try {
-    return await readFile(path, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
+async function readOptional(root: string, path: string): Promise<string | undefined> {
+  const resolved = await resolveExistingFileInsideProject(root, path);
+  return resolved === undefined ? undefined : readFile(resolved, 'utf8');
 }
 
 function packageWorkspacePatterns(manifest: unknown): string[] {
@@ -46,12 +42,13 @@ function pnpmWorkspacePatterns(source: string): string[] {
 
 export async function discoverWorkspaceRoots(root: string): Promise<WorkspaceDiscoveryResult> {
   const resolvedRoot = await resolveProjectRoot(root);
-  const packageSource = await readOptional(join(resolvedRoot, 'package.json'));
-  const pnpmSource = await readOptional(join(resolvedRoot, 'pnpm-workspace.yaml'));
+  const packageSource = await readOptional(resolvedRoot, 'package.json');
+  const pnpmSource = await readOptional(resolvedRoot, 'pnpm-workspace.yaml');
   const patterns: string[] = [];
   const inputLocations: string[] = [];
 
   if (packageSource !== undefined) {
+    inputLocations.push('package.json');
     let manifest: unknown;
     try {
       manifest = JSON.parse(packageSource) as unknown;
@@ -61,10 +58,10 @@ export async function discoverWorkspaceRoots(root: string): Promise<WorkspaceDis
     const packagePatterns = packageWorkspacePatterns(manifest);
     if (packagePatterns.length > 0) {
       patterns.push(...packagePatterns);
-      inputLocations.push('package.json');
     }
   }
   if (pnpmSource !== undefined) {
+    inputLocations.push('pnpm-workspace.yaml');
     let pnpmPatterns: string[];
     try {
       pnpmPatterns = pnpmWorkspacePatterns(pnpmSource);
@@ -73,7 +70,6 @@ export async function discoverWorkspaceRoots(root: string): Promise<WorkspaceDis
     }
     if (pnpmPatterns.length > 0) {
       patterns.push(...pnpmPatterns);
-      inputLocations.push('pnpm-workspace.yaml');
     }
   }
 
@@ -90,6 +86,7 @@ export async function discoverWorkspaceRoots(root: string): Promise<WorkspaceDis
       exclude: [...EXCLUDED_GLOBS, ...workspaceExclusions],
       followSymlinks: false,
     })) {
+      await resolveExistingFileInsideProject(resolvedRoot, manifestPath);
       const candidate = dirname(manifestPath);
       if (candidate === '.') continue;
       const resolvedWorkspace = await resolveInsideProject(resolvedRoot, candidate);

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -160,6 +160,25 @@ describe('loadVerificationConfig', () => {
       '',
     ].join('\n'));
     await expect(loadVerificationConfig(missing)).rejects.toThrow(/does not exist/i);
+  });
+
+  it('rejects a portable configuration symlink whose target leaves the project', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'postvibe-verification-config-'));
+    const outside = await mkdtemp(join(tmpdir(), 'postvibe-verification-config-outside-'));
+    temporaryDirectories.push(root, outside);
+    const outsideConfig = join(outside, 'postvibe.verification.yaml');
+    await writeFile(outsideConfig, [
+      'schemaVersion: "0.1"',
+      'commands:',
+      '  - id: external-tests',
+      '    category: test',
+      '    argv: ["external-runner"]',
+      '    cwd: "."',
+      '',
+    ].join('\n'));
+    await symlink(outsideConfig, join(root, 'postvibe.verification.yaml'));
+
+    await expect(loadVerificationConfig(root)).rejects.toThrow(/inside the project/i);
   });
 
   it('rejects malformed YAML and invalid root shapes', async () => {
