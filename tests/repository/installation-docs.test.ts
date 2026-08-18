@@ -42,4 +42,14 @@ describe('agent installation documentation', () => {
     expectNoEmoji(guide, path);
     await expectLocalLinksResolve(path, guide);
   });
+
+  it.each([
+    ['codex', '.agents/skills'],
+    ['claude-code', '.claude/skills'],
+    ['cursor', '.agents/skills'],
+    ['windsurf', '.agents/skills'],
+  ])('%s replaces only its four installed skill directories when updating', async (id, projectPath) => {
+    const guide = await readRepositoryFile(`docs/installation/${id}.md`);
+    expect(guide).toContain(`Before copying, remove exactly these four directories from the current project's \`${projectPath}\`: \`post-vibe-clarity\`, \`project-discovery\`, \`secret-exposure\`, and \`launch-essentials\`.`);
+  });
 });

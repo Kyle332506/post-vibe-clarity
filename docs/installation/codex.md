@@ -29,7 +29,7 @@ Invoke `$post-vibe-clarity` and request a read-only launch review of the current
 
 ## Update
 
-From the project root, repeat the install procedure to replace the four project-scoped skill directories with the current repository contents, then verify discovery again.
+Before copying, remove exactly these four directories from the current project's `.agents/skills`: `post-vibe-clarity`, `project-discovery`, `secret-exposure`, and `launch-essentials`. Then, from the project root, repeat the install procedure and verify discovery again.
 
 ## Uninstall
 
