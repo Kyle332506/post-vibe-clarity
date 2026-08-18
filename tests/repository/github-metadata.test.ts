@@ -22,7 +22,8 @@ describe('GitHub repository metadata', () => {
     expect(source).toContain('permissions:\n  contents: read');
     expect(source).toContain('actions/checkout@v6');
     expect(source).toContain('actions/setup-node@v6');
-    expect(source).toContain('pnpm/action-setup@v4');
+    expect(source).toContain('pnpm/action-setup@v6');
+    expect(source).not.toContain('pnpm/action-setup@v4');
     expect(source).toContain('node-version: 24');
     expect(source).toContain('pnpm install --frozen-lockfile');
     expect(source).toContain('pnpm verify:foundation');
