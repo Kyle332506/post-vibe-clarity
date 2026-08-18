@@ -29,6 +29,13 @@ describe('validateVerificationPlan', () => {
     expect(errors.filter((error) => error.includes('additional properties'))).toHaveLength(2);
   });
 
+  it('rejects changed disclaimer wording', async () => {
+    const input = structuredClone(sampleVerificationPlan);
+    input.disclaimer = 'This report reduces uncertainty but certifies the application.';
+
+    expect((await invalidErrors(input)).join('\n')).toContain('/disclaimer');
+  });
+
   it('rejects duplicate command IDs across selected and excluded commands', async () => {
     const input = structuredClone(sampleVerificationPlan);
     const selected = input.commands[0];

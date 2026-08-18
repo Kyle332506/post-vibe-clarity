@@ -59,7 +59,7 @@
     },
     "executionPolicy": { "$ref": "#/$defs/executionPolicy" },
     "containmentWarning": { "type": "string", "minLength": 1 },
-    "disclaimer": { "type": "string", "minLength": 1 }
+    "disclaimer": { "const": "This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects." }
   },
   "$defs": {
     "id": {

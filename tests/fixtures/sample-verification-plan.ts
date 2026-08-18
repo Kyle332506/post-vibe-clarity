@@ -92,5 +92,5 @@ export const sampleVerificationPlan: VerificationPlan = {
     executor: 'local-process/0.1',
   },
   containmentWarning: 'Commands run as local processes with the current user privileges; this is not a security sandbox.',
-  disclaimer: 'This verification reduces uncertainty by recording command evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
+  disclaimer: 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
 };

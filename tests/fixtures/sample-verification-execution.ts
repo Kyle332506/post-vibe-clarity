@@ -42,5 +42,5 @@ export const sampleVerificationExecution: VerificationExecution = {
   ],
   coverageGaps: structuredClone(sampleVerificationPlan.coverageGaps),
   containmentWarning: sampleVerificationPlan.containmentWarning,
-  disclaimer: sampleVerificationPlan.disclaimer,
+  disclaimer: 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
 };
