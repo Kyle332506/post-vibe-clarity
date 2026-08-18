@@ -1,10 +1,35 @@
 # PostVibeClarity
 
-> **Know what's ready, what's risky, and what's missing before you launch.**
+## Prepare vibe-coded projects for production with evidence—not guesswork.
 
-PostVibeClarity is an open-source, cross-agent toolkit for evidence-backed launch reviews of vibe-coded projects. It discovers a project's shape, routes applicable Agent Skills, records findings and unknowns, and produces Markdown or JSON reports.
+PostVibeClarity discovers your project's shape, applies relevant launch-review skills, and reports risks, missing essentials, and unverified areas before you ship.
 
-PostVibeClarity provides evidence, not certification. This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects. The toolkit does not replace qualified legal, security, privacy, accessibility, financial, or domain review, and it does not produce an overall numeric readiness score.
+`v0.1 · Stable foundation` · [Apache-2.0](LICENSE)
+
+PostVibeClarity provides evidence and next actions. It does not certify that a project is production-ready, secure, compliant, or defect-free.
+
+## Install with your coding agent
+
+Paste this into your coding agent:
+
+> Install PostVibeClarity for this project from `github.com/Kyle332506/post-vibe-clarity`. Use the instructions for this agent, install the skills only inside the current project, verify all four skills are available, and then run a read-only launch review. Do not change project files during the review.
+
+## Important limitation
+
+**Important:** PostVibeClarity supports production preparation, but it does not guarantee that a project is production-ready. It cannot find every vulnerability, prove that security is fully hardened, ensure legal or regulatory compliance, or eliminate operational failures. A report only describes the checks performed, the evidence found, and the areas that remain unverified.
+
+Read the complete [disclaimer](DISCLAIMER.md) before relying on a report.
+
+## How it works
+
+PostVibeClarity follows this discovery-to-report pipeline:
+
+```text
+Project -> read-only discovery -> capability manifest -> skill routing
+        -> deterministic or guided checks -> evidence-backed report
+```
+
+It is designed to represent web, mobile, desktop, CLI, backend, worker, library, extension, AI-agent, infrastructure, and monorepo projects. Automation depth varies by shape in this foundation: deterministic discovery confirms only the documented Node/static signals, React alone does not imply web, and the portable discovery skill guides classification of other or ambiguous shapes. Apart from the packaged secret-exposure and privacy-notice manual fallbacks, the remaining domain lists are taxonomy-only omitted audits until specialist skills and checks are added.
 
 ## Foundation scope
 
@@ -26,17 +51,6 @@ Runtime states are intentionally distinct:
 - A successfully loaded and routed sidecar check with no registered implementation becomes an `unverified` finding and makes the report partial.
 - An unsupported or unregistered domain has no synthetic per-run finding; its absence is documented in the [foundation coverage map](docs/foundation-coverage.md).
 - Unreadable or invalid project/catalog input is fatal before a report is created. The CLI emits only a sanitized failure message, or sanitized diagnostics in debug mode.
-
-## Architecture and project shapes
-
-The architecture follows this pipeline:
-
-```text
-Project -> read-only discovery -> capability manifest -> skill routing
-        -> deterministic or guided checks -> evidence-backed report
-```
-
-It is designed to represent web, mobile, desktop, CLI, backend, worker, library, extension, AI-agent, infrastructure, and monorepo projects. Automation depth varies by shape in this foundation: deterministic discovery confirms only the documented Node/static signals, React alone does not imply web, and the portable discovery skill guides classification of other or ambiguous shapes. Apart from the packaged secret-exposure and privacy-notice manual fallbacks, the remaining domain lists are taxonomy-only omitted audits until specialist skills and checks are added.
 
 ## Requirements
 
