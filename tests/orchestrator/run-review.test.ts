@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { privacyNoticeCheck } from '../../src/checks/launch-essentials.js';
 import { runReview } from '../../src/orchestrator/run-review.js';
 import { renderJson } from '../../src/report/render-json.js';
 import { renderMarkdown } from '../../src/report/render-markdown.js';
@@ -27,6 +28,30 @@ describe('runReview', () => {
     ]);
     expect(report.summary.byOutcome.failed).toBe(1);
     expect(report.summary.byOutcome['likely-issue']).toBe(1);
+    expect(report.checkExecutions).toEqual([
+      expect.objectContaining({
+        checkId: 'launch-essentials.privacy-notice',
+        skillId: 'launch-essentials',
+        status: 'completed',
+        findingIds: ['launch-essentials.privacy-notice-missing'],
+      }),
+      expect.objectContaining({
+        checkId: 'secret-exposure.scan',
+        skillId: 'secret-exposure',
+        status: 'completed',
+        findingIds: ['secret-exposure.src/config.ts:1.quoted-credential-assignment'],
+      }),
+    ]);
+    expect(report.coverageGaps.map(({ id }) => id)).toEqual([
+      'domain.data-correctness',
+      'domain.maintainability-change-safety',
+      'domain.operations-observability',
+      'domain.performance-cost',
+      'domain.product-ux',
+      'domain.release-delivery',
+      'domain.reliability-recovery',
+    ]);
+    expect(report.partial).toBe(true);
     expect(report.runId).toBe('pvc-20260817120000000');
     expect(report.disclaimer).toContain('does not certify');
 
@@ -55,6 +80,7 @@ describe('runReview', () => {
       await writeFile(join(unavailableSkill, 'readiness.yaml'), [
         'schemaVersion: "0.1"',
         'id: unavailable-check',
+        'skillVersion: "0.1.0"',
         'domains:',
         '  - reliability-recovery',
         'modes:',
@@ -73,10 +99,24 @@ describe('runReview', () => {
 
       expect(report.partial).toBe(true);
       expect(report.summary.byOutcome.unverified).toBe(1);
+      expect(report.checkExecutions).toEqual([
+        expect.objectContaining({
+          checkId: 'unavailable-check.missing',
+          skillId: 'unavailable-check',
+          status: 'unavailable',
+          findingIds: ['unavailable-check.missing.unavailable'],
+        }),
+      ]);
+      expect(report.coverageGaps).toContainEqual(expect.objectContaining({
+        id: 'check.unavailable-check.missing',
+        checkId: 'unavailable-check.missing',
+        status: 'unavailable',
+      }));
       expect(report.findings[0]).toMatchObject({
         id: 'unavailable-check.missing.unavailable',
         checkId: 'unavailable-check.missing',
-        skillVersion: 'unknown',
+        checkVersion: 'unknown',
+        skillVersion: '0.1.0',
         domains: ['reliability-recovery'],
         actionLevel: 'human-review-needed',
         outcome: 'unverified',
@@ -87,5 +127,150 @@ describe('runReview', () => {
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
     }
+  });
+
+  it('records a completed routed check even when it produces no findings', async () => {
+    const report = await runReview({
+      root: fixture('cli-clean'),
+      skillsRoot,
+      now: () => fixedTimestamp,
+    });
+
+    expect(report.findings).toEqual([]);
+    expect(report.checkExecutions).toEqual([
+      expect.objectContaining({
+        checkId: 'secret-exposure.scan',
+        skillId: 'secret-exposure',
+        status: 'completed',
+        findingIds: [],
+      }),
+    ]);
+    expect(report.summary.byCheckStatus.completed).toBe(1);
+    expect(report.coverageGaps).not.toContainEqual(expect.objectContaining({
+      checkId: 'secret-exposure.scan',
+    }));
+    expect(report.partial).toBe(true);
+  });
+
+  it('isolates a thrown check, retains earlier evidence, and redacts the error', async () => {
+    const controlledError = 'controlled-check-error-never-emit';
+    const report = await runReview({
+      root: fixture('web-missing-basics'),
+      skillsRoot,
+      now: () => fixedTimestamp,
+      checkImplementations: [
+        privacyNoticeCheck,
+        {
+          id: 'secret-exposure.scan',
+          version: '0.1.0',
+          actionLevel: 0,
+          requiredAccess: ['filesystem-read'],
+          async run() {
+            throw new Error(controlledError);
+          },
+        },
+      ],
+    });
+
+    expect(report.findings.map(({ id }) => id)).toEqual([
+      'launch-essentials.privacy-notice-missing',
+      'secret-exposure.scan.execution-failed',
+    ]);
+    expect(report.checkExecutions).toEqual([
+      expect.objectContaining({
+        checkId: 'launch-essentials.privacy-notice',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        checkId: 'secret-exposure.scan',
+        status: 'failed',
+        findingIds: ['secret-exposure.scan.execution-failed'],
+      }),
+    ]);
+    expect(report.coverageGaps).toContainEqual(expect.objectContaining({
+      id: 'check.secret-exposure.scan',
+      status: 'failed',
+      reason: 'The check failed before it could complete. Run it again after resolving the local execution problem.',
+    }));
+    expect(renderJson(report)).not.toContain(controlledError);
+    expect(renderMarkdown(report)).not.toContain(controlledError);
+    expect(report.partial).toBe(true);
+  });
+
+  it('records an unverified result as an unverified execution with a matching gap', async () => {
+    const report = await runReview({
+      root: fixture('cli-clean'),
+      skillsRoot,
+      now: () => fixedTimestamp,
+      checkImplementations: [{
+        id: 'secret-exposure.scan',
+        version: '0.1.0',
+        actionLevel: 0,
+        requiredAccess: ['filesystem-read'],
+        async run() {
+          return [{
+            id: 'secret-exposure.fixture-unverified',
+            checkId: 'secret-exposure.scan',
+            checkVersion: '0.1.0',
+            skillVersion: '0.1.0',
+            domains: ['security-privacy'],
+            actionLevel: 'human-review-needed',
+            outcome: 'unverified',
+            title: 'Fixture boundary could not be inspected',
+            impact: 'The fixture area remains unknown.',
+            evidence: [],
+            evidenceConfidence: 'insufficient',
+            applicability: 'The fixture check was routed.',
+            recommendation: 'Provide the missing local evidence.',
+            verification: 'Run the fixture check again.',
+            humanReviewRequired: true,
+            unverifiedBoundaries: ['The fixture evidence was unavailable.'],
+          }];
+        },
+      }],
+    });
+
+    expect(report.checkExecutions[0]).toMatchObject({
+      checkId: 'secret-exposure.scan',
+      status: 'unverified',
+      findingIds: ['secret-exposure.fixture-unverified'],
+    });
+    expect(report.coverageGaps).toContainEqual(expect.objectContaining({
+      id: 'check.secret-exposure.scan',
+      status: 'unverified',
+      reason: 'The fixture evidence was unavailable.',
+    }));
+  });
+
+  it('fails closed when a check returns a report fragment that violates the versioned contract', async () => {
+    await expect(runReview({
+      root: fixture('cli-clean'),
+      skillsRoot,
+      now: () => fixedTimestamp,
+      checkImplementations: [{
+        id: 'secret-exposure.scan',
+        version: '0.1.0',
+        actionLevel: 0,
+        requiredAccess: ['filesystem-read'],
+        async run() {
+          return [{
+            id: 'secret-exposure.invalid-provenance',
+            checkId: 'secret-exposure.scan',
+            skillVersion: '0.1.0',
+            domains: ['security-privacy'],
+            actionLevel: 'stop-before-launch',
+            outcome: 'failed',
+            title: 'Invalid fixture finding',
+            impact: 'This fixture intentionally omits check provenance.',
+            evidence: [],
+            evidenceConfidence: 'insufficient',
+            applicability: 'Runtime report validation is under test.',
+            recommendation: 'Reject the report.',
+            verification: 'Run report validation.',
+            humanReviewRequired: false,
+          } as never];
+        },
+      }],
+    })).rejects.toThrow('Generated report failed versioned runtime validation.');
   });
 });

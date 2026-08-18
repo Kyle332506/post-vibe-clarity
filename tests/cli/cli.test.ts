@@ -88,7 +88,13 @@ describe('postvibe review CLI', () => {
     const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
     expect(parsed.schemaVersion).toBe('0.1');
     expect(parsed.toolkitVersion).toBe('0.1.0');
-    expect(parsed.partial).toBe(false);
+    expect(parsed.partial).toBe(true);
+    expect(parsed.checkExecutions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ checkId: 'secret-exposure.scan', status: 'completed' }),
+    ]));
+    expect(parsed.coverageGaps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'domain.product-ux', status: 'unverified' }),
+    ]));
     expect(stdoutContainsControlledValue).toBe(false);
     expect(stderrContainsControlledValue).toBe(false);
   });

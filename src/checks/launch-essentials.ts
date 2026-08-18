@@ -8,6 +8,7 @@ function notApplicableFinding(): Finding {
   return {
     id: 'launch-essentials.privacy-notice-not-applicable',
     checkId,
+    checkVersion: '0.1.0',
     skillVersion: '0.1.0',
     domains: ['policy-business-essentials', 'security-privacy'],
     actionLevel: 'improve-when-appropriate',
@@ -27,6 +28,7 @@ function policyCandidateFinding(policyFiles: string[]): Finding {
   return {
     id: 'launch-essentials.privacy-notice-candidate-found',
     checkId,
+    checkVersion: '0.1.0',
     skillVersion: '0.1.0',
     domains: ['policy-business-essentials', 'security-privacy'],
     actionLevel: 'human-review-needed',
@@ -50,6 +52,7 @@ function missingPolicyFinding(evidence: Finding['evidence']): Finding {
   return {
     id: 'launch-essentials.privacy-notice-missing',
     checkId,
+    checkVersion: '0.1.0',
     skillVersion: '0.1.0',
     domains: ['policy-business-essentials', 'security-privacy'],
     actionLevel: 'human-review-needed',
@@ -67,6 +70,7 @@ function missingPolicyFinding(evidence: Finding['evidence']): Finding {
 
 export const privacyNoticeCheck: CheckImplementation = {
   id: checkId,
+  version: '0.1.0',
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
   async run({ root, manifest }) {

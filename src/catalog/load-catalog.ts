@@ -8,6 +8,7 @@ import { validateReadinessManifest } from '../validation/readiness-schema.js';
 export interface SkillDescriptor {
   schemaVersion: '0.1';
   id: string;
+  skillVersion: string;
   domains: Domain[];
   appliesTo?: { anyArtifacts?: ArtifactType[]; allCapabilities?: string[] };
   modes: Array<'audit' | 'propose' | 'remediate' | 'verify'>;

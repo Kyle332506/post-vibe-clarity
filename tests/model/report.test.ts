@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeFindings } from '../../src/model/report.js';
+import {
+  derivePartial,
+  summarizeFindings,
+  summarizeReport,
+  type CheckExecution,
+  type CoverageGap,
+} from '../../src/model/report.js';
 import type { Finding } from '../../src/model/finding.js';
 
 const findings: Finding[] = [
   {
     id: 'secret-exposure.fixture-secret',
     checkId: 'secret-exposure.scan',
+    checkVersion: '0.1.0',
     skillVersion: '0.1.0',
     domains: ['security-privacy'],
     actionLevel: 'stop-before-launch',
@@ -22,6 +29,7 @@ const findings: Finding[] = [
   {
     id: 'launch-essentials.privacy-unverified',
     checkId: 'launch-essentials.privacy-notice',
+    checkVersion: '0.1.0',
     skillVersion: '0.1.0',
     domains: ['policy-business-essentials'],
     actionLevel: 'human-review-needed',
@@ -61,5 +69,62 @@ describe('summarizeFindings', () => {
 
   it('does not expose a readiness score', () => {
     expect(summarizeFindings(findings)).not.toHaveProperty('score');
+  });
+
+  it('summarizes check completion and domain coverage independently from finding outcomes', () => {
+    const checks: CheckExecution[] = [
+      {
+        checkId: 'secret-exposure.scan',
+        checkVersion: '0.1.0',
+        skillId: 'secret-exposure',
+        skillVersion: '0.1.0',
+        domains: ['security-privacy'],
+        status: 'completed',
+        findingIds: ['secret-exposure.fixture-secret'],
+      },
+      {
+        checkId: 'reliability.fixture',
+        checkVersion: '0.1.0',
+        skillId: 'reliability-fixture',
+        skillVersion: '0.1.0',
+        domains: ['reliability-recovery'],
+        status: 'failed',
+        findingIds: ['reliability.fixture.execution-failed'],
+      },
+    ];
+    const coverageGaps: CoverageGap[] = [
+      {
+        id: 'check.reliability.fixture',
+        status: 'failed',
+        domains: ['reliability-recovery'],
+        checkId: 'reliability.fixture',
+        skillId: 'reliability-fixture',
+        reason: 'The check did not complete.',
+      },
+      {
+        id: 'domain.product-ux',
+        status: 'unverified',
+        domains: ['product-ux'],
+        reason: 'No routed check covers this domain.',
+      },
+    ];
+
+    const summary = summarizeReport(findings, checks, coverageGaps);
+
+    expect(summary.byCheckStatus).toEqual({
+      completed: 1,
+      unavailable: 0,
+      failed: 1,
+      unverified: 0,
+    });
+    expect(summary.byDomain['security-privacy']).toEqual({
+      completed: 1,
+      unavailable: 0,
+      failed: 0,
+      unverified: 0,
+    });
+    expect(summary.byDomain['reliability-recovery'].failed).toBe(1);
+    expect(summary.byDomain['product-ux'].unverified).toBe(1);
+    expect(derivePartial(checks, coverageGaps)).toBe(true);
   });
 });

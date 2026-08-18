@@ -19,10 +19,22 @@ const outcomes: Array<[Outcome, string]> = [
   ['resolved-and-rechecked', 'Resolved and rechecked'],
 ];
 
+const domainLabels = new Map([
+  ['product-ux', 'Product and user experience'],
+  ['security-privacy', 'Security and privacy'],
+  ['data-correctness', 'Data and correctness'],
+  ['reliability-recovery', 'Reliability and recovery'],
+  ['operations-observability', 'Operations and observability'],
+  ['performance-cost', 'Performance and cost'],
+  ['maintainability-change-safety', 'Maintainability and change safety'],
+  ['release-delivery', 'Release and delivery'],
+  ['policy-business-essentials', 'Policy and business essentials'],
+]);
+
 function renderFinding(finding: Finding): string[] {
   const lines = [
     `- **${finding.title}** (${finding.outcome})`,
-    `  - Check: ${finding.checkId} (skill version ${finding.skillVersion})`,
+    `  - Check: ${finding.checkId} (check version ${finding.checkVersion}; skill version ${finding.skillVersion})`,
     `  - Impact: ${finding.impact}`,
     `  - Recommendation: ${finding.recommendation}`,
     `  - Verification: ${finding.verification}`,
@@ -57,6 +69,10 @@ export function renderMarkdown(report: ReadinessReport): string {
     '',
     ...actionLevels.map(([level, label]) => `- ${label}: ${report.summary.byActionLevel[level]}`),
     ...outcomes.map(([outcome, label]) => `- ${label}: ${report.summary.byOutcome[outcome]}`),
+    `- Checks completed: ${report.summary.byCheckStatus.completed}`,
+    `- Checks unavailable: ${report.summary.byCheckStatus.unavailable}`,
+    `- Checks failed: ${report.summary.byCheckStatus.failed}`,
+    `- Checks unverified: ${report.summary.byCheckStatus.unverified}`,
     '',
     '## Findings',
   ];
@@ -67,6 +83,35 @@ export function renderMarkdown(report: ReadinessReport): string {
 
     lines.push('', `### ${label}`, '');
     for (const finding of findings) lines.push(...renderFinding(finding));
+  }
+
+  lines.push('', '## Checks performed', '');
+  if (report.checkExecutions.length === 0) {
+    lines.push('- No routed checks were recorded.');
+  } else {
+    for (const execution of report.checkExecutions) {
+      lines.push(
+        `- ${execution.checkId}: ${execution.status}`,
+        `  - Skill: ${execution.skillId} (version ${execution.skillVersion})`,
+        `  - Check version: ${execution.checkVersion}`,
+        `  - Domains: ${execution.domains.map((domain) => domainLabels.get(domain) ?? domain).join(', ')}`,
+        `  - Findings recorded: ${execution.findingIds.length}`,
+      );
+    }
+  }
+
+  lines.push('', '## Coverage gaps', '');
+  if (report.coverageGaps.length === 0) {
+    lines.push('- None recorded.');
+  } else {
+    for (const gap of report.coverageGaps) {
+      if (gap.checkId) {
+        lines.push(`- Check ${gap.checkId} (${gap.status}): ${gap.reason}`);
+      } else {
+        const labels = gap.domains.map((domain) => domainLabels.get(domain) ?? domain).join(', ');
+        lines.push(`- ${labels}: ${gap.reason}`);
+      }
+    }
   }
 
   lines.push('', '## Unverified areas', '');

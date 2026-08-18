@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { debugDiagnostic } from './cli/debug-diagnostic.js';
+import { ReportFileCollisionError, writeReportExclusively } from './cli/report-output.js';
 import { runReview } from './orchestrator/run-review.js';
 import { renderJson } from './report/render-json.js';
 import { renderMarkdown } from './report/render-markdown.js';
@@ -45,14 +46,14 @@ async function main(): Promise<void> {
   const extension = format === 'json' ? 'json' : 'md';
   const outputPath = join(outputDirectory, `${report.runId}.${extension}`);
   await mkdir(outputDirectory, { recursive: true });
-  await writeFile(outputPath, rendered);
+  await writeReportExclusively(outputPath, rendered);
   process.stdout.write(`${outputPath}\n`);
 }
 
 try {
   await main();
 } catch (error: unknown) {
-  const message = error instanceof CliUsageError
+  const message = error instanceof CliUsageError || error instanceof ReportFileCollisionError
     ? error.message
     : process.env.POSTVIBE_DEBUG === '1'
       ? debugDiagnostic(error)

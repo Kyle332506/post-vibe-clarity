@@ -10,7 +10,7 @@ const ts = require('typescript') as typeof import('typescript');
 
 const privateKeyMarker = /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY(?: BLOCK)?-----/;
 const credentialName = /apiKey|api_key|secret|token|password/i;
-const genericQuotedCredentialAssignment = /["']?(?:apiKey|api_key|secret|token|password)[A-Za-z0-9_$.-]*["']?\s*(?::|=(?!=|>))\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/i;
+const genericQuotedCredentialAssignment = /["']?(?:apiKey|api_key|secret|token|password)[A-Za-z0-9_$.-]*["']?\s*(?::|\|\|=|\?\?=|&&=|>>>=|>>=|<<=|\*\*=|[+*/%&|^-]=|=(?!=|>))\s*(?:"(?<doubleValue>(?:\\.|[^"\\])*)"|'(?<singleValue>(?:\\.|[^'\\])*)')/i;
 const javascriptOrTypeScriptFile = /\.(?:[cm]?[jt]sx?)$/i;
 const supportedTextExtensions = new Set([
   '.env',
@@ -83,6 +83,33 @@ function isStringLiteralExpression(
   return expression !== undefined && ts.isStringLiteralLike(expression);
 }
 
+function isWellDefinedTemplatePlaceholder(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) return true;
+  if (/^\$\{[a-z_][a-z0-9_]*\}$/i.test(normalized)) return true;
+  if (/^<(?:your[-_ ]?)?[a-z][a-z0-9_-]*>$/i.test(normalized)) return true;
+  return /^(?:change[-_ ]?me|replace[-_ ]?(?:me|this)|replace[-_ ]with[-_ ]your[-_ ][a-z0-9_-]+|your[-_ ][a-z0-9_-]+|example(?:[-_ ][a-z0-9_-]+)?|placeholder|todo|not[-_ ]set|unset|dummy)$/i.test(normalized);
+}
+
+function isAssignmentOperator(kind: import('typescript').SyntaxKind): boolean {
+  return kind === ts.SyntaxKind.EqualsToken
+    || kind === ts.SyntaxKind.PlusEqualsToken
+    || kind === ts.SyntaxKind.MinusEqualsToken
+    || kind === ts.SyntaxKind.AsteriskEqualsToken
+    || kind === ts.SyntaxKind.AsteriskAsteriskEqualsToken
+    || kind === ts.SyntaxKind.SlashEqualsToken
+    || kind === ts.SyntaxKind.PercentEqualsToken
+    || kind === ts.SyntaxKind.LessThanLessThanEqualsToken
+    || kind === ts.SyntaxKind.GreaterThanGreaterThanEqualsToken
+    || kind === ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken
+    || kind === ts.SyntaxKind.AmpersandEqualsToken
+    || kind === ts.SyntaxKind.BarEqualsToken
+    || kind === ts.SyntaxKind.CaretEqualsToken
+    || kind === ts.SyntaxKind.BarBarEqualsToken
+    || kind === ts.SyntaxKind.AmpersandAmpersandEqualsToken
+    || kind === ts.SyntaxKind.QuestionQuestionEqualsToken;
+}
+
 function propertyNameText(node: import('typescript').Node): string | undefined {
   if (ts.isIdentifier(node) || ts.isPrivateIdentifier(node) || ts.isStringLiteralLike(node)) return node.text;
   if (ts.isComputedPropertyName(node)) return propertyNameText(node.expression);
@@ -127,7 +154,12 @@ function scanJavaScriptOrTypeScript(file: string, content: string): SecretDetect
     if (!isStringLiteralExpression(initializer) || isNonRuntimeNode(initializer, sourceFile)) return;
     const nameText = propertyNameText(name);
     if (!nameText || !credentialName.test(nameText)) return;
-    record(privateKeyMarker.test(initializer.text) ? 'private-key-marker' : 'quoted-credential-assignment', initializer);
+    if (privateKeyMarker.test(initializer.text)) {
+      record('private-key-marker', initializer);
+      return;
+    }
+    if (isWellDefinedTemplatePlaceholder(initializer.text)) return;
+    record('quoted-credential-assignment', initializer);
   }
 
   function visit(node: import('typescript').Node): void {
@@ -137,7 +169,7 @@ function scanJavaScriptOrTypeScript(file: string, content: string): SecretDetect
       recordCredential(node.name, node.initializer);
     } else if (ts.isBindingElement(node)) {
       recordCredential(node.propertyName ?? node.name, node.initializer);
-    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+    } else if (ts.isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind)) {
       recordCredential(node.left, node.right);
     } else if (ts.isShorthandPropertyAssignment(node)) {
       recordCredential(node.name, node.objectAssignmentInitializer);
@@ -173,6 +205,7 @@ function findingFor(file: string, detection: SecretDetection): Finding {
   return {
     id: `secret-exposure.${file}:${line}.${rule}`,
     checkId: 'secret-exposure.scan',
+    checkVersion: '0.1.0',
     skillVersion: '0.1.0',
     domains: ['security-privacy'],
     actionLevel: 'stop-before-launch',
@@ -190,12 +223,19 @@ function findingFor(file: string, detection: SecretDetection): Finding {
 
 export function detectSecretRule(line: string): SecretRule | undefined {
   if (privateKeyMarker.test(line)) return 'private-key-marker';
-  if (genericQuotedCredentialAssignment.test(line)) return 'quoted-credential-assignment';
+  const match = genericQuotedCredentialAssignment.exec(line);
+  if (match) {
+    const value = match.groups?.doubleValue ?? match.groups?.singleValue;
+    if (value !== undefined && !isWellDefinedTemplatePlaceholder(value)) {
+      return 'quoted-credential-assignment';
+    }
+  }
   return undefined;
 }
 
 export const secretExposureCheck: CheckImplementation = {
   id: 'secret-exposure.scan',
+  version: '0.1.0',
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
   async run({ root }) {

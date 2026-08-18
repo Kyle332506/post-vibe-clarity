@@ -6,6 +6,7 @@ import { buildReviewPlan } from '../../src/orchestrator/build-review-plan.js';
 const secretExposure: SkillDescriptor = {
   schemaVersion: '0.1',
   id: 'secret-exposure',
+  skillVersion: '0.1.0',
   domains: ['security-privacy'],
   modes: ['audit'],
   maxActionLevel: 0,
@@ -15,6 +16,7 @@ const secretExposure: SkillDescriptor = {
 
 const readyCheck: CheckImplementation = {
   id: 'secret-exposure.scan',
+  version: '0.1.0',
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
   async run() {
@@ -29,14 +31,18 @@ describe('buildReviewPlan', () => {
     expect(buildReviewPlan([secretExposure], registry)).toEqual([
       {
         checkId: 'secret-exposure.scan',
+        checkVersion: '0.1.0',
         skillId: 'secret-exposure',
+        skillVersion: '0.1.0',
         status: 'ready',
         actionLevel: 0,
         requiredAccess: ['filesystem-read'],
       },
       {
         checkId: 'secret-exposure.entropy',
+        checkVersion: 'unknown',
         skillId: 'secret-exposure',
+        skillVersion: '0.1.0',
         status: 'unavailable',
         reason: 'No check implementation is registered.',
       },

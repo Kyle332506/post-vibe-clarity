@@ -13,6 +13,7 @@ export interface Evidence {
 export interface Finding {
   id: string;
   checkId: string;
+  checkVersion: string;
   skillVersion: string;
   domains: Domain[];
   actionLevel: ActionLevel;

@@ -4,11 +4,25 @@ Use the host's current first-party skill documentation to select its project-sco
 
 ## Install
 
-Inspect the host's first-party documentation, then copy these four directories from this repository into that host's project scope: `skills/post-vibe-clarity`, `skills/project-discovery`, `skills/secret-exposure`, and `skills/launch-essentials`. Keep the four directory names unchanged.
+Inspect the host's first-party documentation and replace the placeholder below with that host's project-scoped skill directory. Clone a reviewed release tag and record its resolved commit:
+
+```bash
+PVC_VERSION="v0.1.0"
+PVC_REPO_URL="https://github.com/Kyle332506/post-vibe-clarity.git"
+PVC_TEMP_ROOT="$(mktemp -d)"
+PVC_SOURCE="$PVC_TEMP_ROOT/post-vibe-clarity"
+git clone --branch "$PVC_VERSION" --depth 1 --single-branch "$PVC_REPO_URL" "$PVC_SOURCE"
+PVC_REVISION="$(git -C "$PVC_SOURCE" rev-parse HEAD)"
+PVC_INSTALL_ROOT="<host-project-skill-directory>"
+```
+
+Then stage the four pinned skill directories in a uniquely named staging directory under `PVC_INSTALL_ROOT`. Before replacement, compare each existing destination with the staged copy using a path-only command such as `diff -qr`. Create a unique, bounded directory under `$PVC_INSTALL_ROOT/.postvibeclarity-backups`, and move every existing destination into the bounded backup directory before replacement. Do not delete or overwrite an existing skill directory in place.
+
+Copy only `post-vibe-clarity`, `project-discovery`, `secret-exposure`, and `launch-essentials` from the pinned source. After the staged copies are installed, write both `PVC_VERSION` and `PVC_REVISION` to `$PVC_INSTALL_ROOT/.postvibeclarity-revision`. Preserve the previous revision record in the same backup. Keep the backup until discovery and a read-only review succeed; use no broad or unresolved destructive command.
 
 ## Verify
 
-Verify the host discovers `post-vibe-clarity`, `project-discovery`, `secret-exposure`, and `launch-essentials` in the current project. The invocation is host-defined; use the host's first-party instructions. If the host does not discover a newly created top-level skill directory, restart that host and verify again.
+Verify the host discovers `post-vibe-clarity`, `project-discovery`, `secret-exposure`, and `launch-essentials` in the current project. The invocation is host-defined; use the host's first-party instructions. If the host does not discover a newly created top-level skill directory, restart that host and verify again. Confirm `.postvibeclarity-revision` contains the expected tag and commit.
 
 ## Run a review
 
@@ -16,11 +30,11 @@ Use the host-defined invocation for `post-vibe-clarity` and request a read-only 
 
 ## Update
 
-Consult the host's first-party documentation, then replace the four project-scoped skill directories with current copies from this repository and verify discovery.
+Choose a reviewed release tag and repeat the pinned staging procedure. Do not copy from a moving default branch. Compare existing destinations with the staged release, move all four exact existing directories into a unique bounded backup, install the staged copies, update `.postvibeclarity-revision`, and verify before reapplying intentional local changes.
 
 ## Uninstall
 
-Use the host's first-party documentation to remove only the four PostVibeClarity skill directories from the current project scope.
+Consult the host's first-party documentation. Compare the installed skills with the recorded revision, preserve locally changed copies in a named project backup, and then remove only the four PostVibeClarity skill directories and the revision record from the current project scope.
 
 ## Compatibility evidence
 

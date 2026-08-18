@@ -16,7 +16,9 @@ When local PostVibeClarity tooling is available, run the project review with the
 postvibe review [project-path] --skills [skills-path] --format markdown
 ```
 
-Use the `secret-exposure.scan` finding and keep the run read-only. The foundation scanner checks an explicit set of readable source and configuration formats, including `.env` variants and common PEM/key files, while skipping binary content. JavaScript and TypeScript are parsed syntax-aware so runtime variable, property, class-field, binding-default, and assignment-expression string values are inspected without treating comments, type nodes, or ambient declarations as runtime secrets. It reports rule identifiers and locations, not matched values.
+Use the `secret-exposure.scan` finding and keep the run read-only. The foundation scanner checks an explicit set of readable source and configuration formats, including `.env` variants and common PEM/key files, while skipping binary content. JavaScript and TypeScript are parsed syntax-aware so runtime variable, property, class-field, binding-default, and assignment-expression string values are inspected without treating comments, type nodes, or ambient declarations as runtime secrets. Assignment expressions include simple and compound operators such as `||=`, `??=`, logical, arithmetic, shift, and bitwise assignment when their right-hand side is a string literal. It reports rule identifiers and locations, not matched values.
+
+Empty or whitespace-only literals and a bounded set of explicit templates, including environment references, `change-me`/`replace-me` forms, `your-...` forms, and angle-bracket placeholders, are omitted rather than reported as launch blockers. A non-empty literal with a credential-like name that does not match those templates remains a conservative finding. Custom or dynamic placeholder schemes outside this boundary are not inferred as safe.
 
 Treat this as bounded evidence, not a comprehensive secret scan. Record unscanned files, repository history, generated artifacts, deployed bundles, provider state, and inaccessible environments as `unverified` when no separate check covers them.
 
@@ -26,7 +28,7 @@ When deterministic tooling cannot run:
 
 1. Inventory readable source, configuration, environment templates, CI files, deployment manifests, and packaged artifacts.
 2. Search for private-key markers and credential-like names such as API keys, secrets, tokens, and passwords. Use only a search mode that returns file paths and line numbers or safely redacted results. If no location-only or safely redacted search is available, stop this check, mark it `unverified`, and never invoke a content-revealing fallback.
-3. Distinguish references to runtime environment variables, obvious placeholders, and test fixtures from embedded credential values. Treat ambiguity as a likely issue or `unverified`, not a pass.
+3. Distinguish empty values, runtime environment references, well-defined template placeholders, and test fixtures from embedded credential values. Treat custom or ambiguous placeholders as a likely issue or `unverified`, not a pass.
 4. Inspect repository history and deployed artifacts only when safe read access exists; otherwise name those coverage gaps explicitly.
 5. Report the detection rule, location, impact, recommendation, and verification method. Never include the matching line or value.
 

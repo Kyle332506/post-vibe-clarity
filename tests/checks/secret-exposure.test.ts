@@ -5,7 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { detectSecretRule, secretExposureCheck } from '../../src/checks/secret-exposure.js';
 import { discoverProject } from '../../src/discovery/discover-project.js';
-import { summarizeFindings, type ReadinessReport } from '../../src/model/report.js';
+import {
+  derivePartial,
+  readinessDomains,
+  summarizeReport,
+  type CheckExecution,
+  type CoverageGap,
+  type ReadinessReport,
+} from '../../src/model/report.js';
 import { renderJson } from '../../src/report/render-json.js';
 import { renderMarkdown } from '../../src/report/render-markdown.js';
 
@@ -34,15 +41,34 @@ function makeReport(
   manifest: Awaited<ReturnType<typeof discoverProject>>,
   findings: Awaited<ReturnType<typeof secretExposureCheck.run>>,
 ): ReadinessReport {
+  const checkExecutions: CheckExecution[] = [{
+    checkId: 'secret-exposure.scan',
+    checkVersion: '0.1.0',
+    skillId: 'secret-exposure',
+    skillVersion: '0.1.0',
+    domains: ['security-privacy'],
+    status: 'completed',
+    findingIds: findings.map(({ id }) => id),
+  }];
+  const coverageGaps: CoverageGap[] = readinessDomains
+    .filter((domain) => domain !== 'security-privacy')
+    .map((domain) => ({
+      id: `domain.${domain}`,
+      status: 'unverified',
+      domains: [domain],
+      reason: 'No routed check covers this domain in the current review.',
+    }));
   return {
     schemaVersion: '0.1',
     runId: 'pvc-20260817120000000',
     generatedAt: now(),
     toolkitVersion: '0.1.0',
-    partial: false,
+    partial: derivePartial(checkExecutions, coverageGaps),
     manifest,
+    checkExecutions,
+    coverageGaps,
     findings,
-    summary: summarizeFindings(findings),
+    summary: summarizeReport(findings, checkExecutions, coverageGaps),
     disclaimer: 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
   };
 }
@@ -89,6 +115,49 @@ describe('secretExposureCheck', () => {
       'config.ts:3',
       'config.ts:4',
       'config.ts:5',
+    ]);
+  });
+
+  it('ignores empty values and well-defined template placeholders', async () => {
+    const findings = await scanTemporarySource([
+      "const apiKey = '';",
+      'const serviceToken = "CHANGE_ME";',
+      "const password = '<your-password>';",
+      "config.apiKey = '${API_KEY}';",
+      "const clientSecret = 'replace-with-your-secret';",
+      "const accessToken = 'example-token';",
+      '',
+    ].join('\n'));
+
+    expect(findings).toEqual([]);
+    expect(detectSecretRule("API_KEY=''")).toBeUndefined();
+    expect(detectSecretRule("TOKEN='CHANGE_ME'")).toBeUndefined();
+    expect(detectSecretRule("PASSWORD='<your-password>'")).toBeUndefined();
+    expect(detectSecretRule("CLIENT_SECRET='${CLIENT_SECRET}'")).toBeUndefined();
+  });
+
+  it('reports literal compound assignments without returning their values', async () => {
+    const controlledValues = [
+      'controlled-or-assignment-never-emit',
+      'controlled-nullish-assignment-never-emit',
+      'controlled-and-assignment-never-emit',
+      'controlled-plus-assignment-never-emit',
+    ];
+    const findings = await scanTemporarySource([
+      `config.apiKey ||= '${controlledValues[0]}';`,
+      `config.serviceToken ??= '${controlledValues[1]}';`,
+      `config.password &&= '${controlledValues[2]}';`,
+      `config.clientSecret += '${controlledValues[3]}';`,
+      '',
+    ].join('\n'));
+
+    const payload = JSON.stringify(findings);
+    expect(controlledValues.some((value) => payload.includes(value))).toBe(false);
+    expect(findings.map((finding) => finding.evidence[0]?.location)).toEqual([
+      'config.ts:1',
+      'config.ts:2',
+      'config.ts:3',
+      'config.ts:4',
     ]);
   });
 
@@ -193,6 +262,8 @@ describe('secretExposureCheck', () => {
 
   it('keeps the generic rule contract for non-JavaScript configuration text', () => {
     expect(detectSecretRule("API_KEY='opaque'")).toBe('quoted-credential-assignment');
+    expect(detectSecretRule("API_KEY||='opaque'")).toBe('quoted-credential-assignment');
+    expect(detectSecretRule("TOKEN??='opaque'")).toBe('quoted-credential-assignment');
     expect(detectSecretRule('-----BEGIN PRIVATE KEY-----')).toBe('private-key-marker');
     expect(detectSecretRule("theme='light'")).toBeUndefined();
   });
