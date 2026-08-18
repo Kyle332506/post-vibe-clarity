@@ -10,7 +10,7 @@ const ts = require('typescript') as typeof import('typescript');
 
 const privateKeyMarker = /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY(?: BLOCK)?-----/;
 const credentialName = /apiKey|api_key|secret|token|password/i;
-const genericQuotedCredentialAssignment = /["']?(?:apiKey|api_key|secret|token|password)[A-Za-z0-9_$.-]*["']?\s*(?::|\|\|=|\?\?=|&&=|>>>=|>>=|<<=|\*\*=|[+*/%&|^-]=|=(?!=|>))\s*(?:"(?<doubleValue>(?:\\.|[^"\\])*)"|'(?<singleValue>(?:\\.|[^'\\])*)')/i;
+const genericQuotedCredentialAssignment = /["']?(?:apiKey|api_key|secret|token|password)[A-Za-z0-9_$.-]*["']?\s*(?::|\|\|=|\?\?=|&&=|>>>=|>>=|<<=|\*\*=|[+*/%&|^-]=|=(?!=|>))\s*(?:"(?<doubleValue>(?:\\.|[^"\\])*)"|'(?<singleValue>(?:\\.|[^'\\])*)')/gi;
 const javascriptOrTypeScriptFile = /\.(?:[cm]?[jt]sx?)$/i;
 const supportedTextExtensions = new Set([
   '.env',
@@ -223,8 +223,7 @@ function findingFor(file: string, detection: SecretDetection): Finding {
 
 export function detectSecretRule(line: string): SecretRule | undefined {
   if (privateKeyMarker.test(line)) return 'private-key-marker';
-  const match = genericQuotedCredentialAssignment.exec(line);
-  if (match) {
+  for (const match of line.matchAll(genericQuotedCredentialAssignment)) {
     const value = match.groups?.doubleValue ?? match.groups?.singleValue;
     if (value !== undefined && !isWellDefinedTemplatePlaceholder(value)) {
       return 'quoted-credential-assignment';

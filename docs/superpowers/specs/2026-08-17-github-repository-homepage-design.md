@@ -94,6 +94,7 @@ Each host guide must contain:
 - Uninstall instructions.
 - The last-tested host version and test date when runtime testing exists.
 - A release tag or commit pin, the resolved installed revision, and a project-local revision record.
+- Fail-fast command handling and validation that all four staged directories exist before any live destination changes.
 - A preflight of the exact destination directories and staged comparison or bounded backup before any update replaces existing content.
 
 The copy-paste prompt is immediately followed by links to all five installation guides in a compact compatibility table. Architecture, limitations beyond the required installation disclaimer, and development material do not interrupt this first-use path.
@@ -281,7 +282,7 @@ Implementation is complete when:
 8. Issue forms parse as valid GitHub issue-form YAML.
 9. The existing foundation test suite remains green.
 10. The final repository settings are audited against this specification before the `v0.1.0` release is published.
-11. Installation and update examples use a pinned source revision and preserve or visibly reconcile existing project-scoped skill content.
+11. Installation and update examples use a pinned source revision, fail closed before live changes when preparation is incomplete, and preserve or visibly reconcile existing project-scoped skill content.
 12. Repository settings, security controls, branch protection, and social-preview upload each have a distinct target/effect approval gate.
 
 ## Out of scope

@@ -7,6 +7,7 @@ Use the host's current first-party skill documentation to select its project-sco
 Inspect the host's first-party documentation and replace the placeholder below with that host's project-scoped skill directory. Clone a reviewed release tag and record its resolved commit:
 
 ```bash
+set -eu
 PVC_VERSION="v0.1.0"
 PVC_REPO_URL="https://github.com/Kyle332506/post-vibe-clarity.git"
 PVC_TEMP_ROOT="$(mktemp -d)"
@@ -16,7 +17,7 @@ PVC_REVISION="$(git -C "$PVC_SOURCE" rev-parse HEAD)"
 PVC_INSTALL_ROOT="<host-project-skill-directory>"
 ```
 
-Then stage the four pinned skill directories in a uniquely named staging directory under `PVC_INSTALL_ROOT`. Before replacement, compare each existing destination with the staged copy using a path-only command such as `diff -qr`. Create a unique, bounded directory under `$PVC_INSTALL_ROOT/.postvibeclarity-backups`, and move every existing destination into the bounded backup directory before replacement. Do not delete or overwrite an existing skill directory in place.
+Then stage the four pinned skill directories in a uniquely named staging directory under `PVC_INSTALL_ROOT`. Stop immediately if cloning, revision resolution, or staging fails. Confirm that all four named directories exist in the completed stage before moving any live destination. Before replacement, compare each existing destination with the staged copy using a path-only command such as `diff -qr`. Create a unique, bounded directory under `$PVC_INSTALL_ROOT/.postvibeclarity-backups`, and move every existing destination into the bounded backup directory before replacement. Do not delete or overwrite an existing skill directory in place.
 
 Copy only `post-vibe-clarity`, `project-discovery`, `secret-exposure`, and `launch-essentials` from the pinned source. After the staged copies are installed, write both `PVC_VERSION` and `PVC_REVISION` to `$PVC_INSTALL_ROOT/.postvibeclarity-revision`. Preserve the previous revision record in the same backup. Keep the backup until discovery and a read-only review succeed; use no broad or unresolved destructive command.
 

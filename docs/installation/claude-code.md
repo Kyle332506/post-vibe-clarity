@@ -7,6 +7,7 @@ Install these skills only in the current project's `.claude/skills` directory.
 From the project root, clone the reviewed release tag, stage all four skills, compare any existing copies, preserve them in a bounded backup, and record the exact installed commit:
 
 ```bash
+set -eu
 PVC_VERSION="v0.1.0"
 PVC_REPO_URL="https://github.com/Kyle332506/post-vibe-clarity.git"
 PVC_TEMP_ROOT="$(mktemp -d)"
@@ -18,6 +19,12 @@ mkdir -p "$PVC_INSTALL_ROOT"
 PVC_STAGE="$(mktemp -d "$PVC_INSTALL_ROOT/.postvibeclarity-stage.XXXXXX")"
 for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials; do
   cp -R "$PVC_SOURCE/skills/$PVC_SKILL" "$PVC_STAGE/$PVC_SKILL"
+done
+for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials; do
+  if [ ! -d "$PVC_STAGE/$PVC_SKILL" ]; then
+    printf 'Staging failed: missing %s; live installation was not changed.\n' "$PVC_SKILL" >&2
+    exit 1
+  fi
 done
 mkdir -p "$PVC_INSTALL_ROOT/.postvibeclarity-backups"
 PVC_BACKUP_ROOT="$(mktemp -d "$PVC_INSTALL_ROOT/.postvibeclarity-backups/update.XXXXXX")"
@@ -35,7 +42,7 @@ printf 'version=%s\nrevision=%s\n' "$PVC_VERSION" "$PVC_REVISION" > "$PVC_INSTAL
 rmdir "$PVC_STAGE"
 ```
 
-The `diff -qr` preflight reports changed paths without printing file contents. Existing destinations are moved, not deleted, and remain under the unique `PVC_BACKUP_ROOT`. Keep that backup until verification succeeds. You can then remove the explicit temporary directory represented by `PVC_TEMP_ROOT` and, after reviewing it, the specific backup directory printed in your shell state; do not use a broad or unresolved removal command.
+The block exits on the first failed command and validates all four staged directories before moving any live skill. The `diff -qr` preflight reports changed paths without printing file contents. Existing destinations are moved, not deleted, and remain under the unique `PVC_BACKUP_ROOT`. Keep that backup until verification succeeds. You can then remove the explicit temporary directory represented by `PVC_TEMP_ROOT` and, after reviewing it, the specific backup directory printed in your shell state; do not use a broad or unresolved removal command.
 
 ## Verify
 
