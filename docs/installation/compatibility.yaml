@@ -1,0 +1,42 @@
+schemaVersion: "0.1"
+agents:
+  - id: codex
+    name: Codex
+    label: documented
+    projectPath: .agents/skills
+    invocation: $post-vibe-clarity
+    evidenceUrl: https://developers.openai.com/codex/skills
+    runtimeVersion: null
+    runtimeTestedAt: null
+  - id: claude-code
+    name: Claude Code
+    label: documented
+    projectPath: .claude/skills
+    invocation: /post-vibe-clarity
+    evidenceUrl: https://code.claude.com/docs/en/slash-commands
+    runtimeVersion: null
+    runtimeTestedAt: null
+  - id: cursor
+    name: Cursor
+    label: documented
+    projectPath: .agents/skills
+    invocation: /post-vibe-clarity
+    evidenceUrl: https://cursor.com/docs/skills
+    runtimeVersion: null
+    runtimeTestedAt: null
+  - id: windsurf
+    name: Windsurf
+    label: documented
+    projectPath: .agents/skills
+    invocation: "@post-vibe-clarity"
+    evidenceUrl: https://docs.windsurf.com/windsurf/cascade/skills
+    runtimeVersion: null
+    runtimeTestedAt: null
+  - id: agent-skills
+    name: Other Agent Skills hosts
+    label: format-compatible
+    projectPath: host-defined
+    invocation: host-defined
+    evidenceUrl: https://agentskills.io/specification
+    runtimeVersion: null
+    runtimeTestedAt: null
