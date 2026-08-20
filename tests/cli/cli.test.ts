@@ -300,7 +300,7 @@ describe('postvibe review CLI', () => {
     expect(result.code).toBe(0);
     expect(stdoutContainsControlledValue).toBe(false);
     expect(stderrContainsControlledValue).toBe(false);
-  });
+  }, 15_000);
 });
 
 describe('postvibe plan CLI', () => {

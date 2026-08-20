@@ -1,7 +1,7 @@
 {
   "name": "fixture-expo-mobile",
   "private": true,
-  "dependencies": {
+  "devDependencies": {
     "expo": "0.0.0-fixture",
     "react": "0.0.0-fixture",
     "react-native": "0.0.0-fixture"

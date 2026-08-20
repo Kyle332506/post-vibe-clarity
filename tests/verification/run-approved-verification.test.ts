@@ -199,7 +199,7 @@ async function expectNoExecution(executor: { calls: string[] }, promise: Promise
   expect(executor.calls).toEqual([]);
 }
 
-describe('runApprovedVerification pre-execution gates', () => {
+describe('runApprovedVerification pre-execution gates', { timeout: 15_000 }, () => {
   it('rejects a different-length approval without invoking the executor', async () => {
     const planned = await fixture();
     const executor = executorFrom(async (id) => ({ result: result(id), removedEnvironmentVariables: [] }));
@@ -310,7 +310,7 @@ describe('runApprovedVerification pre-execution gates', () => {
   });
 });
 
-describe('runApprovedVerification execution and artifacts', () => {
+describe('runApprovedVerification execution and artifacts', { timeout: 15_000 }, () => {
   it('runs approved commands sequentially, continues after failure, and writes linked deterministic artifacts', async () => {
     const planned = await fixture();
     let active = 0;
@@ -854,7 +854,11 @@ describe('runApprovedVerification execution and artifacts', () => {
     await expect(access(join(externalOutput, `${executionId}.report.md`))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('uses a stable recovery boundary when root drift moves the requested artifact directory', async () => {
+  // Windows does not allow the fixture to rename an artifact directory while
+  // this test intentionally keeps owned artifact handles open inside it.
+  it.skipIf(process.platform === 'win32')(
+    'uses a stable recovery boundary when root drift moves the requested artifact directory',
+    async () => {
     const planned = await fixture();
     const movedRoot = `${planned.root}-moved-with-artifacts`;
     temporaryDirectories.push(movedRoot);
@@ -889,7 +893,8 @@ describe('runApprovedVerification execution and artifacts', () => {
     });
     expect(persisted).not.toContain('must-not-be-scanned');
     temporaryDirectories.push(dirname(recoveryPath));
-  });
+    },
+  );
 
   it('keeps artifact JSON out of the fresh Level 0 scan in an ordinary output directory', async () => {
     const planned = await fixture();

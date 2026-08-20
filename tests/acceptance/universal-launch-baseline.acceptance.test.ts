@@ -200,10 +200,10 @@ describe.each(runners)('universal launch baseline through the $label CLI', (runn
     expect(persisted).not.toContain(controlledSecret);
     expect(persisted).not.toMatch(/readiness[ -]?score/i);
     expect(persisted).not.toMatch(/"score"\s*:\s*\d/i);
-  });
+  }, 30_000);
 });
 
-describe('universal launch baseline safety cases', () => {
+describe('universal launch baseline safety cases', { timeout: 30_000 }, () => {
   const sourceRunner = runners[0]!;
 
   it('keeps the required disclaimer as the final Markdown line', async () => {

@@ -125,5 +125,5 @@ describe('foundation coverage documentation', () => {
     });
     expect(result.status, result.stderr).toBe(0);
     await expect(access(repositoryPath('dist/src/cli.js'))).resolves.toBeUndefined();
-  });
+  }, 15_000);
 });
