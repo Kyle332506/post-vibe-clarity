@@ -1,18 +1,14 @@
-import { writeFile } from 'node:fs/promises';
+import { ArtifactFileCollisionError, writeArtifactExclusively } from './artifact-output.js';
 
 export class ReportFileCollisionError extends Error {}
 
 export async function writeReportExclusively(path: string, contents: string): Promise<void> {
   try {
-    await writeFile(path, contents, { flag: 'wx' });
+    await writeArtifactExclusively(path, contents);
   } catch (error: unknown) {
-    if (isAlreadyExistsError(error)) {
+    if (error instanceof ArtifactFileCollisionError) {
       throw new ReportFileCollisionError(`Report file already exists; no file was overwritten: ${path}`);
     }
     throw error;
   }
-}
-
-function isAlreadyExistsError(error: unknown): error is NodeJS.ErrnoException {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST';
 }
