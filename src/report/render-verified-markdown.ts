@@ -1,9 +1,11 @@
 import type { Finding } from '../model/finding.js';
+import { isDeepStrictEqual } from 'node:util';
 import { checkExecutionStatuses, readinessDomains, type ReadinessReport } from '../model/report.js';
 import type { VerifiedReadinessReport } from '../model/verified-report.js';
 import { renderSafeMarkdownCode } from './markdown-safety.js';
 import { renderMarkdown } from './render-markdown.js';
 import { CONTAINMENT_WARNING } from '../verification/contract-constants.js';
+import { COMMAND_APPROVAL_BOUNDARY } from '../verification/command-approval-boundary.js';
 
 const verificationCheckId = 'universal-verification.commands';
 const findingOutcomes = new Set([
@@ -73,6 +75,9 @@ function safeBaseReport(report: VerifiedReadinessReport): ReadinessReport {
 }
 
 function renderLocalVerification(report: VerifiedReadinessReport): string[] {
+  if (!isDeepStrictEqual(report.verification.approvalBoundary, COMMAND_APPROVAL_BOUNDARY)) {
+    throw new Error('Cannot render an unvalidated command approval boundary.');
+  }
   const findings = report.findings.filter(({ checkId }) => checkId === verificationCheckId);
   const exclusions = findings.filter((finding) => statusEvidence(finding).includes('Status: excluded;'));
   const changedPaths = findings.flatMap((finding) => finding.evidence
@@ -141,7 +146,18 @@ function renderLocalVerification(report: VerifiedReadinessReport): string[] {
       lines.push(`  - ${renderSafeMarkdownCode(path)}`);
     }
   }
-  lines.push('', '### Containment warning', '', CONTAINMENT_WARNING);
+  lines.push(
+    '',
+    '## Command approval boundary',
+    '',
+    'The exact command declaration and direct launch details were checked before start.',
+    '',
+    'This does not freeze imported files, dependencies, operating-system code, or changes made by other processes.',
+    '',
+    '### Containment warning',
+    '',
+    CONTAINMENT_WARNING,
+  );
   return lines;
 }
 

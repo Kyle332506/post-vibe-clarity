@@ -176,6 +176,9 @@ describe('sample report documentation', () => {
     expect(sample).toContain('Stop before launch');
     expect(sample).toContain('Unverified');
     expect(sample).toContain('## Local verification');
+    expect(sample).toContain('## Command approval boundary');
+    expect(sample).toContain('The exact command declaration and direct launch details were checked before start.');
+    expect(sample).toContain('This does not freeze imported files, dependencies, operating-system code, or changes made by other processes.');
     expect(sample).toContain('package-script:build');
     expect(sample).toContain(report.disclaimer);
     expectNoEmoji(sample, 'docs/examples/sample-report.md');

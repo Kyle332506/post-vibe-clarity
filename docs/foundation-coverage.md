@@ -6,6 +6,8 @@ This document is the source of truth for the implemented v0.2 foundation behavio
 
 Optional Level 1 verification is implemented for project-declared build, type-check, lint, and test commands. PostVibeClarity creates a plan without running commands, records the exact command sources and settings in a fingerprint, and executes only the unchanged plan after that exact fingerprint is approved.
 
+The exact command declaration and direct launch details are checked before start. This does not freeze imported files, dependencies, operating-system code, or changes made by other processes; transitive loads and the interval after checking remain outside the evidence.
+
 Node projects can use unambiguous package-manager evidence and declared package scripts when the exact declaration has a portable, shell-free interpretation bound to a fingerprinted Node runtime and any direct project or local-package JavaScript entry point. Unsupported script syntax, Node option shapes, or launchers remain explicit unverified coverage. Other projects can use literal argument arrays in `postvibe.verification.yaml`. Missing, excluded, interrupted, timed-out, or unsupported commands remain unverified. Detected but uncovered monorepo workspaces remain explicit gaps.
 
 The executor filters named sensitive environment variables, bounds and redacts captured output, observes visible file changes, and attempts process-tree termination on timeout or interruption. This is not strong sandboxing. Local scripts may read project or outside files, load `.env`, change files, start processes, and use the network. Passing commands do not establish production behavior, complete test coverage, production readiness, or complete security.

@@ -35,7 +35,10 @@ describe('foundation coverage documentation', () => {
   });
 
   it('documents the optional approval-gated verification workflow and its containment boundary', async () => {
-    const readme = await readRepositoryFile('README.md');
+    const [readme, coverage] = await Promise.all([
+      readRepositoryFile('README.md'),
+      readRepositoryFile('docs/foundation-coverage.md'),
+    ]);
 
     expect(readme).toContain('postvibe review');
     expect(readme).toContain('postvibe plan');
@@ -49,6 +52,8 @@ describe('foundation coverage documentation', () => {
     expect(readme).toMatch(/not a security sandbox/i);
     expect(readme).toMatch(/passing commands[\s\S]{0,200}production readiness[\s\S]{0,120}complete security/i);
     expect(readme).toContain('postvibe.verification.yaml');
+    expect(coverage).toMatch(/exact command declaration[\s\S]{0,120}direct launch/i);
+    expect(coverage).toMatch(/does not freeze[\s\S]{0,120}dependencies/i);
   });
 
   it('states implemented Level 1 evidence and the remaining coverage gaps', async () => {

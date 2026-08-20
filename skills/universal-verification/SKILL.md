@@ -10,7 +10,7 @@ Verify approved changes by running only the project's declared commands and reco
 
 ## Plan and approval
 
-Plan the intended verification first: name the approved change, the exact declared commands to run, the project path, and the expected evidence. Before running a command or making any change, obtain approval that identifies the exact command and exact target. Do not treat general permission as approval for additional commands, files, environments, or actions.
+Plan the intended verification first: name the approved change, the exact declared commands to run, the project path, and the expected evidence. The exact command declaration and direct launch details are checked before start. This does not freeze imported files, dependencies, operating-system code, or changes made by other processes; transitive loads and the interval after checking remain outside the evidence. Before running a command or making any change, explain this boundary and obtain approval that identifies the exact command and exact target. Do not treat general permission as approval for additional commands, files, environments, or actions.
 
 ## Containment
 

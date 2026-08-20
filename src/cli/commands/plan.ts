@@ -103,6 +103,7 @@ export async function runPlanCommand(
     commandSummary(plan),
     gapSummary(plan),
     `Warning: ${plan.containmentWarning}`,
+    'Approval boundary: approves the exact command and direct launch checks; it does not freeze imported files or dependencies.',
     `Execute (${execute.shellLabel}): ${execute.command}`,
     '',
   ].join('\n');

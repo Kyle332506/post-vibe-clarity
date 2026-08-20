@@ -167,6 +167,15 @@ describe('foundation skill packages', () => {
     });
   });
 
+  it('universal-verification: explains the command approval boundary before requesting execution approval', async () => {
+    const { body } = await loadSkill('universal-verification');
+    const approval = loadSection(body, 'Plan and approval');
+
+    expect(approval).toMatch(/exact command declaration[\s\S]{0,120}direct launch/i);
+    expect(approval).toMatch(/does not freeze[\s\S]{0,120}(?:dependencies|imported files)/i);
+    expect(approval.indexOf('does not freeze')).toBeLessThan(approval.indexOf('obtain approval'));
+  });
+
   it('secret-exposure: stops rather than exposing content when safe search output is unavailable', async () => {
     const { body } = await loadSkill('secret-exposure');
     const manualFallback = loadSection(body, 'Manual fallback');

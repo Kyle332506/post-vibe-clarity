@@ -864,7 +864,7 @@ Remove base domain gaps only for the three domains now represented by the verifi
 
 Create `report-0.2.schema.json` with the complete `0.1` fields plus required `verification`. Keep `report-0.1.schema.json` unchanged. Validate linkage semantically against the supplied plan and execution.
 
-Render a `## Local verification` section containing plan ID, fingerprint, execution ID, execution-record path, command status/duration, changed paths, exclusions, and containment warning. End with the exact existing disclaimer.
+Render a `## Local verification` section containing plan ID, fingerprint, execution ID, execution-record path, command status/duration, changed paths, exclusions, the `## Command approval boundary` section, and containment warning. The boundary states that the exact command declaration and direct launch details were checked before start, but does not freeze imported files, dependencies, operating-system code, or changes made by other processes. End with the exact existing disclaimer.
 
 - [ ] **Step 6: Run report and foundation regressions**
 

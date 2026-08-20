@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VerifiedReadinessReport } from '../../src/model/verified-report.js';
 import type { VerificationExecution, VerificationPlan } from '../../src/model/verification.js';
+import { renderVerifiedMarkdown } from '../../src/report/render-verified-markdown.js';
 import { validateVerifiedReadinessReport } from '../../src/validation/report-v02-schema.js';
 import { validateVerificationExecution } from '../../src/validation/verification-execution-schema.js';
 import { validateVerificationPlan } from '../../src/validation/verification-plan-schema.js';
@@ -110,6 +111,22 @@ function scoreShapedFieldPaths(value: unknown, path = '$'): string[] {
   ]);
 }
 
+function prohibitedApprovalClaimPaths(value: unknown, path = '$'): string[] {
+  const prohibited = [
+    'complete runtime source approved',
+    'transitive code approved',
+    'all executed code immutable',
+  ];
+  if (typeof value === 'string') {
+    return prohibited.some((claim) => value.toLowerCase().includes(claim)) ? [path] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => prohibitedApprovalClaimPaths(item, `${path}[${index}]`));
+  }
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.entries(value).flatMap(([key, item]) => prohibitedApprovalClaimPaths(item, `${path}.${key}`));
+}
+
 async function readValidatedPlan(path: string): Promise<VerificationPlan> {
   const input = JSON.parse(await readFile(path, 'utf8')) as unknown;
   expect(await validateVerificationPlan(input)).toEqual({ ok: true });
@@ -165,6 +182,12 @@ describe.each(runners)('universal launch baseline through the $label CLI', (runn
     expect(scoreShapedFieldPaths(plan)).toEqual([]);
     expect(scoreShapedFieldPaths(execution)).toEqual([]);
     expect(scoreShapedFieldPaths(reportInput)).toEqual([]);
+    expect([
+      plan,
+      execution,
+      reportInput,
+      renderVerifiedMarkdown(report),
+    ].flatMap((artifact) => prohibitedApprovalClaimPaths(artifact))).toEqual([]);
 
     const persisted = [
       await readFile(planPath, 'utf8'),
@@ -200,6 +223,10 @@ describe('universal launch baseline safety cases', () => {
     expect(markdown.slice(0, -`${disclaimer}\n`.length)).not.toContain(disclaimer);
     expect(markdown).not.toContain(controlledSecret);
     expect(markdown).not.toMatch(/readiness[ -]?score/i);
+    const plan = JSON.parse(await readFile(planPath, 'utf8')) as unknown;
+    const execution = JSON.parse(await readFile(pathFrom(executed.stdout, 'Execution record'), 'utf8')) as unknown;
+    const markdownArtifacts = [plan, execution, markdown];
+    expect(markdownArtifacts.flatMap((artifact) => prohibitedApprovalClaimPaths(artifact))).toEqual([]);
   });
 
   it.runIf(process.platform !== 'win32')('executes the emitted POSIX command without shell expansion', async () => {

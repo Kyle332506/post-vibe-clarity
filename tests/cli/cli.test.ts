@@ -381,6 +381,7 @@ describe('postvibe plan CLI', () => {
         'Commands: 4 selected (build: 1, type-check: 1, lint: 1, test: 1); 0 excluded.',
         'Gaps: none.',
         `Warning: ${plan.containmentWarning}`,
+        'Approval boundary: approves the exact command and direct launch checks; it does not freeze imported files or dependencies.',
         `Execute (${process.platform === 'win32' ? 'PowerShell' : 'POSIX sh'}): ${process.platform === 'win32'
           ? `& 'postvibe' 'execute' '${planPath}' '--approve' '${plan.fingerprint}' '--output' '${outputDirectory}'`
           : `'postvibe' 'execute' '${planPath}' '--approve' '${plan.fingerprint}' '--output' '${outputDirectory}'`}`,

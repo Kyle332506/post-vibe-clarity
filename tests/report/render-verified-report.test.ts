@@ -7,6 +7,7 @@ import {
 } from '../fixtures/sample-verified-report.js';
 import { sampleVerificationExecution } from '../fixtures/sample-verification-execution.js';
 import { sampleVerificationPlan } from '../fixtures/sample-verification-plan.js';
+import { VERIFICATION_DISCLAIMER } from '../../src/verification/contract-constants.js';
 
 describe('renderVerifiedMarkdown', () => {
   it('renders linkage, command timing, changed paths, exclusions, and the containment warning', async () => {
@@ -38,7 +39,17 @@ describe('renderVerifiedMarkdown', () => {
     expect(markdown).toContain('Only content SHA-256 metadata is recorded');
   });
 
-  it('ends with the exact disclaimer and never adds secrets, a score, verdict, emoji, or authorship', async () => {
+  it('renders the approved command boundary and ends with the exact disclaimer', async () => {
+    const report = await sampleVerifiedReadinessReport();
+    const markdown = renderVerifiedMarkdown(report);
+
+    expect(markdown).toContain('## Command approval boundary');
+    expect(markdown).toContain('The exact command declaration and direct launch details were checked before start.');
+    expect(markdown).toContain('This does not freeze imported files, dependencies, operating-system code, or changes made by other processes.');
+    expect(markdown.endsWith(`${VERIFICATION_DISCLAIMER}\n`)).toBe(true);
+  });
+
+  it('never adds secrets, a score, verdict, emoji, or authorship', async () => {
     const report = await sampleVerifiedReadinessReport();
     const markdown = renderVerifiedMarkdown(report);
     const prohibited = [
@@ -52,7 +63,6 @@ describe('renderVerifiedMarkdown', () => {
       '❌',
     ];
 
-    expect(markdown.endsWith(`${report.disclaimer}\n`)).toBe(true);
     expect(markdown).not.toContain(sampleControlledCredential);
     for (const text of prohibited) expect(markdown.toLowerCase()).not.toContain(text);
   });

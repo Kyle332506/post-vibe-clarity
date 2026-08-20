@@ -151,6 +151,12 @@
   - ` [generated for this run] `
   - ` [generated for this run] `
 
+## Command approval boundary
+
+The exact command declaration and direct launch details were checked before start.
+
+This does not freeze imported files, dependencies, operating-system code, or changes made by other processes.
+
 ### Containment warning
 
 Commands run as local processes with the current user privileges; this is not a security sandbox and does not block network or out-of-project filesystem access.
