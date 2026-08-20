@@ -7,8 +7,8 @@ function visibleControlCharacter(character: string): string {
   return `\\u${codePoint.toString(16).padStart(4, '0')}`;
 }
 
-const lineOrControlCharacter = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
-const lineOrControlCharacters = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/gu;
+const lineOrControlCharacter = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u;
+const lineOrControlCharacters = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/gu;
 
 export function containsMarkdownLineOrControl(value: string): boolean {
   return lineOrControlCharacter.test(value);

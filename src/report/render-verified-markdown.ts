@@ -1,11 +1,26 @@
 import type { Finding } from '../model/finding.js';
-import type { ReadinessReport } from '../model/report.js';
+import { checkExecutionStatuses, readinessDomains, type ReadinessReport } from '../model/report.js';
 import type { VerifiedReadinessReport } from '../model/verified-report.js';
 import { renderSafeMarkdownCode } from './markdown-safety.js';
 import { renderMarkdown } from './render-markdown.js';
 
 const verificationCheckId = 'universal-verification.commands';
 const containmentWarning = 'Commands run as local processes with the current user privileges; this is not a security sandbox and does not block network or out-of-project filesystem access.';
+const findingOutcomes = new Set([
+  'passed',
+  'failed',
+  'likely-issue',
+  'unverified',
+  'not-applicable',
+  'risk-accepted',
+  'resolved-and-rechecked',
+]);
+const executionStatuses = new Set<string>(checkExecutionStatuses);
+const domains = new Set<string>(readinessDomains);
+
+function safeContractValue<T extends string>(value: T, allowed: Set<string>): T {
+  return (allowed.has(value) ? value : renderSafeMarkdownCode(value)) as T;
+}
 
 function statusEvidence(finding: Finding): string {
   return finding.evidence.find(({ kind }) => kind === 'command' || kind === 'behavior')?.summary
@@ -18,8 +33,21 @@ function commandId(finding: Finding): string {
 
 function safeBaseReport(report: VerifiedReadinessReport): ReadinessReport {
   const safe = structuredClone(report) as unknown as ReadinessReport;
+  safe.generatedAt = renderSafeMarkdownCode(safe.generatedAt);
+  safe.toolkitVersion = renderSafeMarkdownCode(safe.toolkitVersion);
   safe.manifest.projectRoot = renderSafeMarkdownCode(safe.manifest.projectRoot);
-  for (const finding of safe.findings.filter(({ checkId }) => checkId === verificationCheckId)) {
+  for (const artifact of safe.manifest.artifacts) {
+    artifact.value = renderSafeMarkdownCode(artifact.value) as typeof artifact.value;
+  }
+  for (const finding of safe.findings) {
+    finding.title = renderSafeMarkdownCode(finding.title);
+    finding.checkId = renderSafeMarkdownCode(finding.checkId);
+    finding.checkVersion = renderSafeMarkdownCode(finding.checkVersion);
+    finding.skillVersion = renderSafeMarkdownCode(finding.skillVersion);
+    finding.outcome = safeContractValue(finding.outcome, findingOutcomes);
+    finding.impact = renderSafeMarkdownCode(finding.impact);
+    finding.recommendation = renderSafeMarkdownCode(finding.recommendation);
+    finding.verification = renderSafeMarkdownCode(finding.verification);
     for (const evidence of finding.evidence) {
       if (evidence.location !== undefined) evidence.location = renderSafeMarkdownCode(evidence.location);
     }
@@ -27,7 +55,18 @@ function safeBaseReport(report: VerifiedReadinessReport): ReadinessReport {
       finding.unverifiedBoundaries = finding.unverifiedBoundaries.map(renderSafeMarkdownCode);
     }
   }
-  for (const gap of safe.coverageGaps.filter(({ checkId }) => checkId === verificationCheckId)) {
+  for (const execution of safe.checkExecutions) {
+    execution.checkId = renderSafeMarkdownCode(execution.checkId);
+    execution.checkVersion = renderSafeMarkdownCode(execution.checkVersion);
+    execution.skillId = renderSafeMarkdownCode(execution.skillId);
+    execution.skillVersion = renderSafeMarkdownCode(execution.skillVersion);
+    execution.status = safeContractValue(execution.status, executionStatuses);
+    execution.domains = execution.domains.map((domain) => safeContractValue(domain, domains));
+  }
+  for (const gap of safe.coverageGaps) {
+    if (gap.checkId !== undefined) gap.checkId = renderSafeMarkdownCode(gap.checkId);
+    gap.status = safeContractValue(gap.status, executionStatuses);
+    gap.domains = gap.domains.map((domain) => safeContractValue(domain, domains));
     gap.reason = renderSafeMarkdownCode(gap.reason);
   }
   return safe;

@@ -92,4 +92,67 @@ describe('renderVerifiedMarkdown', () => {
     expect(markdown).not.toMatch(/^## unicode-injection/mu);
     expect(markdown).toContain('\\u2028## unicode-injection\\u0085tail');
   });
+
+  it('safely renders every inherited project-controlled field and makes bidi controls visible', async () => {
+    const report = await sampleVerifiedReadinessReport();
+    const preservedFinding = report.findings.find(({ id }) => id === 'secret-exposure.fixture-secret');
+    const unverifiedFinding = report.findings.find(({ id }) => id === 'launch-essentials.privacy-unverified');
+    const preservedExecution = report.checkExecutions.find(({ checkId }) => checkId === 'secret-exposure.scan');
+    const checkGap = report.coverageGaps.find(({ checkId }) => checkId === 'launch-essentials.privacy-notice');
+    const domainGap = report.coverageGaps.find(({ checkId }) => checkId === undefined);
+    const artifact = report.manifest.artifacts[0];
+    if (!preservedFinding || !unverifiedFinding || !preservedExecution || !checkGap || !domainGap || !artifact) {
+      throw new Error('expected preserved Level 0 report content');
+    }
+
+    const bidiAndFormattingControls = '\u00ad\u061c\u180e\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2060\u2061\u2062\u2063\u2064\u2066\u2067\u2068\u2069\u206a\u206b\u206c\u206d\u206e\u206f\ufeff';
+    const headings: string[] = [];
+    const adversarial = (label: string): string => {
+      headings.push(label);
+      return `ordinary/${label}\`tick\`${bidiAndFormattingControls}\n## ${label}-injection`;
+    };
+
+    report.manifest.projectRoot = adversarial('project-root');
+    artifact.value = adversarial('artifact-value') as typeof artifact.value;
+    preservedFinding.title = adversarial('finding-title');
+    preservedFinding.checkId = adversarial('finding-check-id');
+    preservedFinding.checkVersion = adversarial('finding-check-version');
+    preservedFinding.skillVersion = adversarial('finding-skill-version');
+    preservedFinding.outcome = adversarial('finding-outcome') as typeof preservedFinding.outcome;
+    preservedFinding.impact = adversarial('finding-impact');
+    preservedFinding.recommendation = adversarial('finding-recommendation');
+    preservedFinding.verification = adversarial('finding-verification');
+    const preservedEvidence = preservedFinding.evidence[0];
+    if (!preservedEvidence) throw new Error('expected preserved finding evidence');
+    preservedEvidence.location = adversarial('finding-evidence-location');
+    unverifiedFinding.title = adversarial('unverified-title');
+    unverifiedFinding.unverifiedBoundaries = [adversarial('unverified-boundary')];
+    preservedExecution.checkId = adversarial('execution-check-id');
+    preservedExecution.checkVersion = adversarial('execution-check-version');
+    preservedExecution.skillId = adversarial('execution-skill-id');
+    preservedExecution.skillVersion = adversarial('execution-skill-version');
+    preservedExecution.status = adversarial('execution-status') as typeof preservedExecution.status;
+    preservedExecution.domains = [
+      adversarial('execution-domain') as typeof preservedExecution.domains[number],
+    ];
+    checkGap.checkId = adversarial('check-gap-id');
+    checkGap.status = adversarial('check-gap-status') as typeof checkGap.status;
+    checkGap.reason = adversarial('check-gap-reason');
+    domainGap.domains = [adversarial('domain-gap-domain') as typeof domainGap.domains[number]];
+    domainGap.reason = adversarial('domain-gap-reason');
+
+    const markdown = renderVerifiedMarkdown(report);
+
+    for (const heading of headings) {
+      expect(markdown).not.toMatch(new RegExp(`^## ${heading}-injection$`, 'mu'));
+      expect(markdown).toContain(`\\n## ${heading}-injection`);
+    }
+    expect(markdown).not.toMatch(/[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u);
+    for (const escaped of ['\\u061c', '\\u200e', '\\u200f', '\\u202a', '\\u202e', '\\u2066', '\\u2069']) {
+      expect(markdown).toContain(escaped);
+    }
+    expect(markdown).toContain('ordinary/artifact-value');
+    expect(markdown).toContain('coverage/index.html');
+    expect(markdown.endsWith(`${report.disclaimer}\n`)).toBe(true);
+  });
 });

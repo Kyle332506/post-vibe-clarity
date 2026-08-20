@@ -129,8 +129,8 @@ describe('validateVerifiedReadinessReport', () => {
     expect(result.errors.join('\n')).toMatch(/executionRecordPath.*control/i);
   });
 
-  it('rejects Unicode line separators and C1 controls in execution-record paths', async () => {
-    for (const character of ['\u0085', '\u2028', '\u2029']) {
+  it('rejects Unicode line, C1, bidi, and invisible formatting controls in execution-record paths', async () => {
+    for (const character of ['\u0085', '\u061c', '\u200e', '\u200f', '\u2028', '\u2029', '\u202a', '\u202e', '\u2066', '\u2069']) {
       const report = await sampleVerifiedReadinessReport();
       report.verification.executionRecordPath = `.postvibe/execution${character}injected.json`;
 
