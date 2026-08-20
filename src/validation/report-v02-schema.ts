@@ -8,6 +8,7 @@ import type { FormatsPlugin } from 'ajv-formats';
 import type { ReadinessReport } from '../model/report.js';
 import type { VerifiedReadinessReport } from '../model/verified-report.js';
 import type { VerificationExecution, VerificationPlan } from '../model/verification.js';
+import { containsMarkdownLineOrControl } from '../report/markdown-safety.js';
 import { redactCommandOutput } from '../verification/redact-command-output.js';
 import { mapVerificationEvidence } from '../verification/map-verification-findings.js';
 import type { ValidationResult } from './readiness-schema.js';
@@ -81,7 +82,7 @@ function linkageErrors(
   report: VerifiedReadinessReport,
   plan: VerificationPlan,
   execution: VerificationExecution,
-  executionRecordPath?: string,
+  executionRecordPath: string,
 ): string[] {
   const errors: string[] = [];
   if (report.verification.planId !== plan.planId) {
@@ -93,11 +94,14 @@ function linkageErrors(
   if (report.verification.executionId !== execution.executionId) {
     errors.push('/verification/executionId must match the verification execution');
   }
-  if (executionRecordPath !== undefined && report.verification.executionRecordPath !== executionRecordPath) {
+  if (report.verification.executionRecordPath !== executionRecordPath) {
     errors.push('/verification/executionRecordPath must match the supplied execution-record path');
   }
   if (report.verification.executionRecordPath.trim().length === 0) {
     errors.push('/verification/executionRecordPath must not be blank');
+  }
+  if (containsMarkdownLineOrControl(report.verification.executionRecordPath)) {
+    errors.push('/verification/executionRecordPath must not contain control characters');
   }
   if (report.manifest.projectRoot !== plan.projectRoot || report.manifest.projectRoot !== execution.projectRoot) {
     errors.push('/manifest/projectRoot must match the verification plan and execution');
@@ -107,6 +111,26 @@ function linkageErrors(
   }
   errors.push(...validateExecutionAgainstPlan(execution, plan).map((error) => `/execution${error}`));
   return errors;
+}
+
+function expectedPathErrors(executionRecordPath: unknown): string[] {
+  if (typeof executionRecordPath !== 'string') return ['/expectedExecutionRecordPath is required'];
+  if (executionRecordPath.trim().length === 0) return ['/expectedExecutionRecordPath must not be blank'];
+  if (containsMarkdownLineOrControl(executionRecordPath)) {
+    return ['/expectedExecutionRecordPath must not contain control characters'];
+  }
+  return [];
+}
+
+function inputPathErrors(input: unknown): string[] {
+  if (typeof input !== 'object' || input === null) return [];
+  const verification: unknown = Reflect.get(input, 'verification');
+  if (typeof verification !== 'object' || verification === null) return [];
+  const path: unknown = Reflect.get(verification, 'executionRecordPath');
+  if (typeof path === 'string' && containsMarkdownLineOrControl(path)) {
+    return ['/verification/executionRecordPath must not contain control characters'];
+  }
+  return [];
 }
 
 function evidenceErrors(
@@ -140,8 +164,12 @@ export async function validateVerifiedReadinessReport(
   input: unknown,
   plan: VerificationPlan,
   execution: VerificationExecution,
-  executionRecordPath?: string,
+  executionRecordPath: string,
 ): Promise<ValidationResult> {
+  const pathErrors = [
+    ...expectedPathErrors(executionRecordPath),
+    ...inputPathErrors(input),
+  ];
   const [schemaText, reportV01SchemaText] = await Promise.all([
     readContainedSchema(schemaLocation.schemaPath),
     readContainedSchema(schemaLocation.reportV01SchemaPath),
@@ -154,6 +182,7 @@ export async function validateVerifiedReadinessReport(
     const schemaErrors = (validate.errors ?? []).map(
       (error) => `${error.instancePath || '/'} ${error.message ?? 'is invalid'}`,
     );
+    schemaErrors.push(...pathErrors);
     const serialized = JSON.stringify(input);
     if (redactCommandOutput(serialized) !== serialized) {
       schemaErrors.push('/ must not contain unredacted credential values');
@@ -168,6 +197,7 @@ export async function validateVerifiedReadinessReport(
     validateVerificationExecution(execution),
   ]);
   const errors = [
+    ...pathErrors,
     ...(baseValidation.ok ? [] : baseValidation.errors),
     ...(planValidation.ok ? [] : planValidation.errors.map((error) => `/plan${error}`)),
     ...(executionValidation.ok ? [] : executionValidation.errors.map((error) => `/execution${error}`)),

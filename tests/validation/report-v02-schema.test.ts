@@ -64,11 +64,87 @@ describe('validateVerifiedReadinessReport', () => {
     ]));
   });
 
+  it.each([
+    ['command behavior', (plan: typeof sampleVerificationPlan) => { plan.commands[0]!.timeoutSeconds += 1; }],
+    ['approved evidence', (plan: typeof sampleVerificationPlan) => {
+      plan.categoryAssessments[0]!.reason = 'Changed after approval.';
+    }],
+  ])('rejects linked %s changed without a new canonical fingerprint', async (_label, mutate) => {
+    const report = await sampleVerifiedReadinessReport();
+    const plan = structuredClone(sampleVerificationPlan);
+    mutate(plan);
+
+    const result = await validateVerifiedReadinessReport(
+      report,
+      plan,
+      sampleVerificationExecution,
+      sampleExecutionRecordPath,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected changed plan to fail');
+    expect(result.errors).toContain('/plan/fingerprint must match the canonical plan payload');
+  });
+
   it('rejects a blank execution-record path', async () => {
     const report = await sampleVerifiedReadinessReport();
     report.verification.executionRecordPath = '   ';
 
     expect(await invalidErrors(report)).toContain('/verification/executionRecordPath must not be blank');
+  });
+
+  it('requires the expected execution-record path at the semantic validation boundary', async () => {
+    const report = await sampleVerifiedReadinessReport();
+    const validatorWithOptionalPath = validateVerifiedReadinessReport as (
+      input: unknown,
+      plan: typeof sampleVerificationPlan,
+      execution: typeof sampleVerificationExecution,
+      executionRecordPath?: string,
+    ) => ReturnType<typeof validateVerifiedReadinessReport>;
+
+    const result = await validatorWithOptionalPath(
+      report,
+      sampleVerificationPlan,
+      sampleVerificationExecution,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected missing path to fail');
+    expect(result.errors).toContain('/expectedExecutionRecordPath is required');
+  });
+
+  it('rejects controlled line characters in report and expected execution-record paths', async () => {
+    const report = await sampleVerifiedReadinessReport();
+    report.verification.executionRecordPath = '.postvibe/execution.json\n## injected';
+
+    const result = await validateVerifiedReadinessReport(
+      report,
+      sampleVerificationPlan,
+      sampleVerificationExecution,
+      '.postvibe/execution.json\n## injected',
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected control-line path to fail');
+    expect(result.errors.join('\n')).toMatch(/executionRecordPath.*control/i);
+  });
+
+  it('rejects Unicode line separators and C1 controls in execution-record paths', async () => {
+    for (const character of ['\u0085', '\u2028', '\u2029']) {
+      const report = await sampleVerifiedReadinessReport();
+      report.verification.executionRecordPath = `.postvibe/execution${character}injected.json`;
+
+      const result = await validateVerifiedReadinessReport(
+        report,
+        sampleVerificationPlan,
+        sampleVerificationExecution,
+        `.postvibe/execution${character}injected.json`,
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected control-line path to fail');
+      expect(result.errors.join('\n')).toMatch(/executionRecordPath.*control/i);
+    }
   });
 
   it('rejects a wrong summary, partial state, and duplicate findings', async () => {

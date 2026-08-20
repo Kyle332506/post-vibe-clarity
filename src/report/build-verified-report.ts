@@ -11,6 +11,7 @@ import { validateVerifiedReadinessReport } from '../validation/report-v02-schema
 import { validateVerificationExecution, validateExecutionAgainstPlan } from '../validation/verification-execution-schema.js';
 import { validateVerificationPlan } from '../validation/verification-plan-schema.js';
 import { mapVerificationEvidence } from '../verification/map-verification-findings.js';
+import { containsMarkdownLineOrControl } from './markdown-safety.js';
 
 const representedDomains = new Set([
   'data-correctness',
@@ -35,6 +36,9 @@ export async function buildVerifiedReport(
   executionRecordPath: string,
 ): Promise<VerifiedReadinessReport> {
   if (executionRecordPath.trim().length === 0) throw new Error('A non-empty execution-record path is required.');
+  if (containsMarkdownLineOrControl(executionRecordPath)) {
+    throw new Error('The execution-record path must not contain control characters.');
+  }
 
   const [baseValidation, planValidation, executionValidation] = await Promise.all([
     validateReadinessReport(base),

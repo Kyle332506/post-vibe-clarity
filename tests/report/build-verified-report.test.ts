@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { derivePartial, summarizeReport } from '../../src/model/report.js';
 import { buildVerifiedReport } from '../../src/report/build-verified-report.js';
+import { fingerprintPlan } from '../../src/verification/plan-fingerprint.js';
 import { sampleReadinessReport } from '../fixtures/sample-readiness-report.js';
 import { sampleVerificationExecution } from '../fixtures/sample-verification-execution.js';
 import { sampleVerificationPlan } from '../fixtures/sample-verification-plan.js';
@@ -104,6 +105,45 @@ describe('buildVerifiedReport', () => {
     )).rejects.toThrow(/verification execution/i);
   });
 
+  it.each([
+    ['command behavior', (plan: typeof sampleVerificationPlan) => { plan.commands[0]!.timeoutSeconds += 1; }],
+    ['command evidence', (plan: typeof sampleVerificationPlan) => { plan.commands[0]!.source.declaration = 'changed script'; }],
+    ['planning evidence', (plan: typeof sampleVerificationPlan) => {
+      plan.planningReport.findings[0]!.recommendation = 'Changed after approval.';
+    }],
+  ])('rejects %s changed without recomputing the approved fingerprint', async (_label, mutate) => {
+    const plan = structuredClone(sampleVerificationPlan);
+    mutate(plan);
+
+    await expect(buildVerifiedReport(
+      sampleReadinessReport,
+      plan,
+      sampleVerificationExecution,
+      executionRecordPath,
+    )).rejects.toThrow(/fingerprint must match the canonical plan payload/i);
+  });
+
+  it('rejects an execution that drops a plan coverage gap', async () => {
+    const plan = structuredClone(sampleVerificationPlan);
+    plan.coverageGaps.push({
+      id: 'workspace.packages-api',
+      reason: 'The packages/api workspace is not covered by an approved command.',
+      workspace: 'packages/api',
+    });
+    plan.fingerprint = fingerprintPlan(plan);
+    plan.planId = `pvp-${plan.fingerprint.slice(0, 16)}`;
+    const execution = structuredClone(sampleVerificationExecution);
+    execution.planId = plan.planId;
+    execution.planFingerprint = plan.fingerprint;
+
+    await expect(buildVerifiedReport(
+      sampleReadinessReport,
+      plan,
+      execution,
+      executionRecordPath,
+    )).rejects.toThrow(/must preserve plan coverage gap workspace\.packages-api/i);
+  });
+
   it('does not produce a report containing an unredacted controlled credential', async () => {
     const base = structuredClone(sampleReadinessReport);
     base.findings[0]!.recommendation = 'Set APP_TOKEN=pvc-controlled-report-secret';
@@ -114,5 +154,14 @@ describe('buildVerifiedReport', () => {
       sampleVerificationExecution,
       executionRecordPath,
     )).rejects.toThrow(/unredacted credential/i);
+  });
+
+  it('rejects an execution-record path containing line or control characters', async () => {
+    await expect(buildVerifiedReport(
+      sampleReadinessReport,
+      sampleVerificationPlan,
+      sampleVerificationExecution,
+      '.postvibe/execution.json\n## injected',
+    )).rejects.toThrow(/execution-record path.*control/i);
   });
 });

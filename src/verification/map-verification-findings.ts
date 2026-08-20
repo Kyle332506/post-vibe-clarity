@@ -7,10 +7,12 @@ import type {
   VerificationCategoryAssessment,
   VerificationCommand,
   VerificationCommandResult,
+  VerificationCoverageGap,
   VerificationExecution,
   VerificationPlan,
 } from '../model/verification.js';
 import { validateExecutionAgainstPlan } from '../validation/verification-execution-schema.js';
+import { fingerprintPlan } from './plan-fingerprint.js';
 
 const checkId = 'universal-verification.commands';
 const checkVersion = '0.1.0';
@@ -141,12 +143,16 @@ function excludedFinding(
   };
 }
 
-function categoryFinding(assessment: VerificationCategoryAssessment, plan: VerificationPlan): Finding {
+function categoryFinding(
+  id: string,
+  assessment: VerificationCategoryAssessment,
+  plan: VerificationPlan,
+): Finding {
   const notApplicable = assessment.state === 'not-applicable';
   const gap = plan.coverageGaps.find(({ category }) => category === assessment.category);
   const reason = gap?.reason ?? assessment.reason;
   return {
-    id: `${checkId}.category.${assessment.category}`,
+    id,
     ...findingBase(assessment.category),
     actionLevel: notApplicable ? 'improve-when-appropriate' : missingAction[assessment.category],
     outcome: notApplicable ? 'not-applicable' : 'unverified',
@@ -171,12 +177,55 @@ function categoryFinding(assessment: VerificationCategoryAssessment, plan: Verif
   };
 }
 
-function incompleteCoverageGap(findings: Finding[], execution: VerificationExecution): CoverageGap[] {
+function syntheticCategoryFindingId(
+  category: CommandCategory,
+  occupiedIds: Set<string>,
+): string {
+  const base = `${checkId}.category.${category}`;
+  if (!occupiedIds.has(base)) return base;
+  let suffix = 1;
+  let candidate = `${base}.assessment`;
+  while (occupiedIds.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}.assessment.${suffix}`;
+  }
+  return candidate;
+}
+
+function mergedVerificationGaps(
+  plan: VerificationPlan,
+  execution: VerificationExecution,
+): VerificationCoverageGap[] {
+  const byId = new Map<string, VerificationCoverageGap>();
+  for (const gap of [...plan.coverageGaps, ...execution.coverageGaps]) {
+    if (!byId.has(gap.id)) byId.set(gap.id, gap);
+  }
+  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function mappedCoverageGap(gap: VerificationCoverageGap): CoverageGap {
+  const workspace = gap.workspace === undefined ? '' : ` Workspace: ${gap.workspace}.`;
+  return {
+    id: `check.${checkId}.gap.${gap.id}`,
+    checkId,
+    skillId,
+    status: 'unverified',
+    domains: gap.category === undefined ? checkDomains : categoryDomains[gap.category],
+    reason: `${gap.reason}${workspace}`,
+  };
+}
+
+function incompleteCoverageGaps(
+  findings: Finding[],
+  plan: VerificationPlan,
+  execution: VerificationExecution,
+): CoverageGap[] {
   const incomplete = findings.filter(({ outcome }) => outcome === 'unverified');
-  if (incomplete.length === 0 && execution.status !== 'partial' && execution.coverageGaps.length === 0) return [];
+  const mappedGaps = mergedVerificationGaps(plan, execution).map(mappedCoverageGap);
+  if (mappedGaps.length > 0) return mappedGaps;
+  if (incomplete.length === 0 && execution.status !== 'partial') return [];
   const reasons = new Set([
     ...incomplete.flatMap(({ unverifiedBoundaries }) => unverifiedBoundaries ?? []),
-    ...execution.coverageGaps.map(({ reason }) => reason),
   ]);
   return [{
     id: `check.${checkId}`,
@@ -192,6 +241,9 @@ export function mapVerificationEvidence(
   plan: VerificationPlan,
   execution: VerificationExecution,
 ): VerificationFindingSet {
+  if (plan.fingerprint !== fingerprintPlan(plan)) {
+    throw new Error('/fingerprint must match the canonical plan payload');
+  }
   const linkageErrors = validateExecutionAgainstPlan(execution, plan);
   if (linkageErrors.length > 0) throw new Error(linkageErrors.join('; '));
 
@@ -216,12 +268,16 @@ export function mapVerificationEvidence(
   const representedCategories = new Set(
     [...plan.commands, ...plan.excludedCommands].map(({ category }) => category),
   );
+  const occupiedIds = new Set(findings.map(({ id }) => id));
   for (const assessment of plan.categoryAssessments) {
-    if (!representedCategories.has(assessment.category)) findings.push(categoryFinding(assessment, plan));
+    if (representedCategories.has(assessment.category)) continue;
+    const id = syntheticCategoryFindingId(assessment.category, occupiedIds);
+    findings.push(categoryFinding(id, assessment, plan));
+    occupiedIds.add(id);
   }
 
   findings.sort((left, right) => left.id.localeCompare(right.id));
-  const coverageGaps = incompleteCoverageGap(findings, execution);
+  const coverageGaps = incompleteCoverageGaps(findings, plan, execution);
   return {
     findings,
     checkExecution: {

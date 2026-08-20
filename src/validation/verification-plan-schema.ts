@@ -10,6 +10,7 @@ import type {
   VerificationPlan,
 } from '../model/verification.js';
 import type { ValidationResult } from './readiness-schema.js';
+import { fingerprintPlan } from '../verification/plan-fingerprint.js';
 
 const require = createRequire(import.meta.url);
 const Ajv2020 = require('ajv/dist/2020.js') as typeof Ajv2020Constructor;
@@ -89,6 +90,9 @@ export async function validateVerificationPlan(input: unknown): Promise<Validati
 
 function validateSemantics(plan: VerificationPlan): string[] {
   const errors: string[] = [];
+  if (plan.fingerprint !== fingerprintPlan(plan)) {
+    errors.push('/fingerprint must match the canonical plan payload');
+  }
   if (plan.planId !== `pvp-${plan.fingerprint.slice(0, 16)}`) {
     errors.push('/planId must equal pvp-${fingerprint.slice(0, 16)}');
   }

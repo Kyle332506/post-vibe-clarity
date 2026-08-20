@@ -51,7 +51,11 @@
         "planId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9:._-]*$" },
         "planFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "executionId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9:._-]*$" },
-        "executionRecordPath": { "type": "string", "minLength": 1 }
+        "executionRecordPath": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+$"
+        }
       }
     }
   }

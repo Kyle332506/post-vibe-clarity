@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { readFile, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { Ajv2020 as Ajv2020Constructor } from 'ajv/dist/2020.js';
 import type { FormatsPlugin } from 'ajv-formats';
 import type {
@@ -96,6 +97,11 @@ export function validateExecutionAgainstPlan(
   }
   for (const { id } of plan.commands) {
     if (!resultIds.has(id)) errors.push(`/results must contain selected command ${id}`);
+  }
+  for (const gap of plan.coverageGaps) {
+    if (!execution.coverageGaps.some((candidate) => isDeepStrictEqual(candidate, gap))) {
+      errors.push(`/coverageGaps must preserve plan coverage gap ${gap.id}`);
+    }
   }
   return errors;
 }

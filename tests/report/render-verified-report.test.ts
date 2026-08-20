@@ -46,4 +46,50 @@ describe('renderVerifiedMarkdown', () => {
     expect(markdown).not.toContain(sampleControlledCredential);
     for (const text of prohibited) expect(markdown.toLowerCase()).not.toContain(text);
   });
+
+  it('renders every project-controlled verification field as safe single-line code', async () => {
+    const report = await sampleVerifiedReadinessReport();
+    report.verification.executionRecordPath = 'records/report`tick`\n## record-injection';
+    const verificationFindings = report.findings.filter(
+      ({ checkId }) => checkId === 'universal-verification.commands',
+    );
+    const commandEvidence = verificationFindings
+      .flatMap(({ evidence }) => evidence)
+      .find(({ kind }) => kind === 'command');
+    const changedPathEvidence = verificationFindings
+      .flatMap(({ evidence }) => evidence)
+      .find(({ kind }) => kind === 'file');
+    const boundaryFinding = verificationFindings.find(({ unverifiedBoundaries }) => unverifiedBoundaries);
+    if (!commandEvidence || !changedPathEvidence || !boundaryFinding) throw new Error('expected verification evidence');
+    commandEvidence.location = 'package.json`source`\n## source-injection';
+    changedPathEvidence.location = 'dist/changed`path`\n## path-injection';
+    boundaryFinding.unverifiedBoundaries = ['excluded`reason`\n## boundary-injection\u0007'];
+
+    const markdown = renderVerifiedMarkdown(report);
+
+    for (const heading of [
+      'record-injection',
+      'source-injection',
+      'path-injection',
+      'boundary-injection',
+    ]) {
+      expect(markdown).not.toMatch(new RegExp(`^## ${heading}$`, 'm'));
+      expect(markdown).toContain(`\\n## ${heading}`);
+    }
+    expect(markdown).toContain('`tick`');
+    expect(markdown).toContain('`source`');
+    expect(markdown).toContain('`path`');
+    expect(markdown).toContain('`reason`');
+    expect(markdown).toContain('\\u0007');
+  });
+
+  it('makes Unicode line separators and C1 controls visible instead of structural', async () => {
+    const report = await sampleVerifiedReadinessReport();
+    report.verification.executionRecordPath = 'records/report\u2028## unicode-injection\u0085tail';
+
+    const markdown = renderVerifiedMarkdown(report);
+
+    expect(markdown).not.toMatch(/^## unicode-injection/mu);
+    expect(markdown).toContain('\\u2028## unicode-injection\\u0085tail');
+  });
 });

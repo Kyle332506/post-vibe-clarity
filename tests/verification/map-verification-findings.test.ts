@@ -6,8 +6,16 @@ import type {
   VerificationPlan,
 } from '../../src/model/verification.js';
 import { mapVerificationEvidence } from '../../src/verification/map-verification-findings.js';
+import { fingerprintPlan } from '../../src/verification/plan-fingerprint.js';
 import { sampleVerificationExecution } from '../fixtures/sample-verification-execution.js';
 import { sampleVerificationPlan } from '../fixtures/sample-verification-plan.js';
+
+function approve(plan: VerificationPlan, execution: VerificationExecution): void {
+  plan.fingerprint = fingerprintPlan(plan);
+  plan.planId = `pvp-${plan.fingerprint.slice(0, 16)}`;
+  execution.planId = plan.planId;
+  execution.planFingerprint = plan.fingerprint;
+}
 
 function mapped(category: CommandCategory, status: CommandResultStatus) {
   const plan = structuredClone(sampleVerificationPlan);
@@ -35,6 +43,7 @@ function mapped(category: CommandCategory, status: CommandResultStatus) {
     }],
     coverageGaps: [],
   };
+  approve(plan, execution);
   return mapVerificationEvidence(plan, execution).findings.find(
     ({ id }) => id === `universal-verification.commands.fixture:${category}`,
   );
@@ -90,6 +99,7 @@ describe('mapVerificationEvidence', () => {
     plan.commands = plan.commands.filter(({ category }) => category !== 'build');
     const execution = structuredClone(sampleVerificationExecution);
     execution.results = execution.results.filter(({ commandId }) => commandId !== 'package-script:build');
+    approve(plan, execution);
 
     const mappedSet = mapVerificationEvidence(plan, execution);
 
@@ -126,6 +136,7 @@ describe('mapVerificationEvidence', () => {
     }));
     const completeExecution = structuredClone(sampleVerificationExecution);
     completeExecution.coverageGaps = [];
+    approve(completePlan, completeExecution);
     const complete = mapVerificationEvidence(completePlan, completeExecution);
     const incomplete = mapVerificationEvidence(sampleVerificationPlan, sampleVerificationExecution);
 
@@ -141,11 +152,72 @@ describe('mapVerificationEvidence', () => {
     expect(incomplete.checkExecution.status).toBe('unverified');
     expect(incomplete.coverageGaps).toEqual([
       expect.objectContaining({
-        id: 'check.universal-verification.commands',
+        id: 'check.universal-verification.commands.gap.category.type-check',
+        checkId: 'universal-verification.commands',
+        status: 'unverified',
+      }),
+      expect.objectContaining({
+        id: 'check.universal-verification.commands.gap.command.package-script:lint',
         checkId: 'universal-verification.commands',
         status: 'unverified',
       }),
     ]);
+  });
+
+  it('preserves the deterministic union of approved and runtime coverage gaps', () => {
+    const plan = structuredClone(sampleVerificationPlan);
+    plan.coverageGaps.push({
+      id: 'workspace.packages-api',
+      reason: 'The workspace has no approved aggregate command.',
+      workspace: 'packages/api',
+    });
+    const execution = structuredClone(sampleVerificationExecution);
+    execution.coverageGaps.push(
+      structuredClone(plan.coverageGaps.at(-1)!),
+      { id: 'runtime.observer-boundary', reason: 'A runtime observer boundary remained.' },
+    );
+    approve(plan, execution);
+
+    const result = mapVerificationEvidence(plan, execution);
+
+    expect(result.checkExecution.status).toBe('unverified');
+    expect(result.coverageGaps.map(({ id }) => id)).toEqual([
+      'check.universal-verification.commands.gap.category.type-check',
+      'check.universal-verification.commands.gap.command.package-script:lint',
+      'check.universal-verification.commands.gap.runtime.observer-boundary',
+      'check.universal-verification.commands.gap.workspace.packages-api',
+    ]);
+    expect(result.coverageGaps.at(-1)?.reason).toContain('packages/api');
+  });
+
+  it('rejects an execution that omits an approved plan coverage gap', () => {
+    const plan = structuredClone(sampleVerificationPlan);
+    plan.coverageGaps.push({
+      id: 'workspace.packages-api',
+      reason: 'The workspace has no approved aggregate command.',
+      workspace: 'packages/api',
+    });
+    const execution = structuredClone(sampleVerificationExecution);
+    approve(plan, execution);
+
+    expect(() => mapVerificationEvidence(plan, execution)).toThrow(
+      /must preserve plan coverage gap workspace\.packages-api/i,
+    );
+  });
+
+  it('uses collision-free synthetic IDs when a command occupies the category finding ID', () => {
+    const plan = structuredClone(sampleVerificationPlan);
+    plan.commands[0]!.id = 'category.type-check';
+    const execution = structuredClone(sampleVerificationExecution);
+    execution.results[0]!.commandId = 'category.type-check';
+    approve(plan, execution);
+
+    const result = mapVerificationEvidence(plan, execution);
+    const ids = result.findings.map(({ id }) => id);
+
+    expect(ids).toContain('universal-verification.commands.category.type-check');
+    expect(ids).toContain('universal-verification.commands.category.type-check.assessment');
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('treats command failures as completed check evidence', () => {
@@ -163,6 +235,7 @@ describe('mapVerificationEvidence', () => {
     execution.coverageGaps = [];
     execution.results[0]!.status = 'failed';
     execution.results[0]!.exitCode = 1;
+    approve(plan, execution);
 
     const result = mapVerificationEvidence(plan, execution);
 

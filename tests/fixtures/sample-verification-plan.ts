@@ -6,8 +6,8 @@ const sourceHash = '1'.repeat(64);
 export const sampleVerificationPlan: VerificationPlan = {
   schemaId: 'postvibe-verification-plan/0.1',
   schemaVersion: '0.1',
-  planId: 'pvp-aaaaaaaaaaaaaaaa',
-  fingerprint: 'a'.repeat(64),
+  planId: 'pvp-1bdac9c1237a2aad',
+  fingerprint: '1bdac9c1237a2aad29818e6604eabcbc962c6113ed7d398d217ffa82d2804570',
   toolkitVersion: '0.2.0',
   generatedAt: '2026-08-18T12:00:00.000Z',
   projectRoot: '/example/project',
