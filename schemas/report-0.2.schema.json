@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://postvibeclarity.dev/schemas/report-0.2.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "generatedAt",
+    "toolkitVersion",
+    "partial",
+    "manifest",
+    "checkExecutions",
+    "coverageGaps",
+    "findings",
+    "summary",
+    "disclaimer",
+    "verification"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "0.2" },
+    "runId": { "type": "string", "pattern": "^pvc-[0-9]+$" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "toolkitVersion": { "$ref": "https://postvibeclarity.dev/schemas/report-0.1.json#/$defs/version" },
+    "partial": { "type": "boolean" },
+    "manifest": { "$ref": "https://postvibeclarity.dev/schemas/report-0.1.json#/$defs/manifest" },
+    "checkExecutions": {
+      "type": "array",
+      "items": { "$ref": "https://postvibeclarity.dev/schemas/report-0.1.json#/$defs/checkExecution" }
+    },
+    "coverageGaps": {
+      "type": "array",
+      "items": { "$ref": "https://postvibeclarity.dev/schemas/report-0.1.json#/$defs/coverageGap" }
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "https://postvibeclarity.dev/schemas/report-0.1.json#/$defs/finding" }
+    },
+    "summary": { "$ref": "https://postvibeclarity.dev/schemas/report-0.1.json#/$defs/summary" },
+    "disclaimer": {
+      "const": "This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects."
+    },
+    "verification": { "$ref": "#/$defs/verification" }
+  },
+  "$defs": {
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planId", "planFingerprint", "executionId", "executionRecordPath"],
+      "properties": {
+        "planId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9:._-]*$" },
+        "planFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "executionId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9:._-]*$" },
+        "executionRecordPath": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
