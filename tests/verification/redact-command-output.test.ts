@@ -166,6 +166,23 @@ describe('command output redaction', () => {
     expect(result.output).not.toContain('THIRD_RETAINED_KEY_LINE_9mQ4');
   });
 
+  it('keeps a private key open after a mismatched end label', () => {
+    const collector = createCommandOutputCollector(192);
+    collector.append('safe-prefix\n');
+    collector.append('-----BEGIN RSA PRIVATE KEY-----\n');
+    collector.append(`${'A'.repeat(240)}\n`);
+    collector.append('-----END EC PRIVATE KEY-----\n');
+    collector.append('MISMATCHED_END_SECOND_KEY_LINE_3cH7\n');
+    collector.append('MISMATCHED_END_THIRD_KEY_LINE_5xN9\n');
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output).toContain('[REDACTED]');
+    expect(result.output).not.toContain('MISMATCHED_END_SECOND_KEY_LINE_3cH7');
+    expect(result.output).not.toContain('MISMATCHED_END_THIRD_KEY_LINE_5xN9');
+  });
+
   it('preserves an ordinary safe tail after truncation', () => {
     const collector = createCommandOutputCollector(192);
     collector.append('safe-prefix\n');

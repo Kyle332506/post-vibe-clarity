@@ -627,13 +627,17 @@ describe('runApprovedVerification execution and artifacts', () => {
     }));
 
     const actual = await runApprovedVerification(options(planned, executor));
-    const persisted = await readFile(actual.executionPath, 'utf8');
+    const persisted = JSON.parse(
+      await readFile(actual.executionPath, 'utf8'),
+    ) as VerificationExecution;
+    const persistedOutput = persisted.results[0]!.output;
 
     expect(actual.execution.results[0]!.output).toContain('[REDACTED]');
     expect(actual.execution.results[0]!.output).not.toContain(secondKeyLine);
     expect(actual.execution.results[0]!.output).not.toContain(thirdKeyLine);
-    expect(persisted).not.toContain(secondKeyLine);
-    expect(persisted).not.toContain(thirdKeyLine);
+    expect(persistedOutput).toContain('[REDACTED]');
+    expect(persistedOutput).not.toContain(secondKeyLine);
+    expect(persistedOutput).not.toContain(thirdKeyLine);
   });
 
   it('turns contradictory replacement-executor evidence into sanitized partial evidence', async () => {

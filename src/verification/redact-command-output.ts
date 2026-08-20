@@ -31,6 +31,11 @@ interface SensitiveBoundaryTracker {
   reset(): void;
 }
 
+interface PrivateKeyMarkerMatch {
+  start: number;
+  label: string;
+}
+
 export interface CollectedCommandOutput {
   output: string;
   truncated: boolean;
@@ -263,19 +268,19 @@ function createAssignmentTracker(): {
 }
 
 function createPrivateKeyMarkerTracker(kind: 'BEGIN' | 'END'): {
-  observe(byte: number, offset: number): number | undefined;
+  observe(byte: number, offset: number): PrivateKeyMarkerMatch | undefined;
   reset(): void;
 } {
   const prefix = `-----${kind} `;
   const suffix = 'PRIVATE KEY';
   let prefixWindow = '';
   let candidateStart: number | undefined;
-  let allowedSuffix = '';
+  let candidateLabel = '';
   let closingHyphens = 0;
 
   function resetCandidate(): void {
     candidateStart = undefined;
-    allowedSuffix = '';
+    candidateLabel = '';
     closingHyphens = 0;
   }
 
@@ -288,13 +293,13 @@ function createPrivateKeyMarkerTracker(kind: 'BEGIN' | 'END'): {
     if (prefixWindow.endsWith(prefix)) {
       candidateStart = offset - prefix.length + 1;
       prefixWindow = '';
-      allowedSuffix = '';
+      candidateLabel = '';
       closingHyphens = 0;
     }
   }
 
   return {
-    observe(byte, offset): number | undefined {
+    observe(byte, offset): PrivateKeyMarkerMatch | undefined {
       const character = asciiUpper(byte);
       if (candidateStart === undefined) {
         updatePrefix(character, offset);
@@ -304,10 +309,10 @@ function createPrivateKeyMarkerTracker(kind: 'BEGIN' | 'END'): {
         if (character === '-') {
           closingHyphens += 1;
           if (closingHyphens === 5) {
-            const matchedStart = candidateStart;
+            const match = { start: candidateStart, label: candidateLabel };
             resetCandidate();
             prefixWindow = '';
-            return matchedStart;
+            return match;
           }
           return undefined;
         }
@@ -316,10 +321,10 @@ function createPrivateKeyMarkerTracker(kind: 'BEGIN' | 'END'): {
         return undefined;
       }
       if (/^[A-Z0-9 ]$/u.test(character)) {
-        allowedSuffix = `${allowedSuffix}${character}`.slice(-suffix.length);
+        candidateLabel += character;
         return undefined;
       }
-      if (character === '-' && allowedSuffix.endsWith(suffix)) {
+      if (character === '-' && candidateLabel.endsWith(suffix)) {
         closingHyphens = 1;
         return undefined;
       }
@@ -338,13 +343,14 @@ function createSensitiveBoundaryTracker(): SensitiveBoundaryTracker {
   const assignments = createAssignmentTracker();
   const privateKeyBegin = createPrivateKeyMarkerTracker('BEGIN');
   const privateKeyEnd = createPrivateKeyMarkerTracker('END');
-  let isPrivateKeyOpen = false;
+  let openPrivateKeyLabel: string | undefined;
 
   return {
     observe(byte, offset): SensitiveByteObservation {
-      if (isPrivateKeyOpen) {
-        if (privateKeyEnd.observe(byte, offset) !== undefined) {
-          isPrivateKeyOpen = false;
+      if (openPrivateKeyLabel !== undefined) {
+        const privateKeyEndMatch = privateKeyEnd.observe(byte, offset);
+        if (privateKeyEndMatch?.label === openPrivateKeyLabel) {
+          openPrivateKeyLabel = undefined;
           privateKeyBegin.reset();
           assignments.reset();
         }
@@ -354,18 +360,18 @@ function createSensitiveBoundaryTracker(): SensitiveBoundaryTracker {
       const assignment = assignments.observe(byte, offset);
       const privateKeyStart = privateKeyBegin.observe(byte, offset);
       if (privateKeyStart !== undefined) {
-        isPrivateKeyOpen = true;
+        openPrivateKeyLabel = privateKeyStart.label;
         privateKeyEnd.reset();
         assignments.reset();
-        return { sensitive: true, sensitiveStart: privateKeyStart };
+        return { sensitive: true, sensitiveStart: privateKeyStart.start };
       }
       return assignment;
     },
     privateKeyOpen(): boolean {
-      return isPrivateKeyOpen;
+      return openPrivateKeyLabel !== undefined;
     },
     reset(): void {
-      isPrivateKeyOpen = false;
+      openPrivateKeyLabel = undefined;
       assignments.reset();
       privateKeyBegin.reset();
       privateKeyEnd.reset();
