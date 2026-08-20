@@ -10,10 +10,22 @@ import { filterExecutionEnvironment } from './environment-policy.js';
 import { terminateProcessTree } from './process-tree.js';
 import type { ProcessTreeTermination } from './process-tree.js';
 import { resolveInsideProject } from './project-path.js';
-import { createCommandOutputCollector } from './redact-command-output.js';
+import {
+  COMMAND_OUTPUT_LIMIT_BYTES,
+  createCommandOutputCollector,
+} from './redact-command-output.js';
+import type {
+  CollectedCommandOutput,
+  CommandOutputCollector,
+} from './redact-command-output.js';
 import { diffWorkingTrees, snapshotWorkingTree } from './working-tree.js';
 
 const closeAfterCleanupTimeoutMs = 500;
+const stderrOutputSeparator = '\n[stderr]\n';
+const streamOutputBudgetBytes = COMMAND_OUTPUT_LIMIT_BYTES
+  - Buffer.byteLength(stderrOutputSeparator, 'utf8');
+const stdoutOutputLimitBytes = Math.floor(streamOutputBudgetBytes / 2);
+const stderrOutputLimitBytes = streamOutputBudgetBytes - stdoutOutputLimitBytes;
 
 export interface ExecuteCommandContext {
   root: string;
@@ -96,6 +108,22 @@ function removeOutputListeners(
   child.stderr?.off('data', stderrListener);
 }
 
+function finishCommandOutput(
+  stdoutCollector: CommandOutputCollector,
+  stderrCollector: CommandOutputCollector,
+): CollectedCommandOutput {
+  const stdout = stdoutCollector.finish();
+  const stderr = stderrCollector.finish();
+  let output: string;
+  if (stdout.output.length === 0) output = stderr.output;
+  else if (stderr.output.length === 0) output = stdout.output;
+  else output = `${stdout.output}${stderrOutputSeparator}${stderr.output}`;
+  return {
+    output,
+    truncated: stdout.truncated || stderr.truncated,
+  };
+}
+
 export class LocalCommandExecutor implements CommandExecutor {
   async execute(
     command: VerificationCommand,
@@ -131,7 +159,10 @@ export class LocalCommandExecutor implements CommandExecutor {
     const cwd = await resolveInsideProject(context.root, command.cwd);
     if (context.signal.aborted) return interruptedBeforeStart();
 
-    const collector = createCommandOutputCollector();
+    // Stream budgets sum with the fixed separator to the persisted output cap.
+    // Independent capture makes composition deterministic regardless of pipe event timing.
+    const stdoutCollector = createCommandOutputCollector(stdoutOutputLimitBytes);
+    const stderrCollector = createCommandOutputCollector(stderrOutputLimitBytes);
     let child: ChildProcess;
     try {
       child = spawn(executable, command.argv.slice(1), {
@@ -143,7 +174,7 @@ export class LocalCommandExecutor implements CommandExecutor {
         windowsHide: true,
       });
     } catch (error) {
-      const collected = collector.finish();
+      const collected = finishCommandOutput(stdoutCollector, stderrCollector);
       const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths);
       return {
         removedEnvironmentVariables: filteredEnvironment.removedNames,
@@ -161,8 +192,8 @@ export class LocalCommandExecutor implements CommandExecutor {
         },
       };
     }
-    const stdoutListener = (chunk: Buffer): void => collector.append(chunk);
-    const stderrListener = (chunk: Buffer): void => collector.append(chunk);
+    const stdoutListener = (chunk: Buffer): void => stdoutCollector.append(chunk);
+    const stderrListener = (chunk: Buffer): void => stderrCollector.append(chunk);
     child.stdout?.on('data', stdoutListener);
     child.stderr?.on('data', stderrListener);
 
@@ -235,7 +266,7 @@ export class LocalCommandExecutor implements CommandExecutor {
     }
 
     removeOutputListeners(child, stdoutListener, stderrListener);
-    const collected = collector.finish();
+    const collected = finishCommandOutput(stdoutCollector, stderrCollector);
     const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths);
     const result = addOptionalReason({
       commandId: command.id,

@@ -264,6 +264,54 @@ describe('local command executor', () => {
     expect(execution.result.output).toContain('stderr-evidence');
   });
 
+  it('composes stdout before stderr deterministically regardless of emission timing', async () => {
+    const root = await temporaryProject();
+    const stdout = "process.stdout.write('stdout APP_TOKEN=stdout-secret\\n')";
+    const stderr = "process.stderr.write('stderr API_KEY=stderr-secret\\n')";
+    const stdoutFirst = `${stdout};setTimeout(() => { ${stderr}; }, 40);`;
+    const stderrFirst = `${stderr};setTimeout(() => { ${stdout}; }, 40);`;
+
+    const first = await new LocalCommandExecutor().execute(
+      command([process.execPath, '-e', stdoutFirst]),
+      context(root, new AbortController().signal),
+    );
+    const second = await new LocalCommandExecutor().execute(
+      command([process.execPath, '-e', stderrFirst]),
+      context(root, new AbortController().signal),
+    );
+
+    const expected = 'stdout APP_TOKEN=[REDACTED]\n\n[stderr]\nstderr API_KEY=[REDACTED]\n';
+    expect(first.result.output).toBe(expected);
+    expect(second.result.output).toBe(expected);
+    expect(`${first.result.output}${second.result.output}`).not.toContain('stdout-secret');
+    expect(`${first.result.output}${second.result.output}`).not.toContain('stderr-secret');
+  });
+
+  it('bounds aggregate raw capture while retaining evidence from both large streams', async () => {
+    const root = await temporaryProject();
+    const script = [
+      "process.stdout.write('stdout-first APP_TOKEN=stdout-secret\\n'",
+      `+ 'o'.repeat(${COMMAND_OUTPUT_LIMIT_BYTES}) + '\\nstdout-last');`,
+      "process.stderr.write('stderr-first API_KEY=stderr-secret\\n'",
+      `+ 'e'.repeat(${COMMAND_OUTPUT_LIMIT_BYTES}) + '\\nstderr-last');`,
+    ].join('');
+
+    const execution = await new LocalCommandExecutor().execute(
+      command([process.execPath, '-e', script]),
+      context(root, new AbortController().signal),
+    );
+
+    expect(execution.result.outputTruncated).toBe(true);
+    expect(Buffer.byteLength(execution.result.output, 'utf8')).toBeLessThanOrEqual(COMMAND_OUTPUT_LIMIT_BYTES);
+    expect(execution.result.output).toContain('stdout-first APP_TOKEN=[REDACTED]');
+    expect(execution.result.output).toContain('stdout-last');
+    expect(execution.result.output).toContain('\n[stderr]\n');
+    expect(execution.result.output).toContain('stderr-first API_KEY=[REDACTED]');
+    expect(execution.result.output).toContain('stderr-last');
+    expect(execution.result.output).not.toContain('stdout-secret');
+    expect(execution.result.output).not.toContain('stderr-secret');
+  });
+
   it('redacts and bounds output split across chunks', async () => {
     const root = await temporaryProject();
     const script = [
@@ -342,6 +390,7 @@ describe('local command executor', () => {
     const parentScript = [
       "const fs = require('node:fs');",
       "const { spawn } = require('node:child_process');",
+      "process.on('SIGTERM', () => {});",
       'fs.writeFileSync(process.argv[4], String(process.pid));',
       'spawn(process.execPath, [\'-e\', process.argv[1], process.argv[2], process.argv[3]],',
       "{ stdio: 'ignore' });",
@@ -353,12 +402,15 @@ describe('local command executor', () => {
       context(root, new AbortController().signal),
     );
     const childPid = await rememberFixturePid(childPidFile);
+    const parentPid = await rememberFixturePid(parentPidFile);
 
     expect(execution.result.status).toBe('timed-out');
     expect(execution.result.unverifiedReason).toMatch(/timed out after 1 second/i);
+    expect(execution.result.unverifiedReason).toMatch(/termination was confirmed/i);
     expect(execution.result.unverifiedReason).toMatch(
       process.platform === 'win32' ? /taskkill/i : /process group/i,
     );
+    await expect.poll(() => processIsAlive(parentPid), { timeout: 2_000, interval: 25 }).toBe(false);
     await expect.poll(() => processIsAlive(childPid), { timeout: 2_000, interval: 25 }).toBe(false);
     const heartbeatAtTermination = (await readFile(heartbeat)).length;
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -379,6 +431,7 @@ describe('local command executor', () => {
     const parentScript = [
       "const fs = require('node:fs');",
       "const { spawn } = require('node:child_process');",
+      "process.on('SIGTERM', () => {});",
       'fs.writeFileSync(process.argv[4], String(process.pid));',
       'spawn(process.execPath, [\'-e\', process.argv[1], process.argv[2], process.argv[3]],',
       "{ stdio: 'ignore' });",
@@ -390,6 +443,7 @@ describe('local command executor', () => {
       context(root, controller.signal),
     );
     const childPid = await rememberFixturePid(childPidFile);
+    const parentPid = await rememberFixturePid(parentPidFile);
     await waitForFile(heartbeat);
     controller.abort();
     controller.abort();
@@ -397,9 +451,11 @@ describe('local command executor', () => {
 
     expect(execution.result.status).toBe('interrupted');
     expect(execution.result.unverifiedReason).toMatch(/interrupted/i);
+    expect(execution.result.unverifiedReason).toMatch(/termination was confirmed/i);
     expect(execution.result.unverifiedReason).toMatch(
       process.platform === 'win32' ? /taskkill/i : /process group/i,
     );
+    await expect.poll(() => processIsAlive(parentPid), { timeout: 2_000, interval: 25 }).toBe(false);
     await expect.poll(() => processIsAlive(childPid), { timeout: 2_000, interval: 25 }).toBe(false);
     const heartbeatAtTermination = (await readFile(heartbeat)).length;
     await new Promise((resolve) => setTimeout(resolve, 150));

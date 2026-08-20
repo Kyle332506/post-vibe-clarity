@@ -74,7 +74,6 @@ describe('process-tree termination', () => {
     const childPidFile = join(root, 'child.pid');
     const childScript = [
       "const fs = require('node:fs');",
-      "process.on('SIGTERM', () => {});",
       'fs.writeFileSync(process.argv[1], String(process.pid));',
       "setInterval(() => fs.appendFileSync(process.argv[2], 'x'), 25);",
     ].join('');
@@ -104,6 +103,7 @@ describe('process-tree termination', () => {
     );
     expect(result.verified).toBe(true);
     expect(result.limitation).toBeUndefined();
+    await expect.poll(() => processIsAlive(parent.pid!), { timeout: 2_000, interval: 25 }).toBe(false);
     await expect.poll(() => processIsAlive(childPid), { timeout: 2_000, interval: 25 }).toBe(false);
     const heartbeatAtTermination = (await readFile(heartbeat)).length;
     await new Promise((resolve) => setTimeout(resolve, 150));

@@ -5,11 +5,6 @@ export const COMMAND_OUTPUT_LIMIT_BYTES = 262_144;
 
 const truncationMarker = '\n[... output truncated ...]\n';
 const markerBytes = Buffer.byteLength(truncationMarker, 'utf8');
-const retainedBytes = COMMAND_OUTPUT_LIMIT_BYTES - markerBytes;
-const boundedHeadCapacity = Math.floor(retainedBytes / 2);
-const boundedTailCapacity = retainedBytes - boundedHeadCapacity;
-const rawHeadCapacity = Math.floor(COMMAND_OUTPUT_LIMIT_BYTES / 2);
-const rawTailCapacity = COMMAND_OUTPUT_LIMIT_BYTES - rawHeadCapacity;
 const utf8Decoder = new TextDecoder('utf-8');
 const sensitiveAssignmentParts = [
   'TOKEN',
@@ -376,9 +371,15 @@ function redactLikelySecrets(input: string): string {
   return redactAssignments(redactHeaders(redactPrivateKeys(input)));
 }
 
-function boundRedactedOutput(input: string): { output: string; truncated: boolean } {
+function boundRedactedOutput(
+  input: string,
+  limitBytes: number = COMMAND_OUTPUT_LIMIT_BYTES,
+): { output: string; truncated: boolean } {
+  const retainedBytes = limitBytes - markerBytes;
+  const boundedHeadCapacity = Math.floor(retainedBytes / 2);
+  const boundedTailCapacity = retainedBytes - boundedHeadCapacity;
   const bytes = Buffer.from(input, 'utf8');
-  if (bytes.byteLength <= COMMAND_OUTPUT_LIMIT_BYTES) return { output: input, truncated: false };
+  if (bytes.byteLength <= limitBytes) return { output: input, truncated: false };
   return {
     output: `${decodeCompletePrefix(bytes.subarray(0, boundedHeadCapacity))}${truncationMarker}${decodeCompleteSuffix(bytes.subarray(bytes.byteLength - boundedTailCapacity))}`,
     truncated: true,
@@ -389,7 +390,14 @@ export function redactCommandOutput(input: string): string {
   return boundRedactedOutput(redactLikelySecrets(input)).output;
 }
 
-export function createCommandOutputCollector(): CommandOutputCollector {
+export function createCommandOutputCollector(
+  limitBytes: number = COMMAND_OUTPUT_LIMIT_BYTES,
+): CommandOutputCollector {
+  if (!Number.isSafeInteger(limitBytes) || limitBytes < markerBytes) {
+    throw new Error('Command output collector limit must fit the truncation marker.');
+  }
+  const rawHeadCapacity = Math.floor(limitBytes / 2);
+  const rawTailCapacity = limitBytes - rawHeadCapacity;
   const head = Buffer.alloc(rawHeadCapacity);
   const tail = Buffer.alloc(rawTailCapacity);
   const tailSensitivity = Buffer.alloc(rawTailCapacity);
@@ -468,7 +476,7 @@ export function createCommandOutputCollector(): CommandOutputCollector {
       finished = true;
       let raw = '';
       try {
-        const rawTruncated = totalBytes > COMMAND_OUTPUT_LIMIT_BYTES;
+        const rawTruncated = totalBytes > limitBytes;
         if (rawTruncated) {
           const rawHead = decodeCompletePrefix(head.subarray(0, headLength));
           const rawTail = decodeCompleteSuffix(tail.subarray(0, tailLength));
@@ -481,7 +489,7 @@ export function createCommandOutputCollector(): CommandOutputCollector {
             + decoder.decode(tail.subarray(0, tailLength));
         }
 
-        const bounded = boundRedactedOutput(redactLikelySecrets(raw));
+        const bounded = boundRedactedOutput(redactLikelySecrets(raw), limitBytes);
         raw = '';
         return {
           output: bounded.output,
