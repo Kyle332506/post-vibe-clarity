@@ -504,7 +504,7 @@ pnpm vitest run tests/verification/project-path.test.ts tests/verification/load-
 
 - [ ] **Step 5: Implement strict discovery**
 
-Implement package-manager selection with the exact evidence table in the design. Use `packageManager` only for supported names and reject conflicts with lockfiles. Create commands only for exact script names. Store and hash the exact script declaration, parse only the portable shell-free literal-argument subset, and freeze the fingerprinted Node runtime plus any contained direct entry point, or a contained local JavaScript bin manifest/entry point, into launcher evidence. Record each entry point's exact argv position. Never emit package-manager or `.cmd` argv for execution; unsupported Node option shapes, syntax, or unresolved launchers become explicit gaps. This final-review correction removes the live package-manager reread between approval and use.
+Implement package-manager selection with the exact evidence table in the design. Use `packageManager` only for supported names and reject conflicts with lockfiles. Create commands only for exact script names. Store and hash the exact script declaration, parse only the portable shell-free literal-argument subset, and record the current Node runtime plus any contained direct entry point, or a contained local JavaScript bin manifest/entry point, as fingerprinted launcher evidence. Record each entry point's exact argv position. Never emit package-manager or `.cmd` argv for execution; unsupported Node option shapes, syntax, or unresolved launchers become explicit gaps. This final-review correction removes the live package-manager reread before attempted start while retaining the unprotected interval between checking and use.
 
 Parse `postvibe.verification.yaml` with `yaml`, validate its plain object shape before use, normalize `cwd` to forward-slash relative form, and never expand environment variables.
 
@@ -751,7 +751,7 @@ pnpm vitest run tests/verification/process-tree.test.ts tests/verification/local
 
 - [ ] **Step 5: Implement the executor**
 
-Call `spawn(command.argv[0], command.argv.slice(1), { cwd, env, shell: false, stdio: ['ignore', 'pipe', 'pipe'] })`. Resolve `cwd` again immediately before spawn. Snapshot before and after. Drain both streams. Race close/error against timeout and abort exactly once.
+Call `spawn(command.argv[0], command.argv.slice(1), { cwd, env, shell: false, stdio: ['ignore', 'pipe', 'pipe'] })`. Resolve `cwd` again before attempting spawn; the interval between resolution and use remains unprotected. Snapshot before and after. Drain both streams. Race close/error against timeout and abort exactly once.
 
 On Unix, start a detached process group and signal the negative PID, escalating from `SIGTERM` to `SIGKILL` after a bounded grace period. On Windows, directly spawn `taskkill` with `['/pid', String(pid), '/T', '/F']` and no shell. A failed cleanup is recorded as an unverified boundary; it is not hidden.
 
@@ -940,7 +940,7 @@ Use this exact order:
 2. validate plan schema and semantics;
 3. call `validatePlanState`;
 4. compute final, staging, and recovery artifact paths; pin project/output identities; acquire one exclusive run lock and owned staging entries;
-5. immediately before each command, revalidate its exact declaration and fingerprinted launcher, then execute selected commands sequentially;
+5. before each command's attempted start, revalidate its exact declaration against the recorded launcher evidence, retaining the unprotected interval between checking and use, then execute selected commands sequentially;
 6. re-redact, re-bound, structurally copy, and status-matrix-check executor evidence at the recorder boundary; convert abort or invalid evidence into explicit remaining `unverified` results;
 7. build, validate, and retain the execution record in owned staging;
 8. recheck root/output identity and run a fresh Level 0 `runReview` against the resulting tree;

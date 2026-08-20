@@ -326,7 +326,7 @@ Update the universal-verification skill so an agent explains this boundary befor
 
 - [ ] **Step 5: Regenerate the sample report through the real fixture path**
 
-Update `tests/repository/sample-report.test.ts` presentation-only placeholders for the new boundary while preserving immutable plan/execution/report linkage. Run the test to regenerate `docs/examples/sample-report.md`; do not hand-edit evidence outcomes.
+Update `tests/repository/sample-report.test.ts` presentation-only placeholders for the new boundary while preserving validated plan/execution/report linkage. Run the test to regenerate `docs/examples/sample-report.md`; do not hand-edit evidence outcomes.
 
 Run:
 

@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 describe('discoverVerificationCommands', () => {
-  it('freezes a simple package script into a fingerprinted Node launcher without a package-manager shim', async () => {
+  it('records a simple package script as fingerprinted Node launcher evidence without a package-manager shim', async () => {
     const declaration = 'node -e "process.stdout.write(\'approved source\')"';
     const root = await temporaryProject({
       'package.json': packageJson({

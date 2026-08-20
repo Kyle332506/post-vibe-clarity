@@ -66,12 +66,12 @@ The execution record must copy the exact boundary from the approved plan. Execut
 
 Existing direct checks remain required:
 
-- the exact package-script or portable-config declaration must still match immediately before execution;
+- the exact package-script or portable-config declaration must still be checked and match before attempted start;
 - the resolved argument array remains fingerprinted;
 - the direct executable, entry point, and package manifest evidence remain checked where applicable;
 - a detected mismatch stops that command and records it as unverified.
 
-These are pre-launch tamper checks. They do not claim that a live path cannot change after the check or that a launched program cannot import other files. The design, implementation plan, coverage documentation, skills, CLI wording, and sample report must not use `frozen`, `immutable source`, or equivalent language for the complete executed code path.
+These are pre-launch tamper checks. The interval between checking and use remains unprotected: a live path can change after the check, and a launched program can import other files. The design, implementation plan, coverage documentation, skills, CLI wording, and sample report must not use `frozen`, `immutable source`, or equivalent language for the complete executed code path.
 
 Plans created before this unreleased contract change do not contain the required boundary and must fail validation with the existing stable invalid-plan behavior. Users regenerate and approve a new plan. No backward-compatibility reader is required because v0.2 has not been released.
 

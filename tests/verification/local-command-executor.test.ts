@@ -391,7 +391,7 @@ describe('local command executor', () => {
     expect(execution.result.output).not.toContain('split-secret');
   });
 
-  it('rejects a working-directory symlink escape immediately before spawn', async () => {
+  it('rejects a working-directory symlink escape found before attempted spawn', async () => {
     const root = await temporaryProject();
     const outside = await temporaryProject();
     const { symlink } = await import('node:fs/promises');

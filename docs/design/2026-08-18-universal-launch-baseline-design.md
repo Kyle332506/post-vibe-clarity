@@ -74,7 +74,7 @@ postvibe execute <plan-file> --approve <fingerprint> --output <directory> [--for
 
 The approval means only: run the exact selected commands under the limits recorded in this plan. It is not approval of project safety, a launch decision, or acceptance of unrelated risks.
 
-Before any project command starts, execution validates the plan, fingerprint, project root, command sources, inspected inputs, and executor settings. It rechecks the exact source declaration and fingerprinted launcher immediately before each command. A mismatch stops that command from starting and remains explicit unverified evidence.
+Before any project command's attempted start, execution validates the plan, fingerprint, project root, command declarations, inspected inputs, and executor settings. It checks the exact command declaration and recorded launcher evidence before the attempted start. The interval between that check and use remains unprotected: a live path may still change after it is checked. A detected mismatch stops that command from starting and remains explicit unverified evidence.
 
 ### 4. Produce evidence
 
@@ -95,7 +95,7 @@ Each plan receives a deterministic SHA-256 fingerprint over its security- and be
 - discovery and applicable-check inputs;
 - hashes of inspected project files and command declaration sources;
 - selected and excluded commands;
-- each command's ID, category, exact resolved argument array, working directory, timeout, exact source declaration, direct launcher evidence checked before start, and required access;
+- each command's ID, category, exact resolved argument array, working directory, timeout, exact command declaration, recorded direct launcher evidence checked before attempted start, and required access;
 - execution-policy settings.
 
 Presentation-only values such as generation time, output path, and formatting metadata are excluded from the fingerprint. Command execution order is included.
@@ -130,7 +130,7 @@ Package-manager evidence establishes whether automatic package-script discovery 
 
 The `packageManager` field takes priority only when its supported name is valid and its other project evidence does not conflict. Multiple conflicting lockfiles, an unsupported package-manager name, or missing package-manager evidence leaves the scripts unverified and directs the user to the portable configuration file.
 
-PostVibeClarity does not invoke the package manager at execution time because doing so would reread mutable script text after approval and standard Windows `.cmd` shims would require shell handling. Instead, plan creation parses a deliberately portable literal-argument subset and records a shell-free direct launch definition: the fingerprinted current Node runtime plus any direct project entry point, or a fingerprinted local JavaScript package manifest and entry point started with that runtime. The plan records the exact argument position of every entry point. Inline-evaluation and informational Node forms have no entry-point file; other Node option shapes remain unsupported. The executor uses the exact resolved argument array with `shell: false`, never `cmd.exe`, and checks both declaration and launcher evidence immediately before use. Shell operators, expansion, redirection, ambiguous binaries, or other unsupported syntax become an explicit unverified coverage gap with portable configuration as the fallback. This authorizes the exact declaration and resolved arguments across platforms; it does not establish the immutability of later transitive runtime loads.
+PostVibeClarity does not invoke the package manager at execution time because doing so would reread mutable script text after approval and standard Windows `.cmd` shims would require shell handling. Instead, plan creation parses a deliberately portable literal-argument subset and records a shell-free direct launch definition: the fingerprinted current Node runtime plus any direct project entry point, or a fingerprinted local JavaScript package manifest and entry point started with that runtime. The plan records the exact argument position of every entry point. Inline-evaluation and informational Node forms have no entry-point file; other Node option shapes remain unsupported. The executor uses the exact resolved argument array with `shell: false`, never `cmd.exe`, and checks both the declaration and recorded launcher evidence before attempted start. Shell operators, expansion, redirection, ambiguous binaries, or other unsupported syntax become an explicit unverified coverage gap with portable configuration as the fallback. This authorizes the exact declaration and resolved arguments across platforms; it does not protect the interval between checking and use or establish the immutability of later transitive runtime loads.
 
 ### Portable configuration
 
@@ -326,7 +326,7 @@ Implementation should keep these responsibilities separate:
 3. **Plan validator and fingerprinting:** canonicalizes plans and rejects malformed, changed, or stale inputs.
 4. **Executor interface:** runs one approved argument array under a defined policy and returns a bounded result.
 5. **Working-tree observer:** records visible file changes without modifying them.
-6. **Execution recorder:** writes the immutable structured record.
+6. **Execution recorder:** writes the validated, versioned structured record.
 7. **Finding mapper:** translates command results and missing evidence into current action and outcome language.
 8. **Report integration:** combines fresh Level 0 evidence with execution findings and explicit gaps.
 9. **CLI adapters:** parse user intent and orchestrate the components without embedding their business rules.

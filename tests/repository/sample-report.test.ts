@@ -125,7 +125,7 @@ async function generateSampleReport(): Promise<GeneratedSample> {
 }
 
 describe('sample report documentation', () => {
-  it('projects a real immutable approved run into stable presentation-only Markdown', async () => {
+  it('projects a real validated approved run into stable presentation-only Markdown', async () => {
     const sample = await readRepositoryFile('docs/examples/sample-report.md');
     const { markdown, report, execution, plan, executionRecordPath, snapshots } = await generateSampleReport();
 

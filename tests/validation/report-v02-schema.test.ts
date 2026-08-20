@@ -45,12 +45,15 @@ describe('validateVerifiedReadinessReport', () => {
 
     const report = await sampleVerifiedReadinessReport();
     report.verification.approvalBoundary.confirms.reverse();
-    expect((await validateVerifiedReadinessReport(
+    const result = await validateVerifiedReadinessReport(
       report,
       sampleVerificationPlan,
       sampleVerificationExecution,
-      '/evidence/execution.json',
-    )).ok).toBe(false);
+      sampleExecutionRecordPath,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected mismatched report approval boundary to fail');
+    expect(result.errors.some((error) => error.includes('/verification/approvalBoundary'))).toBe(true);
   });
 
   it('retains strict report 0.1 fields while requiring a complete verification link', async () => {

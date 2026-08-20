@@ -306,6 +306,12 @@ function createPrivateKeyMarkerTracker(kind: 'BEGIN' | 'END'): {
         updatePrefix(character, offset);
         return undefined;
       }
+      if (byte > 0x7f) {
+        const match = { start: candidateStart, label: null };
+        resetCandidate();
+        prefixWindow = '';
+        return match;
+      }
       if (closingHyphens > 0) {
         if (character === '-') {
           closingHyphens += 1;

@@ -213,6 +213,25 @@ describe('command output redaction', () => {
     expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(192);
   });
 
+  it('fails closed when a split private-key marker contains a Unicode case-folded byte', () => {
+    const collector = createCommandOutputCollector(192);
+    const unicodeKeyBytes = Buffer.from('KEY-----\n', 'utf8');
+    collector.append('safe-prefix\n-----BE');
+    collector.append('GIN PRIVATE ');
+    collector.append(unicodeKeyBytes.subarray(0, 1));
+    collector.append(unicodeKeyBytes.subarray(1, 2));
+    collector.append(unicodeKeyBytes.subarray(2));
+    collector.append(`${'B'.repeat(4096)}\n`);
+    collector.append('UNICODE_MARKER_TAIL_SENTINEL_8pR5\n');
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output).toContain('[REDACTED]');
+    expect(result.output).not.toContain('UNICODE_MARKER_TAIL_SENTINEL_8pR5');
+    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(192);
+  });
+
   it('bounds label tracking for an unterminated marker far larger than the output limit', () => {
     const collector = createCommandOutputCollector(192);
     collector.append('safe-prefix\n-----BEGIN ');
