@@ -6,16 +6,19 @@ import { containsMarkdownLineOrControl } from '../../report/markdown-safety.js';
 import { validateVerificationPlan } from '../../validation/verification-plan-schema.js';
 import { runApprovedVerification } from '../../verification/run-approved-verification.js';
 import { STALE_PLAN_ERROR } from '../../verification/validate-plan-state.js';
+import { findRepeatedSingularOption } from '../option-occurrences.js';
 import { CliSafeError, CliUsageError } from './review.js';
 
 const invalidPlanMessage = 'Verification plan is invalid; create a new plan.';
 const approvalMismatchMessage = 'Approval fingerprint does not match the verification plan.';
 
 function parseExecuteArgs(args: string[]) {
+  let parsed;
   try {
-    return parseArgs({
+    parsed = parseArgs({
       args,
       allowPositionals: true,
+      tokens: true,
       options: {
         approve: { type: 'string' },
         output: { type: 'string' },
@@ -25,6 +28,9 @@ function parseExecuteArgs(args: string[]) {
   } catch {
     throw new CliUsageError('Invalid execute arguments.');
   }
+  const repeated = findRepeatedSingularOption(parsed.tokens, new Set(['approve', 'output', 'format']));
+  if (repeated !== undefined) throw new CliUsageError(`Option --${repeated} may be specified only once.`);
+  return parsed;
 }
 
 async function loadPlan(path: string): Promise<VerificationPlan> {

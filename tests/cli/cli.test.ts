@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
+const tsxImport = import.meta.resolve('tsx');
 const controlledFixtureValue = 'fixture-secret-value-never-use';
 const controlledParserValue = 'sk_test_controlled_cli_error_never_emit';
 
@@ -15,10 +16,15 @@ interface CliResult {
   stderr: string;
 }
 
-function runProcess(command: string, args: string[], environment: NodeJS.ProcessEnv = process.env): Promise<CliResult> {
+function runProcess(
+  command: string,
+  args: string[],
+  environment: NodeJS.ProcessEnv = process.env,
+  cwd = repositoryRoot,
+): Promise<CliResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: repositoryRoot,
+      cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -34,8 +40,17 @@ function runProcess(command: string, args: string[], environment: NodeJS.Process
   });
 }
 
-function runCli(args: string[], environment: NodeJS.ProcessEnv = process.env): Promise<CliResult> {
-  return runProcess('pnpm', ['exec', 'tsx', 'src/cli.ts', ...args], environment);
+function runCli(
+  args: string[],
+  environment: NodeJS.ProcessEnv = process.env,
+  cwd = repositoryRoot,
+): Promise<CliResult> {
+  return runProcess(
+    process.execPath,
+    ['--import', tsxImport, join(repositoryRoot, 'src', 'cli.ts'), ...args],
+    environment,
+    cwd,
+  );
 }
 
 async function runMalformedCatalog(environment: NodeJS.ProcessEnv): Promise<CliResult> {
@@ -154,6 +169,40 @@ describe('postvibe review CLI', () => {
     }
   });
 
+  it.each([
+    'skills',
+    'format',
+    'output',
+  ])('rejects repeated review --%s before creating an artifact', async (_option) => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-review-duplicate-'));
+    const duplicateArgs = _option === 'skills'
+      ? ['--skills', join(repositoryRoot, 'tests', 'fixtures', 'skills'), '--skills', join(temporaryRoot, 'missing-skills')]
+      : _option === 'format'
+        ? ['--format', 'json', '--format', 'markdown']
+        : ['--output', join(temporaryRoot, 'first-output'), '--output', join(temporaryRoot, 'second-output')];
+
+    try {
+      const result = await runCli([
+        'review',
+        'fixtures/web-missing-basics',
+        '--skills',
+        'tests/fixtures/skills',
+        '--format',
+        'json',
+        '--output',
+        join(temporaryRoot, 'ordinary-output'),
+        ...duplicateArgs,
+      ]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe(`Option --${_option} may be specified only once.\n`);
+      expect(await readdir(temporaryRoot)).toEqual([]);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
   it('reports validation failures on stderr without a stack trace outside debug mode', async () => {
     const { POSTVIBE_DEBUG: _debug, ...environment } = process.env;
     const result = await runCli([
@@ -253,7 +302,9 @@ describe('postvibe plan CLI', () => {
         'Commands: 4 selected (build: 1, type-check: 1, lint: 1, test: 1); 0 excluded.',
         'Gaps: none.',
         `Warning: ${plan.containmentWarning}`,
-        `Execute: postvibe execute ${JSON.stringify(planPath)} --approve ${plan.fingerprint} --output ${JSON.stringify(outputDirectory)}`,
+        `Execute (${process.platform === 'win32' ? 'PowerShell' : 'POSIX sh'}): ${process.platform === 'win32'
+          ? `& 'postvibe' 'execute' '${planPath}' '--approve' '${plan.fingerprint}' '--output' '${outputDirectory}'`
+          : `'postvibe' 'execute' '${planPath}' '--approve' '${plan.fingerprint}' '--output' '${outputDirectory}'`}`,
         '',
       ].join('\n'));
       await expect(readFile(join(projectRoot, 'verification-order.log'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
@@ -329,6 +380,65 @@ describe('postvibe plan CLI', () => {
         'command.package-script:build',
         'command.package-script:test',
       ]);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    'skills',
+    'output',
+  ])('rejects repeated plan --%s before creating an artifact', async (_option) => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-plan-duplicate-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const duplicateArgs = _option === 'skills'
+      ? ['--skills', join(repositoryRoot, 'skills'), '--skills', join(temporaryRoot, 'controlled-missing-skills')]
+      : ['--output', join(temporaryRoot, 'first-plan.json'), '--output', join(temporaryRoot, 'second-plan.json')];
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      const result = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        join(temporaryRoot, 'ordinary-plan.json'),
+        ...duplicateArgs,
+      ]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe(`Option --${_option} may be specified only once.\n`);
+      expect(await readdir(temporaryRoot)).toEqual(['project']);
+      await expect(readFile(join(projectRoot, 'verification-order.log'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a leading-hyphen project path after the option terminator', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-plan-terminator-'));
+    const projectRoot = join(temporaryRoot, '-project');
+    const planPath = join(temporaryRoot, 'plan.json');
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      const result = await runCli([
+        'plan',
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        planPath,
+        '--',
+        '-project',
+      ], process.env, temporaryRoot);
+
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+      const plan = JSON.parse(await readFile(planPath, 'utf8')) as { projectRoot: string };
+      expect(plan.projectRoot).toBe(await import('node:fs/promises').then(({ realpath }) => realpath(projectRoot)));
+      await expect(readFile(join(projectRoot, 'verification-order.log'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
     }
@@ -467,5 +577,92 @@ describe('postvibe execute CLI', () => {
     expect(result.code).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toBe('Expected --format markdown or --format json.\n');
+  });
+
+  it.each([
+    'approve',
+    'output',
+    'format',
+  ])('rejects repeated execute --%s before running a command', async (_option) => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-execute-duplicate-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const planPath = join(temporaryRoot, 'plan.json');
+    const duplicateArgs = _option === 'approve'
+      ? ['--approve', 'a'.repeat(64), '--approve', 'b'.repeat(64)]
+      : _option === 'output'
+        ? ['--output', join(temporaryRoot, 'first-output'), '--output', join(temporaryRoot, 'second-output')]
+        : ['--format', 'json', '--format', 'markdown'];
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      const planned = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        planPath,
+      ]);
+      expect(planned.code).toBe(0);
+      const plan = JSON.parse(await readFile(planPath, 'utf8')) as { fingerprint: string };
+      const result = await runCli([
+        'execute',
+        planPath,
+        '--approve',
+        plan.fingerprint,
+        '--output',
+        join(temporaryRoot, 'ordinary-output'),
+        '--format',
+        'json',
+        ...duplicateArgs,
+      ]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe(`Option --${_option} may be specified only once.\n`);
+      await expect(readFile(join(projectRoot, 'verification-order.log'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      const entries = (await readdir(temporaryRoot)).sort();
+      expect(entries).toEqual(['plan.json', 'project']);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a leading-hyphen plan path after the option terminator', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-execute-terminator-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const planPath = join(temporaryRoot, '-approved-plan.json');
+    const outputDirectory = join(temporaryRoot, 'output');
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      const planned = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        planPath,
+      ]);
+      expect(planned.code).toBe(0);
+      const plan = JSON.parse(await readFile(planPath, 'utf8')) as { fingerprint: string };
+      const result = await runCli([
+        'execute',
+        '--approve',
+        plan.fingerprint,
+        '--output',
+        outputDirectory,
+        '--format',
+        'json',
+        '--',
+        '-approved-plan.json',
+      ], process.env, temporaryRoot);
+
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(await readFile(join(projectRoot, 'verification-order.log'), 'utf8')).toBe('build\ntype-check\nlint\ntest\n');
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
   });
 });

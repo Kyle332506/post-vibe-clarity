@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { access, cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VerifiedReadinessReport } from '../../src/model/verified-report.js';
@@ -12,6 +12,7 @@ import { validateVerificationPlan } from '../../src/validation/verification-plan
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const skillsRoot = join(repositoryRoot, 'skills');
+const tsxImport = import.meta.resolve('tsx');
 const disclaimer = 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.';
 const controlledSecret = 'fixture-secret-value-never-use';
 const temporaryDirectories: string[] = [];
@@ -38,6 +39,29 @@ function runCli(runner: CliRunner, args: string[]): Promise<CliResult> {
     const child = spawn(runner.command, [...runner.prefix, ...args], {
       cwd: repositoryRoot,
       env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+function runProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<CliResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -161,6 +185,54 @@ describe('universal launch baseline safety cases', () => {
     expect(markdown.trimEnd().split('\n').at(-1)).toBe(disclaimer);
     expect(markdown).not.toContain(controlledSecret);
     expect(markdown).not.toMatch(/readiness[ -]?score/i);
+  });
+
+  it.runIf(process.platform !== 'win32')('executes the emitted POSIX command without shell expansion', async () => {
+    const { projectRoot } = await copyFixture('verification-node');
+    const temporaryRoot = dirname(projectRoot);
+    const binDirectory = join(temporaryRoot, 'bin');
+    const shellSubstitutionMarker = join(temporaryRoot, 'shell-substitution');
+    const backtickSubstitutionMarker = join(temporaryRoot, 'shell-backtick');
+    const hostileFilename = "plan 'single' $(touch shell-substitution) `touch shell-backtick` $SHELL_VAR ; [glob]*.json";
+    const planPath = join(temporaryRoot, hostileFilename);
+    const shimPath = join(binDirectory, 'postvibe');
+    await mkdir(binDirectory);
+    await writeFile(shimPath, [
+      '#!/bin/sh',
+      `exec "${process.execPath}" --import "${tsxImport}" "${join(repositoryRoot, 'src', 'cli.ts')}" "$@"`,
+      '',
+    ].join('\n'));
+    await chmod(shimPath, 0o755);
+
+    const planned = await runCli(runners[0]!, [
+      'plan', projectRoot, '--skills', skillsRoot, '--output', planPath,
+    ]);
+    expect(planned.code).toBe(0);
+    const plan = await readValidatedPlan(planPath);
+    const executeLine = planned.stdout.split('\n').find((line) => line.startsWith('Execute (POSIX sh): '));
+    if (executeLine === undefined) throw new Error('Plan stdout did not contain a POSIX invocation.');
+
+    const executed = await runProcess(
+      '/bin/sh',
+      ['-c', executeLine.slice('Execute (POSIX sh): '.length)],
+      temporaryRoot,
+      {
+        ...process.env,
+        PATH: `${binDirectory}:${process.env.PATH ?? ''}`,
+        SHELL_VAR: 'expanded-variable',
+      },
+    );
+
+    expect(executed.code).toBe(0);
+    expect(executed.stderr).toBe('');
+    const executionPath = pathFrom(executed.stdout, 'Execution record');
+    const execution = await readValidatedExecution(executionPath);
+    expect(execution.planFingerprint).toBe(plan.fingerprint);
+    expect(execution.projectRoot).toBe(plan.projectRoot);
+    expect(await readFile(join(projectRoot, 'verification-order.log'), 'utf8')).toBe('build\ntype-check\nlint\ntest\n');
+    await expectMissing(shellSubstitutionMarker);
+    await expectMissing(backtickSubstitutionMarker);
+    await expectMissing(join(temporaryRoot, 'expanded-variable'));
   });
 
   it('passes portable arguments literally without shell interpretation', async () => {

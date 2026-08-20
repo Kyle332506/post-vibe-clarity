@@ -5,6 +5,8 @@ import type { CommandCategory, VerificationPlan } from '../../model/verification
 import { containsMarkdownLineOrControl } from '../../report/markdown-safety.js';
 import { buildVerificationPlan } from '../../verification/build-verification-plan.js';
 import { writeArtifactExclusively } from '../artifact-output.js';
+import { renderPlatformCommand } from '../command-renderer.js';
+import { findRepeatedSingularOption } from '../option-occurrences.js';
 import { CliSafeError, CliUsageError } from './review.js';
 
 const categories: CommandCategory[] = ['build', 'type-check', 'lint', 'test'];
@@ -12,10 +14,12 @@ const maximumGapIds = 12;
 const maximumGapIdLength = 80;
 
 function parsePlanArgs(args: string[]) {
+  let parsed;
   try {
-    return parseArgs({
+    parsed = parseArgs({
       args,
       allowPositionals: true,
+      tokens: true,
       options: {
         skills: { type: 'string' },
         exclude: { type: 'string', multiple: true },
@@ -25,6 +29,9 @@ function parsePlanArgs(args: string[]) {
   } catch {
     throw new CliUsageError('Invalid plan arguments.');
   }
+  const repeated = findRepeatedSingularOption(parsed.tokens, new Set(['skills', 'output']));
+  if (repeated !== undefined) throw new CliUsageError(`Option --${repeated} may be specified only once.`);
+  return parsed;
 }
 
 function commandSummary(plan: VerificationPlan): string {
@@ -74,13 +81,21 @@ export async function runPlanCommand(args: string[]): Promise<void> {
   await mkdir(dirname(outputPath), { recursive: true });
   await writeArtifactExclusively(outputPath, `${JSON.stringify(plan, null, 2)}\n`);
   const outputDirectory = dirname(outputPath);
+  const execute = renderPlatformCommand(process.platform, 'postvibe', [
+    'execute',
+    outputPath,
+    '--approve',
+    plan.fingerprint,
+    '--output',
+    outputDirectory,
+  ]);
   process.stdout.write([
     `Plan: ${outputPath}`,
     `Fingerprint: ${plan.fingerprint}`,
     commandSummary(plan),
     gapSummary(plan),
     `Warning: ${plan.containmentWarning}`,
-    `Execute: postvibe execute ${JSON.stringify(outputPath)} --approve ${plan.fingerprint} --output ${JSON.stringify(outputDirectory)}`,
+    `Execute (${execute.shellLabel}): ${execute.command}`,
     '',
   ].join('\n'));
 }

@@ -5,20 +5,24 @@ import { writeReportExclusively } from '../report-output.js';
 import { runReview } from '../../orchestrator/run-review.js';
 import { renderJson } from '../../report/render-json.js';
 import { renderMarkdown } from '../../report/render-markdown.js';
+import { findRepeatedSingularOption } from '../option-occurrences.js';
 
 export class CliUsageError extends Error {}
 export class CliSafeError extends Error {}
 
 export async function runReviewCommand(args: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({
+  const { values, positionals, tokens } = parseArgs({
     args,
     allowPositionals: true,
+    tokens: true,
     options: {
       skills: { type: 'string' },
       format: { type: 'string' },
       output: { type: 'string' },
     },
   });
+  const repeated = findRepeatedSingularOption(tokens, new Set(['skills', 'format', 'output']));
+  if (repeated !== undefined) throw new CliUsageError(`Option --${repeated} may be specified only once.`);
   if (positionals.length > 1) throw new CliUsageError('Expected at most one project path.');
   const root = resolve(positionals[0] ?? process.cwd());
   const format = values.format ?? 'markdown';
