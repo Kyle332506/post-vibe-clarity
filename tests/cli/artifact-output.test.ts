@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import {
   ArtifactFileOwnershipError,
   acquireOwnedFileExclusively,
   publishOwnedFileExclusively,
+  releaseOwnedFile,
   writeArtifactExclusively,
 } from '../../src/cli/artifact-output.js';
 
@@ -83,5 +84,94 @@ describe('writeArtifactExclusively', () => {
 
     await expectMissing(path);
     expect(await readFile(temporaryPath, 'utf8')).toBe('foreign replacement\n');
+  });
+
+  it('links only the quarantined owned source when the deterministic temporary name is replaced', async () => {
+    const root = await temporaryRoot('postvibe-artifact-source-race-');
+    const path = join(root, 'pve-20260818120100000.execution.json');
+    const temporaryPath = `${path}.tmp`;
+    const owned = await acquireOwnedFileExclusively(temporaryPath);
+    await owned.handle.writeFile('owned completed evidence\n', 'utf8');
+    await owned.handle.sync();
+
+    await publishOwnedFileExclusively(owned, path, {
+      async afterSourceQuarantine() {
+        await writeFile(temporaryPath, 'foreign temporary replacement\n');
+      },
+    });
+
+    expect(await readFile(path, 'utf8')).toBe('owned completed evidence\n');
+    expect(await readFile(temporaryPath, 'utf8')).toBe('foreign temporary replacement\n');
+  });
+
+  it('removes no foreign final when post-link verification observes replacement', async () => {
+    const root = await temporaryRoot('postvibe-artifact-final-race-');
+    const path = join(root, 'pve-20260818120100000.execution.json');
+    const temporaryPath = `${path}.tmp`;
+    const owned = await acquireOwnedFileExclusively(temporaryPath);
+    await owned.handle.writeFile('owned completed evidence\n', 'utf8');
+    await owned.handle.sync();
+
+    await expect(publishOwnedFileExclusively(owned, path, {
+      async afterFinalLink() {
+        await unlink(path);
+        await writeFile(path, 'foreign completed replacement\n');
+      },
+    })).rejects.toThrow(ArtifactFileOwnershipError);
+
+    expect(await readFile(path, 'utf8')).toBe('foreign completed replacement\n');
+    expect((await readdir(root)).some((name) => name.includes('.quarantine-'))).toBe(false);
+  });
+
+  it('rolls back the completed name when owned temporary cleanup fails before commit', async () => {
+    const root = await temporaryRoot('postvibe-artifact-cleanup-failure-');
+    const path = join(root, 'pve-20260818120100000.execution.json');
+    const temporaryPath = `${path}.tmp`;
+    const owned = await acquireOwnedFileExclusively(temporaryPath);
+    await owned.handle.writeFile('owned completed evidence\n', 'utf8');
+    await owned.handle.sync();
+
+    await expect(publishOwnedFileExclusively(owned, path, {
+      async beforeSourceCleanup() {
+        throw new Error('simulated owned temporary cleanup failure');
+      },
+    })).rejects.toThrow(/cleanup failure/i);
+
+    await expectMissing(path);
+    expect((await readdir(root)).some((name) => name.includes('.quarantine-'))).toBe(false);
+  });
+
+  it('atomically quarantines lock release and restores a foreign last-moment replacement', async () => {
+    const root = await temporaryRoot('postvibe-lock-release-race-');
+    const lockPath = join(root, 'pve-20260818120100000.lock');
+    const owned = await acquireOwnedFileExclusively(lockPath);
+    await owned.handle.writeFile('owned lock\n', 'utf8');
+    await owned.handle.sync();
+
+    await expect(releaseOwnedFile(owned, {
+      async beforeQuarantine() {
+        await unlink(lockPath);
+        await writeFile(lockPath, 'foreign lock replacement\n');
+      },
+    })).rejects.toThrow(ArtifactFileOwnershipError);
+
+    expect(await readFile(lockPath, 'utf8')).toBe('foreign lock replacement\n');
+  });
+
+  it('deletes only the quarantined owned lock when the public name changes before unlink', async () => {
+    const root = await temporaryRoot('postvibe-lock-unlink-race-');
+    const lockPath = join(root, 'pve-20260818120100000.lock');
+    const owned = await acquireOwnedFileExclusively(lockPath);
+    await owned.handle.writeFile('owned lock\n', 'utf8');
+    await owned.handle.sync();
+
+    await releaseOwnedFile(owned, {
+      async afterOwnedQuarantine() {
+        await writeFile(lockPath, 'foreign lock after ownership transfer\n');
+      },
+    });
+
+    expect(await readFile(lockPath, 'utf8')).toBe('foreign lock after ownership transfer\n');
+    expect((await readdir(root)).some((name) => name.includes('.quarantine-'))).toBe(false);
   });
 });
