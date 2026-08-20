@@ -14,6 +14,7 @@ import {
   type ReadinessReport,
 } from '../model/report.js';
 import { validateReadinessReport } from '../validation/report-schema.js';
+import { TOOLKIT_VERSION } from '../version.js';
 import { buildReviewPlan, type ReviewPlanItem } from './build-review-plan.js';
 import type { CheckImplementation, CheckRegistry } from './check-registry.js';
 
@@ -211,7 +212,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
     schemaVersion: '0.1',
     runId: `pvc-${generatedAt.replace(/\D/g, '')}`,
     generatedAt,
-    toolkitVersion: '0.1.0',
+    toolkitVersion: TOOLKIT_VERSION,
     partial: derivePartial(checkExecutions, coverageGaps),
     manifest,
     checkExecutions,

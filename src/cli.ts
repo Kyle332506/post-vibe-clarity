@@ -1,63 +1,55 @@
 #!/usr/bin/env node
 
-import { mkdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
+import { ArtifactFileCollisionError, ArtifactFileOwnershipError } from './cli/artifact-output.js';
+import { runExecuteCommand } from './cli/commands/execute.js';
+import { runPlanCommand } from './cli/commands/plan.js';
+import { CliSafeError, CliUsageError, runReviewCommand } from './cli/commands/review.js';
 import { debugDiagnostic } from './cli/debug-diagnostic.js';
-import { ReportFileCollisionError, writeReportExclusively } from './cli/report-output.js';
-import { runReview } from './orchestrator/run-review.js';
-import { renderJson } from './report/render-json.js';
-import { renderMarkdown } from './report/render-markdown.js';
+import { ReportFileCollisionError } from './cli/report-output.js';
 
-class CliUsageError extends Error {}
+type CommandName = 'review' | 'plan' | 'execute';
+
+function commandLabel(command: CommandName): string {
+  return `${command[0]!.toUpperCase()}${command.slice(1)}`;
+}
+
+async function runExecute(args: string[]): Promise<void> {
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  process.once('SIGINT', abort);
+  try {
+    await runExecuteCommand(args, controller.signal);
+  } finally {
+    process.removeListener('SIGINT', abort);
+  }
+}
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
-  if (command !== 'review') throw new CliUsageError('Expected the review command.');
-
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: {
-      skills: { type: 'string' },
-      format: { type: 'string' },
-      output: { type: 'string' },
-    },
-  });
-  if (positionals.length > 1) throw new CliUsageError('Expected at most one project path.');
-  const root = resolve(positionals[0] ?? process.cwd());
-  const format = values.format ?? 'markdown';
-  if (format !== 'json' && format !== 'markdown') {
-    throw new CliUsageError('Expected --format markdown or --format json.');
-  }
-
-  const report = await runReview({
-    root,
-    skillsRoot: values.skills ? resolve(values.skills) : join(root, 'skills'),
-  });
-  const rendered = format === 'json' ? renderJson(report) : renderMarkdown(report);
-
-  if (!values.output) {
-    process.stdout.write(rendered);
-    return;
-  }
-
-  const outputDirectory = resolve(values.output);
-  const extension = format === 'json' ? 'json' : 'md';
-  const outputPath = join(outputDirectory, `${report.runId}.${extension}`);
-  await mkdir(outputDirectory, { recursive: true });
-  await writeReportExclusively(outputPath, rendered);
-  process.stdout.write(`${outputPath}\n`);
+  if (command === 'review') return runReviewCommand(args);
+  if (command === 'plan') return runPlanCommand(args);
+  if (command === 'execute') return runExecute(args);
+  throw new CliUsageError('Expected the review command.');
 }
 
 try {
   await main();
 } catch (error: unknown) {
-  const message = error instanceof CliUsageError || error instanceof ReportFileCollisionError
+  const command = process.argv[2];
+  const knownCommand: CommandName = command === 'plan' || command === 'execute' ? command : 'review';
+  const label = commandLabel(knownCommand);
+  const isSafeError = error instanceof CliUsageError
+    || error instanceof CliSafeError
+    || error instanceof ReportFileCollisionError
+    || (knownCommand !== 'review' && (
+      error instanceof ArtifactFileCollisionError
+      || error instanceof ArtifactFileOwnershipError
+    ));
+  const message = isSafeError
     ? error.message
     : process.env.POSTVIBE_DEBUG === '1'
-      ? debugDiagnostic(error)
-      : 'Review failed. Set POSTVIBE_DEBUG=1 for sanitized diagnostics.';
+      ? debugDiagnostic(error).replace(/^Review failed\./, `${label} failed.`)
+      : `${label} failed. Set POSTVIBE_DEBUG=1 for sanitized diagnostics.`;
   process.stderr.write(`${message}\n`);
   process.exitCode = 1;
 }

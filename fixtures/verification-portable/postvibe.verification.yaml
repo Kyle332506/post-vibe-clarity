@@ -1,0 +1,7 @@
+schemaVersion: "0.1"
+commands:
+  - id: portable-literal-arguments
+    category: test
+    argv: ["node", "verify.mjs", "literal value", "$(touch portable-injected)", "*", ";", "A&B"]
+    cwd: "."
+    timeoutSeconds: 60

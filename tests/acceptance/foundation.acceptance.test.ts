@@ -264,14 +264,14 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     const parsed = JSON.parse(json) as ReviewReport;
 
     expect(parsed.generatedAt).toBe(fixedTimestamp);
-    expect(parsed.toolkitVersion).toBe('0.1.0');
+    expect(parsed.toolkitVersion).toBe('0.2.0');
     expect(parsed.findings.map(({ checkId, checkVersion, skillVersion }) => ({ checkId, checkVersion, skillVersion }))).toEqual([
       { checkId: 'launch-essentials.privacy-notice', checkVersion: '0.1.0', skillVersion: '0.1.0' },
       { checkId: 'secret-exposure.scan', checkVersion: '0.1.0', skillVersion: '0.1.0' },
     ]);
     expect(parsed.disclaimer).toBe(disclaimer);
     expect(markdown).toContain(`Generated at: ${fixedTimestamp}`);
-    expect(markdown).toContain('Toolkit version: 0.1.0');
+    expect(markdown).toContain('Toolkit version: 0.2.0');
     expect(markdown).toContain('Check: launch-essentials.privacy-notice (check version 0.1.0; skill version 0.1.0)');
     expect(markdown).toContain('Check: secret-exposure.scan (check version 0.1.0; skill version 0.1.0)');
     expect(markdown.endsWith(`${disclaimer}\n`)).toBe(true);

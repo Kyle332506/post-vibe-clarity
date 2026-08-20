@@ -1,0 +1,11 @@
+{
+  "name": "postvibe-verification-node-fixture",
+  "private": true,
+  "packageManager": "npm@11.5.1",
+  "scripts": {
+    "build": "node -e \"require('node:fs').appendFileSync('verification-order.log', 'build\\n'); console.log(String.fromCharCode(65,80,80,95,84,79,75,69,78,61) + ['fixture','secret','value','never','use'].join('-'))\"",
+    "typecheck": "node -e \"require('node:fs').appendFileSync('verification-order.log', 'type-check\\n')\"",
+    "lint": "node -e \"require('node:fs').appendFileSync('verification-order.log', 'lint\\n')\"",
+    "test": "node -e \"require('node:fs').appendFileSync('verification-order.log', 'test\\n')\""
+  }
+}

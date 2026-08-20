@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -87,7 +87,7 @@ describe('postvibe review CLI', () => {
     expect(result.code).toBe(0);
     const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
     expect(parsed.schemaVersion).toBe('0.1');
-    expect(parsed.toolkitVersion).toBe('0.1.0');
+    expect(parsed.toolkitVersion).toBe('0.2.0');
     expect(parsed.partial).toBe(true);
     expect(parsed.checkExecutions).toEqual(expect.arrayContaining([
       expect.objectContaining({ checkId: 'secret-exposure.scan', status: 'completed' }),
@@ -220,5 +220,252 @@ describe('postvibe review CLI', () => {
     expect(result.code).toBe(0);
     expect(stdoutContainsControlledValue).toBe(false);
     expect(stderrContainsControlledValue).toBe(false);
+  });
+});
+
+describe('postvibe plan CLI', () => {
+  it('writes one exclusive plan and prints only the bounded approval summary', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-plan-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const outputDirectory = join(temporaryRoot, 'artifacts');
+    const planPath = join(outputDirectory, 'verification-plan.json');
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      await mkdir(outputDirectory);
+
+      const result = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        planPath,
+      ]);
+
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(await readdir(outputDirectory)).toEqual(['verification-plan.json']);
+      const plan = JSON.parse(await readFile(planPath, 'utf8')) as { fingerprint: string; containmentWarning: string };
+      expect(result.stdout).toBe([
+        `Plan: ${planPath}`,
+        `Fingerprint: ${plan.fingerprint}`,
+        'Commands: 4 selected (build: 1, type-check: 1, lint: 1, test: 1); 0 excluded.',
+        'Gaps: none.',
+        `Warning: ${plan.containmentWarning}`,
+        `Execute: postvibe execute ${JSON.stringify(planPath)} --approve ${plan.fingerprint} --output ${JSON.stringify(outputDirectory)}`,
+        '',
+      ].join('\n'));
+      await expect(readFile(join(projectRoot, 'verification-order.log'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to overwrite an existing plan', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-plan-collision-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const planPath = join(temporaryRoot, 'verification-plan.json');
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      await writeFile(planPath, 'existing-plan\n');
+      const result = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        planPath,
+      ]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe(`Artifact file already exists; no file was overwritten: ${planPath}\n`);
+      expect(await readFile(planPath, 'utf8')).toBe('existing-plan\n');
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('requires the plan output path', async () => {
+    const result = await runCli(['plan', 'fixtures/cli-clean']);
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('Expected --output <plan-file>.\n');
+  });
+
+  it('retains each repeated exclusion in the approved plan', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-plan-exclusions-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const planPath = join(temporaryRoot, 'verification-plan.json');
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      const result = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--exclude',
+        'package-script:build',
+        '--exclude',
+        'package-script:test',
+        '--output',
+        planPath,
+      ]);
+
+      expect(result.code).toBe(0);
+      const plan = JSON.parse(await readFile(planPath, 'utf8')) as {
+        excludedCommands: Array<{ id: string }>;
+        coverageGaps: Array<{ id: string }>;
+      };
+      expect(plan.excludedCommands.map(({ id }) => id)).toEqual([
+        'package-script:build',
+        'package-script:test',
+      ]);
+      expect(plan.coverageGaps.map(({ id }) => id)).toEqual([
+        'command.package-script:build',
+        'command.package-script:test',
+      ]);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('redacts project-controlled parser details in debug mode', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-plan-debug-'));
+    const projectRoot = join(temporaryRoot, 'project');
+
+    try {
+      await mkdir(projectRoot);
+      await writeFile(join(projectRoot, 'package.json'), `{"${controlledParserValue}":`);
+      const result = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        join(temporaryRoot, 'plan.json'),
+      ], { ...process.env, POSTVIBE_DEBUG: '1' });
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toMatch(/^Plan failed\.\nError category: SyntaxError(?:\nStack frames:\n(?:  at frame-\d+:\d+:\d+\n?)+)?$/);
+      expect(result.stderr).not.toContain(controlledParserValue);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('postvibe execute CLI', () => {
+  it('rejects malformed plan JSON with a stable normal-mode error', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-execute-invalid-'));
+    const planPath = join(temporaryRoot, 'plan.json');
+
+    try {
+      await writeFile(planPath, `{"${controlledParserValue}":`);
+      const { POSTVIBE_DEBUG: _debug, ...environment } = process.env;
+      const result = await runCli([
+        'execute',
+        planPath,
+        '--approve',
+        'a'.repeat(64),
+        '--output',
+        join(temporaryRoot, 'artifacts'),
+      ], environment);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe('Verification plan is invalid; create a new plan.\n');
+      expect(result.stderr).not.toContain(controlledParserValue);
+      expect(await readdir(temporaryRoot)).toEqual(['plan.json']);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('redacts malformed plan details in debug mode', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-execute-debug-'));
+    const planPath = join(temporaryRoot, 'plan.json');
+
+    try {
+      await writeFile(planPath, `{"${controlledParserValue}":`);
+      const result = await runCli([
+        'execute',
+        planPath,
+        '--approve',
+        'a'.repeat(64),
+        '--output',
+        join(temporaryRoot, 'artifacts'),
+      ], { ...process.env, POSTVIBE_DEBUG: '1' });
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe('Verification plan is invalid; create a new plan.\n');
+      expect(result.stderr).not.toContain(controlledParserValue);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a schema-invalid plan before creating execution artifacts', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-execute-schema-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const planPath = join(temporaryRoot, 'plan.json');
+    const outputDirectory = join(temporaryRoot, 'artifacts');
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      const planned = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        planPath,
+      ]);
+      expect(planned.code).toBe(0);
+      const plan = JSON.parse(await readFile(planPath, 'utf8')) as Record<string, unknown>;
+      const fingerprint = plan.fingerprint;
+      if (typeof fingerprint !== 'string') throw new Error('Fixture plan fingerprint is missing.');
+      plan.unexpected = 'controlled-invalid-plan';
+      await writeFile(planPath, `${JSON.stringify(plan)}\n`);
+      const result = await runCli([
+        'execute',
+        planPath,
+        '--approve',
+        fingerprint,
+        '--output',
+        outputDirectory,
+      ]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe('Verification plan is invalid; create a new plan.\n');
+      await expect(readFile(outputDirectory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(readFile(join(projectRoot, 'verification-order.log'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('validates execute format before loading or running a plan', async () => {
+    const result = await runCli([
+      'execute',
+      'controlled-plan-that-must-not-be-read.json',
+      '--approve',
+      'a'.repeat(64),
+      '--output',
+      'controlled-output-that-must-not-be-created',
+      '--format',
+      'yaml',
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('Expected --format markdown or --format json.\n');
   });
 });

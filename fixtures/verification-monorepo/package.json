@@ -1,0 +1,8 @@
+{
+  "name": "postvibe-verification-monorepo-fixture",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "test": "pnpm --filter postvibe-verification-covered test"
+  }
+}

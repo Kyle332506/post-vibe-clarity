@@ -1,0 +1,7 @@
+{
+  "name": "postvibe-verification-covered",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"process.exit(0)\""
+  }
+}
