@@ -133,6 +133,24 @@
 
 - None recorded.
 
+### Observation boundary
+
+- Policy: ` project-observation/0.1 `
+- Pinned root: ` [generated for this run] ` (device ` [generated for this run] `; inode ` [generated for this run] `)
+- Excluded directories: ` .git `, ` .postvibe `, ` coverage `, ` dist `, ` node_modules `
+- Symlinks and non-regular files are not observed.
+- Inaccessible paths fail observation.
+- Only content SHA-256 metadata is recorded; filesystem metadata is not recorded.
+- Exact artifact exclusions:
+  - ` [generated for this run] `
+  - ` [generated for this run] `
+  - ` [generated for this run] `
+  - ` [generated for this run] `
+  - ` [generated for this run] `
+  - ` [generated for this run] `
+  - ` [generated for this run] `
+  - ` [generated for this run] `
+
 ### Containment warning
 
 Commands run as local processes with the current user privileges; this is not a security sandbox and does not block network or out-of-project filesystem access.

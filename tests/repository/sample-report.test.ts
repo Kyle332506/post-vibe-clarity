@@ -48,7 +48,16 @@ function renderPresentationSample(
   plan: VerificationPlan,
   execution: VerificationExecution,
 ): string {
-  let markdown = renderVerifiedMarkdown(report);
+  const presentationReport = structuredClone(report);
+  presentationReport.verification.observationBoundary.rootIdentity = {
+    realPath: presentationPlaceholder,
+    device: presentationPlaceholder,
+    inode: presentationPlaceholder,
+  };
+  presentationReport.verification.observationBoundary.exactArtifactExclusions = (
+    presentationReport.verification.observationBoundary.exactArtifactExclusions.map(() => presentationPlaceholder)
+  );
+  let markdown = renderVerifiedMarkdown(presentationReport);
   markdown = replaceRequired(markdown, report.verification.executionRecordPath, 'the execution-record path');
   markdown = replaceRequired(markdown, plan.projectRoot, 'the project root');
   markdown = replaceRequired(markdown, report.generatedAt, 'the generated timestamp');
@@ -135,6 +144,7 @@ describe('sample report documentation', () => {
       planFingerprint: plan.fingerprint,
       executionId: execution.executionId,
       executionRecordPath,
+      observationBoundary: execution.observationBoundary,
     });
 
     const mutatedPlan = structuredClone(plan);
