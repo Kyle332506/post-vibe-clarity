@@ -5,6 +5,41 @@ import type { FileHandle } from 'node:fs/promises';
 export class ArtifactFileCollisionError extends Error {}
 export class ArtifactFileOwnershipError extends Error {}
 
+type ArtifactFailureCategory = 'ownership' | 'recovery' | 'collision' | 'operation';
+type ArtifactPublicPathState = 'not-restored' | 'restored-with-recovery-entry';
+
+interface ArtifactRecoveryRecord {
+  publicPath: string;
+  recoveryPath: string;
+  publicPathState: ArtifactPublicPathState;
+}
+
+export class ArtifactFileRecoveryError extends ArtifactFileOwnershipError {
+  readonly publicPath: string;
+  readonly recoveryPath: string;
+  readonly publicPathState: ArtifactPublicPathState;
+  readonly recoveryRecords: readonly Readonly<ArtifactRecoveryRecord>[];
+  readonly failureCategories: readonly ArtifactFailureCategory[];
+
+  constructor(
+    recoveryRecords: readonly ArtifactRecoveryRecord[],
+    failureCategories: readonly ArtifactFailureCategory[] = ['ownership', 'recovery'],
+  ) {
+    const records = recoveryRecords.map((record) => Object.freeze({ ...record }));
+    const firstRecord = records[0];
+    if (firstRecord === undefined) throw new TypeError('Artifact recovery errors require a recovery record.');
+    const categories = orderedFailureCategories(failureCategories);
+    const locations = records.map((record) => recoveryLocationMessage(record)).join(' ');
+    super(`Artifact ownership and recovery failed. ${locations} Failure categories: ${categories.join(', ')}.`);
+    this.name = 'ArtifactFileRecoveryError';
+    this.publicPath = firstRecord.publicPath;
+    this.recoveryPath = firstRecord.recoveryPath;
+    this.publicPathState = firstRecord.publicPathState;
+    this.recoveryRecords = Object.freeze(records);
+    this.failureCategories = Object.freeze(categories);
+  }
+}
+
 interface FileIdentity {
   dev: bigint;
   ino: bigint;
@@ -24,6 +59,7 @@ export interface OwnedFileReleaseHooks {
 export interface ArtifactPublicationHooks {
   afterSourceQuarantine?: (sourcePath: string) => Promise<void>;
   afterFinalLink?: (path: string) => Promise<void>;
+  afterFinalQuarantine?: (path: string) => Promise<void>;
   beforeSourceCleanup?: () => Promise<void>;
 }
 
@@ -43,6 +79,26 @@ function ownershipError(path: string, preservedPath?: string): ArtifactFileOwner
   return new ArtifactFileOwnershipError(
     `Artifact file ownership changed; no foreign file was removed or published: ${path}${preservation}`,
   );
+}
+
+function recoveryLocationMessage(record: ArtifactRecoveryRecord): string {
+  if (record.publicPathState === 'restored-with-recovery-entry') {
+    return `Foreign content was restored at ${record.publicPath} and also remains at recovery path: ${record.recoveryPath}.`;
+  }
+  return `Foreign content was moved from ${record.publicPath} and preserved at recovery path: ${record.recoveryPath}. The public path was not restored.`;
+}
+
+function orderedFailureCategories(categories: readonly ArtifactFailureCategory[]): ArtifactFailureCategory[] {
+  const order: readonly ArtifactFailureCategory[] = ['ownership', 'recovery', 'collision', 'operation'];
+  return order.filter((category) => categories.includes(category));
+}
+
+function recoveryError(
+  publicPath: string,
+  recoveryPath: string,
+  publicPathState: ArtifactPublicPathState,
+): ArtifactFileRecoveryError {
+  return new ArtifactFileRecoveryError([{ publicPath, recoveryPath, publicPathState }]);
 }
 
 async function identityAt(path: string): Promise<FileIdentity> {
@@ -74,13 +130,13 @@ async function restoreForeignEntry(quarantine: string, publicPath: string): Prom
   try {
     await link(quarantine, publicPath);
   } catch {
-    throw ownershipError(publicPath, quarantine);
+    throw recoveryError(publicPath, quarantine, 'not-restored');
   }
 
   try {
     await unlink(quarantine);
   } catch {
-    throw ownershipError(publicPath, quarantine);
+    throw recoveryError(publicPath, quarantine, 'restored-with-recovery-entry');
   }
 
   throw ownershipError(publicPath);
@@ -119,7 +175,11 @@ async function removeOwnedQuarantine(file: OwnedFile, quarantine: string): Promi
   await unlink(quarantine);
 }
 
-async function rollbackPublishedPath(file: OwnedFile, path: string): Promise<void> {
+async function rollbackPublishedPath(
+  file: OwnedFile,
+  path: string,
+  afterQuarantine?: (path: string) => Promise<void>,
+): Promise<void> {
   const quarantine = quarantinePath(path);
   try {
     await rename(path, quarantine);
@@ -127,6 +187,7 @@ async function rollbackPublishedPath(file: OwnedFile, path: string): Promise<voi
     if (isMissingError(error)) return;
     throw error;
   }
+  await afterQuarantine?.(path);
 
   let movedIdentity: FileIdentity;
   try {
@@ -143,9 +204,23 @@ async function rollbackPublishedPath(file: OwnedFile, path: string): Promise<voi
 }
 
 function combineFailures(primaryError: unknown, cleanupError: unknown, message: string): unknown {
+  if (primaryError instanceof ArtifactFileRecoveryError || cleanupError instanceof ArtifactFileRecoveryError) {
+    const recoveryRecords = [primaryError, cleanupError].flatMap((error) => (
+      error instanceof ArtifactFileRecoveryError ? error.recoveryRecords : []
+    ));
+    const failureCategories = [primaryError, cleanupError].flatMap((error) => failureCategoriesFor(error));
+    return new ArtifactFileRecoveryError(recoveryRecords, failureCategories);
+  }
   if (primaryError instanceof ArtifactFileOwnershipError) return primaryError;
   if (cleanupError instanceof ArtifactFileOwnershipError) return cleanupError;
   return new AggregateError([primaryError, cleanupError], message);
+}
+
+function failureCategoriesFor(error: unknown): readonly ArtifactFailureCategory[] {
+  if (error instanceof ArtifactFileRecoveryError) return error.failureCategories;
+  if (error instanceof ArtifactFileOwnershipError) return ['ownership'];
+  if (error instanceof ArtifactFileCollisionError || isAlreadyExistsError(error)) return ['collision'];
+  return ['operation'];
 }
 
 export async function acquireOwnedFileExclusively(path: string): Promise<OwnedFile> {
@@ -203,12 +278,13 @@ async function cleanupPublicationFailure(
   sourceQuarantine: string | undefined,
   linked: boolean,
   primaryError: unknown,
+  hooks: ArtifactPublicationHooks,
 ): Promise<never> {
   let failure = primaryError;
 
   if (linked) {
     try {
-      await rollbackPublishedPath(file, path);
+      await rollbackPublishedPath(file, path, hooks.afterFinalQuarantine);
     } catch (rollbackError) {
       failure = combineFailures(failure, rollbackError, 'Artifact publication and completed-file rollback both failed.');
     }
@@ -258,11 +334,15 @@ export async function publishOwnedFileExclusively(
     // This final identity check is the commit point; no fallible cleanup follows it.
     await assertOwnedPath(file, path);
   } catch (error) {
-    await cleanupPublicationFailure(file, path, sourceQuarantine, linked, error);
+    await cleanupPublicationFailure(file, path, sourceQuarantine, linked, error, hooks);
   }
 }
 
-export async function writeArtifactExclusively(path: string, contents: string): Promise<void> {
+export async function writeArtifactExclusively(
+  path: string,
+  contents: string,
+  hooks: ArtifactPublicationHooks = {},
+): Promise<void> {
   const temporaryPath = artifactTemporaryPath(path);
   let temporaryFile: OwnedFile | undefined;
 
@@ -270,7 +350,7 @@ export async function writeArtifactExclusively(path: string, contents: string): 
     temporaryFile = await acquireOwnedFileExclusively(temporaryPath);
     await temporaryFile.handle.writeFile(contents, 'utf8');
     await temporaryFile.handle.sync();
-    await publishOwnedFileExclusively(temporaryFile, path);
+    await publishOwnedFileExclusively(temporaryFile, path, hooks);
   } catch (error) {
     if (temporaryFile !== undefined && !releasedFiles.has(temporaryFile)) {
       try {

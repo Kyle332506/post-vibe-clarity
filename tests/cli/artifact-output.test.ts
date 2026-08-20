@@ -27,6 +27,26 @@ async function expectMissing(path: string): Promise<void> {
   await expect(access(path)).rejects.toMatchObject({ code: 'ENOENT' });
 }
 
+interface RecoveryFailure {
+  name: string;
+  publicPath: string;
+  recoveryPath: string;
+  publicPathState: string;
+  failureCategories: readonly string[];
+  message: string;
+}
+
+async function capturedFailure(operation: () => Promise<void>): Promise<unknown> {
+  let failure: unknown;
+  try {
+    await operation();
+  } catch (error) {
+    failure = error;
+  }
+  expect(failure).toBeDefined();
+  return failure;
+}
+
 describe('writeArtifactExclusively', () => {
   it('publishes a completed artifact and removes its deterministic temporary file', async () => {
     const root = await temporaryRoot('postvibe-artifact-output-');
@@ -121,6 +141,72 @@ describe('writeArtifactExclusively', () => {
 
     expect(await readFile(path, 'utf8')).toBe('foreign completed replacement\n');
     expect((await readdir(root)).some((name) => name.includes('.quarantine-'))).toBe(false);
+  });
+
+  it('surfaces the recovery path when a foreign final directory cannot be restored', async () => {
+    const root = await temporaryRoot('postvibe-artifact-directory-recovery-');
+    const path = join(root, 'pve-20260818120100000.execution.json');
+    const sensitiveMarker = 'foreign directory payload';
+
+    const failure = await capturedFailure(async () => {
+      await writeArtifactExclusively(path, 'owned completed evidence\n', {
+        async afterFinalLink() {
+          await unlink(path);
+          await mkdir(path);
+          await writeFile(join(path, 'marker.txt'), sensitiveMarker);
+        },
+      });
+    }) as RecoveryFailure;
+
+    expect(failure).toMatchObject({
+      name: 'ArtifactFileRecoveryError',
+      publicPath: path,
+      publicPathState: 'not-restored',
+      failureCategories: ['ownership', 'recovery'],
+    });
+    expect(failure.recoveryPath.startsWith(`${path}.quarantine-`)).toBe(true);
+    expect(failure.message).toContain(failure.recoveryPath);
+    expect(failure.message).not.toContain(sensitiveMarker);
+    await expectMissing(path);
+    expect(await readFile(join(failure.recoveryPath, 'marker.txt'), 'utf8')).toBe(sensitiveMarker);
+    await expectMissing(`${path}.tmp`);
+  });
+
+  it('surfaces preserved foreign content when the public final path is reoccupied during restore', async () => {
+    const root = await temporaryRoot('postvibe-artifact-reoccupied-recovery-');
+    const path = join(root, 'pve-20260818120100000.execution.json');
+    const temporaryPath = `${path}.tmp`;
+    const owned = await acquireOwnedFileExclusively(temporaryPath);
+    await owned.handle.writeFile('owned completed evidence\n', 'utf8');
+    await owned.handle.sync();
+    const movedForeignContents = 'moved foreign final payload\n';
+    const occupyingForeignContents = 'later public-path occupant\n';
+
+    const failure = await capturedFailure(async () => {
+      await publishOwnedFileExclusively(owned, path, {
+        async afterFinalLink() {
+          await unlink(path);
+          await writeFile(path, movedForeignContents);
+        },
+        async afterFinalQuarantine() {
+          await writeFile(path, occupyingForeignContents);
+        },
+      });
+    }) as RecoveryFailure;
+
+    expect(failure).toMatchObject({
+      name: 'ArtifactFileRecoveryError',
+      publicPath: path,
+      publicPathState: 'not-restored',
+      failureCategories: ['ownership', 'recovery'],
+    });
+    expect(failure.recoveryPath.startsWith(`${path}.quarantine-`)).toBe(true);
+    expect(failure.message).toContain(failure.recoveryPath);
+    expect(failure.message).not.toContain(movedForeignContents.trim());
+    expect(failure.message).not.toContain(occupyingForeignContents.trim());
+    expect(await readFile(path, 'utf8')).toBe(occupyingForeignContents);
+    expect(await readFile(failure.recoveryPath, 'utf8')).toBe(movedForeignContents);
+    await expectMissing(temporaryPath);
   });
 
   it('rolls back the completed name when owned temporary cleanup fails before commit', async () => {
