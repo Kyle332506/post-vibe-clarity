@@ -183,6 +183,50 @@ describe('command output redaction', () => {
     expect(result.output).not.toContain('MISMATCHED_END_THIRD_KEY_LINE_5xN9');
   });
 
+  it('matches a private-key label at the 128-character limit', () => {
+    const label = `${'A'.repeat(117)}PRIVATE KEY`;
+    const collector = createCommandOutputCollector(192);
+    collector.append(`safe-prefix\n-----BEGIN ${label}-----\n`);
+    collector.append(`${'B'.repeat(4096)}\n`);
+    collector.append(`-----END ${label}-----\n`);
+    collector.append('EXACT_LABEL_CAP_SAFE_TAIL_4dJ8\n');
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output).toContain('EXACT_LABEL_CAP_SAFE_TAIL_4dJ8');
+    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(192);
+  });
+
+  it('fails closed when an unterminated private-key label exceeds 128 characters', () => {
+    const collector = createCommandOutputCollector(192);
+    collector.append('safe-prefix\n-----BEGIN ');
+    collector.append('A'.repeat(129));
+    collector.append(`\n${'B'.repeat(4096)}\n`);
+    collector.append('OVERSIZED_LABEL_TAIL_SENTINEL_2qF6\n');
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output).toContain('[REDACTED]');
+    expect(result.output).not.toContain('OVERSIZED_LABEL_TAIL_SENTINEL_2qF6');
+    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(192);
+  });
+
+  it('bounds label tracking for an unterminated marker far larger than the output limit', () => {
+    const collector = createCommandOutputCollector(192);
+    collector.append('safe-prefix\n-----BEGIN ');
+    collector.append('A'.repeat(4096));
+    collector.append('\nOVERSIZED_STREAM_TAIL_SENTINEL_7gL3\n');
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output).toContain('[REDACTED]');
+    expect(result.output).not.toContain('OVERSIZED_STREAM_TAIL_SENTINEL_7gL3');
+    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(192);
+  });
+
   it('preserves an ordinary safe tail after truncation', () => {
     const collector = createCommandOutputCollector(192);
     collector.append('safe-prefix\n');

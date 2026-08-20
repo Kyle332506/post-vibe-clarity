@@ -19,6 +19,7 @@ const sensitiveAssignmentParts = [
   'AUTHORIZATION',
 ];
 const maximumSensitivePartLength = Math.max(...sensitiveAssignmentParts.map((part) => part.length));
+const privateKeyLabelMaximumCharacters = 128;
 
 interface SensitiveByteObservation {
   sensitive: boolean;
@@ -33,7 +34,7 @@ interface SensitiveBoundaryTracker {
 
 interface PrivateKeyMarkerMatch {
   start: number;
-  label: string;
+  label: string | null;
 }
 
 export interface CollectedCommandOutput {
@@ -321,6 +322,12 @@ function createPrivateKeyMarkerTracker(kind: 'BEGIN' | 'END'): {
         return undefined;
       }
       if (/^[A-Z0-9 ]$/u.test(character)) {
+        if (candidateLabel.length === privateKeyLabelMaximumCharacters) {
+          const match = { start: candidateStart, label: null };
+          resetCandidate();
+          prefixWindow = '';
+          return match;
+        }
         candidateLabel += character;
         return undefined;
       }
@@ -343,16 +350,18 @@ function createSensitiveBoundaryTracker(): SensitiveBoundaryTracker {
   const assignments = createAssignmentTracker();
   const privateKeyBegin = createPrivateKeyMarkerTracker('BEGIN');
   const privateKeyEnd = createPrivateKeyMarkerTracker('END');
-  let openPrivateKeyLabel: string | undefined;
+  let openPrivateKeyLabel: string | null | undefined;
 
   return {
     observe(byte, offset): SensitiveByteObservation {
       if (openPrivateKeyLabel !== undefined) {
-        const privateKeyEndMatch = privateKeyEnd.observe(byte, offset);
-        if (privateKeyEndMatch?.label === openPrivateKeyLabel) {
-          openPrivateKeyLabel = undefined;
-          privateKeyBegin.reset();
-          assignments.reset();
+        if (openPrivateKeyLabel !== null) {
+          const privateKeyEndMatch = privateKeyEnd.observe(byte, offset);
+          if (privateKeyEndMatch?.label === openPrivateKeyLabel) {
+            openPrivateKeyLabel = undefined;
+            privateKeyBegin.reset();
+            assignments.reset();
+          }
         }
         return { sensitive: true };
       }
