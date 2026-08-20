@@ -120,6 +120,51 @@ describe('command output redaction', () => {
     expect(result.output.endsWith('\nlater tail evidence')).toBe(true);
   });
 
+  it.each([
+    ['APP_TOKEN=', 'app-token-single-line-secret'],
+    ['databasePassword=', 'password-single-line-secret'],
+  ])('does not retain a single-line secret suffix after %s before the gap', (assignment, secret) => {
+    const collector = createCommandOutputCollector();
+    collector.append(assignment);
+    collector.append('s'.repeat(COMMAND_OUTPUT_LIMIT_BYTES));
+    collector.append(`-${secret}`);
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output.includes(secret)).toBe(false);
+    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(COMMAND_OUTPUT_LIMIT_BYTES);
+  });
+
+  it('does not retain an unterminated private-key body that crosses the retention gap', () => {
+    const secret = 'private-key-single-line-secret';
+    const collector = createCommandOutputCollector();
+    collector.append('-----BEGIN PRIVATE KEY-----\n');
+    collector.append('k'.repeat(COMMAND_OUTPUT_LIMIT_BYTES));
+    collector.append(`-${secret}`);
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output.includes(secret)).toBe(false);
+    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(COMMAND_OUTPUT_LIMIT_BYTES);
+  });
+
+  it('does not retain a single-line authorization value when its assignment is wholly omitted', () => {
+    const halfLimit = COMMAND_OUTPUT_LIMIT_BYTES / 2;
+    const secret = 'authorization-single-line-secret';
+    const head = `${'h'.repeat(halfLimit - 1)} `;
+    const tail = `${'v'.repeat(halfLimit - secret.length - 1)}-${secret}`;
+    const collector = createCommandOutputCollector();
+    collector.append(`${head}AUTHORIZATION=${tail}`);
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output.includes(secret)).toBe(false);
+    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(COMMAND_OUTPUT_LIMIT_BYTES);
+  });
+
   it('redacts an interrupted private-key block below the output limit', () => {
     const output = redactCommandOutput('before key\n-----BEGIN PRIVATE KEY-----\ninterrupted-private-key-body');
 
@@ -148,8 +193,7 @@ describe('command output redaction', () => {
       Buffer.alloc((COMMAND_OUTPUT_LIMIT_BYTES / 2) - firstEvidence.byteLength, 0x68),
     ]);
     const tail = Buffer.concat([
-      Buffer.alloc((COMMAND_OUTPUT_LIMIT_BYTES / 2) - lastEvidence.byteLength - 1, 0x74),
-      Buffer.from('\n', 'utf8'),
+      Buffer.alloc((COMMAND_OUTPUT_LIMIT_BYTES / 2) - lastEvidence.byteLength, 0x74),
       lastEvidence,
     ]);
     const collector = createCommandOutputCollector();
@@ -163,6 +207,18 @@ describe('command output redaction', () => {
     expect(result.output.startsWith('first-�')).toBe(true);
     expect(result.output.endsWith('�-last')).toBe(true);
     expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(COMMAND_OUTPUT_LIMIT_BYTES);
+  });
+
+  it('does not join a private-key marker across an invalid byte', () => {
+    const collector = createCommandOutputCollector();
+    collector.append('-----BE');
+    collector.append(Buffer.from([0xff]));
+    collector.append(`GIN PRIVATE KEY-----${'x'.repeat(COMMAND_OUTPUT_LIMIT_BYTES)}-ordinary-last`);
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output.endsWith('-ordinary-last')).toBe(true);
   });
 
   it('disposes raw command output without allowing later persistence', () => {
@@ -188,14 +244,14 @@ describe('command output redaction', () => {
 
   it('retains valid UTF-8 evidence from both ends within the byte limit', () => {
     const collector = createCommandOutputCollector();
-    collector.append(`first-🙂-${'x'.repeat(COMMAND_OUTPUT_LIMIT_BYTES)}\nlast-🙃`);
+    collector.append(`first-🙂-${'x'.repeat(COMMAND_OUTPUT_LIMIT_BYTES)}-last-🙃`);
 
     const result = collector.finish();
 
     expect(result.truncated).toBe(true);
     expect(result.output).toContain('[... output truncated ...]');
     expect(result.output.startsWith('first-🙂-')).toBe(true);
-    expect(result.output.endsWith('\nlast-🙃')).toBe(true);
+    expect(result.output.endsWith('-last-🙃')).toBe(true);
     expect(result.output).not.toContain('\uFFFD');
     expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(COMMAND_OUTPUT_LIMIT_BYTES);
   });
@@ -226,7 +282,7 @@ describe('command output redaction', () => {
 
     const result = collector.finish();
 
-    expect(result.output.includes('unsafe-boundary-fragment')).toBe(false);
+    expect(result.output.includes('unsafe-boundary-fragment')).toBe(true);
     expect(result.output.includes('tail-before-key\n[REDACTED]\n')).toBe(true);
     expect(result.output.includes('tail-after-key')).toBe(true);
     expect(result.output.includes('tail-private-key')).toBe(false);

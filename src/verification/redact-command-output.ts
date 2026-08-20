@@ -11,6 +11,24 @@ const boundedTailCapacity = retainedBytes - boundedHeadCapacity;
 const rawHeadCapacity = Math.floor(COMMAND_OUTPUT_LIMIT_BYTES / 2);
 const rawTailCapacity = COMMAND_OUTPUT_LIMIT_BYTES - rawHeadCapacity;
 const utf8Decoder = new TextDecoder('utf-8');
+const sensitiveAssignmentParts = [
+  'TOKEN',
+  'SECRET',
+  'PASSWORD',
+  'PASSWD',
+  'PRIVATE_KEY',
+  'CREDENTIAL',
+  'API_KEY',
+  'COOKIE',
+  'SESSION',
+  'AUTHORIZATION',
+];
+const maximumSensitivePartLength = Math.max(...sensitiveAssignmentParts.map((part) => part.length));
+
+interface SensitiveByteObservation {
+  sensitive: boolean;
+  sensitiveStart?: number;
+}
 
 export interface CollectedCommandOutput {
   output: string;
@@ -90,6 +108,270 @@ function redactBoundaryTail(input: string): string {
   return input.replace(/^[^\r\n]*/u, '[REDACTED]');
 }
 
+function asciiUpper(byte: number): string {
+  if (byte >= 0x61 && byte <= 0x7a) return String.fromCharCode(byte - 0x20);
+  return byte <= 0x7f ? String.fromCharCode(byte) : '';
+}
+
+function isIdentifierByte(character: string): boolean {
+  return /^[A-Z0-9_.-]$/u.test(character);
+}
+
+function isIdentifierStart(character: string): boolean {
+  return /^[A-Z_]$/u.test(character);
+}
+
+function isLineBreak(character: string): boolean {
+  return character === '\r' || character === '\n';
+}
+
+function isUnquotedValueTerminator(character: string): boolean {
+  return character === ' ' || character === '\t' || character === '\f'
+    || character === '\v' || character === ',' || character === ';'
+    || isLineBreak(character);
+}
+
+function createAssignmentTracker(): {
+  observe(byte: number, offset: number): SensitiveByteObservation;
+  reset(): void;
+} {
+  const exactNames = ['AUTHORIZATION', 'COOKIE', 'SET-COOKIE'] as const;
+  let valueMode: 'scan' | 'awaiting' | 'unquoted' | 'single-quoted' | 'double-quoted' | 'header' = 'scan';
+  let identifierActive = false;
+  let identifierEligible = false;
+  let identifierStart = 0;
+  let identifierLength = 0;
+  let identifierWindow = '';
+  let identifierSensitive = false;
+  let exactMatches = exactNames.map(() => true);
+  let pending: { assignment: boolean; header: boolean; start: number; quoteAllowed: boolean } | undefined;
+
+  function resetIdentifier(): void {
+    identifierActive = false;
+    identifierEligible = false;
+    identifierStart = 0;
+    identifierLength = 0;
+    identifierWindow = '';
+    identifierSensitive = false;
+    exactMatches = exactNames.map(() => true);
+  }
+
+  function reset(): void {
+    valueMode = 'scan';
+    pending = undefined;
+    resetIdentifier();
+  }
+
+  function updateIdentifier(character: string): void {
+    exactMatches = exactMatches.map(
+      (matches, index) => matches && exactNames[index]![identifierLength] === character,
+    );
+    identifierLength += 1;
+    identifierWindow = `${identifierWindow}${character}`.slice(-maximumSensitivePartLength);
+    identifierSensitive ||= sensitiveAssignmentParts.some((part) => identifierWindow.endsWith(part));
+  }
+
+  function finishIdentifier(): void {
+    if (!identifierActive) return;
+    if (identifierEligible) {
+      const authorization = exactMatches[0] === true && identifierLength === exactNames[0].length;
+      const cookieHeader = (exactMatches[1] === true && identifierLength === exactNames[1].length)
+        || (exactMatches[2] === true && identifierLength === exactNames[2].length);
+      pending = {
+        assignment: identifierSensitive || authorization,
+        header: authorization || cookieHeader,
+        start: identifierStart,
+        quoteAllowed: true,
+      };
+    } else {
+      pending = undefined;
+    }
+    resetIdentifier();
+  }
+
+  return {
+    observe(byte, offset): SensitiveByteObservation {
+      const character = asciiUpper(byte);
+
+      if (valueMode === 'header') {
+        if (isLineBreak(character)) valueMode = 'scan';
+        return { sensitive: !isLineBreak(character) };
+      }
+      if (valueMode === 'awaiting') {
+        if (isLineBreak(character) || character === ',' || character === ';') {
+          valueMode = 'scan';
+          return { sensitive: false };
+        }
+        if (character === "'") valueMode = 'single-quoted';
+        else if (character === '"') valueMode = 'double-quoted';
+        else if (!isUnquotedValueTerminator(character)) valueMode = 'unquoted';
+        return { sensitive: true };
+      }
+      if (valueMode === 'unquoted') {
+        if (isUnquotedValueTerminator(character)) {
+          valueMode = 'scan';
+          return { sensitive: false };
+        }
+        return { sensitive: true };
+      }
+      if (valueMode === 'single-quoted' || valueMode === 'double-quoted') {
+        if (isLineBreak(character)) {
+          valueMode = 'scan';
+          return { sensitive: false };
+        }
+        const closingQuote = valueMode === 'single-quoted' ? "'" : '"';
+        if (character === closingQuote) valueMode = 'scan';
+        return { sensitive: true };
+      }
+
+      if (identifierActive && isIdentifierByte(character)) {
+        updateIdentifier(character);
+        return { sensitive: false };
+      }
+      finishIdentifier();
+
+      if (pending !== undefined) {
+        if ((character === "'" || character === '"') && pending.quoteAllowed) {
+          pending.quoteAllowed = false;
+          return { sensitive: false };
+        }
+        if (character === ' ' || character === '\t' || character === '\f' || character === '\v') {
+          return { sensitive: false };
+        }
+        if ((character === ':' || character === '=') && pending.assignment) {
+          const sensitiveStart = pending.start;
+          valueMode = character === ':' && pending.header ? 'header' : 'awaiting';
+          pending = undefined;
+          return { sensitive: true, sensitiveStart };
+        }
+        pending = undefined;
+      }
+
+      if (isIdentifierByte(character)) {
+        identifierActive = true;
+        identifierEligible = isIdentifierStart(character);
+        identifierStart = offset;
+        updateIdentifier(character);
+      } else if (isLineBreak(character)) {
+        pending = undefined;
+      }
+      return { sensitive: false };
+    },
+    reset,
+  };
+}
+
+function createPrivateKeyMarkerTracker(kind: 'BEGIN' | 'END'): {
+  observe(byte: number, offset: number): number | undefined;
+  reset(): void;
+} {
+  const prefix = `-----${kind} `;
+  const suffix = 'PRIVATE KEY';
+  let prefixWindow = '';
+  let candidateStart: number | undefined;
+  let allowedSuffix = '';
+  let closingHyphens = 0;
+
+  function resetCandidate(): void {
+    candidateStart = undefined;
+    allowedSuffix = '';
+    closingHyphens = 0;
+  }
+
+  function updatePrefix(character: string, offset: number): void {
+    if (character === '') {
+      prefixWindow = '';
+      return;
+    }
+    prefixWindow = `${prefixWindow}${character}`.slice(-prefix.length);
+    if (prefixWindow.endsWith(prefix)) {
+      candidateStart = offset - prefix.length + 1;
+      prefixWindow = '';
+      allowedSuffix = '';
+      closingHyphens = 0;
+    }
+  }
+
+  return {
+    observe(byte, offset): number | undefined {
+      const character = asciiUpper(byte);
+      if (candidateStart === undefined) {
+        updatePrefix(character, offset);
+        return undefined;
+      }
+      if (closingHyphens > 0) {
+        if (character === '-') {
+          closingHyphens += 1;
+          if (closingHyphens === 5) {
+            const matchedStart = candidateStart;
+            resetCandidate();
+            prefixWindow = '';
+            return matchedStart;
+          }
+          return undefined;
+        }
+        resetCandidate();
+        updatePrefix(character, offset);
+        return undefined;
+      }
+      if (/^[A-Z0-9 ]$/u.test(character)) {
+        allowedSuffix = `${allowedSuffix}${character}`.slice(-suffix.length);
+        return undefined;
+      }
+      if (character === '-' && allowedSuffix.endsWith(suffix)) {
+        closingHyphens = 1;
+        return undefined;
+      }
+      resetCandidate();
+      updatePrefix(character, offset);
+      return undefined;
+    },
+    reset(): void {
+      prefixWindow = '';
+      resetCandidate();
+    },
+  };
+}
+
+function createSensitiveBoundaryTracker(): {
+  observe(byte: number, offset: number): SensitiveByteObservation;
+  reset(): void;
+} {
+  const assignments = createAssignmentTracker();
+  const privateKeyBegin = createPrivateKeyMarkerTracker('BEGIN');
+  const privateKeyEnd = createPrivateKeyMarkerTracker('END');
+  let privateKeyOpen = false;
+
+  return {
+    observe(byte, offset): SensitiveByteObservation {
+      if (privateKeyOpen) {
+        if (privateKeyEnd.observe(byte, offset) !== undefined) {
+          privateKeyOpen = false;
+          privateKeyBegin.reset();
+          assignments.reset();
+        }
+        return { sensitive: true };
+      }
+
+      const assignment = assignments.observe(byte, offset);
+      const privateKeyStart = privateKeyBegin.observe(byte, offset);
+      if (privateKeyStart !== undefined) {
+        privateKeyOpen = true;
+        privateKeyEnd.reset();
+        assignments.reset();
+        return { sensitive: true, sensitiveStart: privateKeyStart };
+      }
+      return assignment;
+    },
+    reset(): void {
+      privateKeyOpen = false;
+      assignments.reset();
+      privateKeyBegin.reset();
+      privateKeyEnd.reset();
+    },
+  };
+}
+
 function redactLikelySecrets(input: string): string {
   return redactAssignments(redactHeaders(redactPrivateKeys(input)));
 }
@@ -110,6 +392,8 @@ export function redactCommandOutput(input: string): string {
 export function createCommandOutputCollector(): CommandOutputCollector {
   const head = Buffer.alloc(rawHeadCapacity);
   const tail = Buffer.alloc(rawTailCapacity);
+  const tailSensitivity = Buffer.alloc(rawTailCapacity);
+  const boundaryTracker = createSensitiveBoundaryTracker();
   let headLength = 0;
   let tailLength = 0;
   let totalBytes = 0;
@@ -118,6 +402,8 @@ export function createCommandOutputCollector(): CommandOutputCollector {
   function clearRawBuffers(): void {
     head.fill(0);
     tail.fill(0);
+    tailSensitivity.fill(0);
+    boundaryTracker.reset();
     headLength = 0;
     tailLength = 0;
     totalBytes = 0;
@@ -129,6 +415,7 @@ export function createCommandOutputCollector(): CommandOutputCollector {
       let bytes: Buffer | undefined;
       try {
         bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk);
+        const previousTotalBytes = totalBytes;
         totalBytes += bytes.byteLength;
 
         const headBytes = Math.min(rawHeadCapacity - headLength, bytes.byteLength);
@@ -140,13 +427,32 @@ export function createCommandOutputCollector(): CommandOutputCollector {
         const remainder = bytes.subarray(headBytes);
         if (remainder.byteLength >= rawTailCapacity) {
           remainder.copy(tail, 0, remainder.byteLength - rawTailCapacity);
+          tailSensitivity.fill(0);
           tailLength = rawTailCapacity;
         } else if (remainder.byteLength > 0) {
           const overflow = Math.max(0, tailLength + remainder.byteLength - rawTailCapacity);
-          if (overflow > 0) tail.copyWithin(0, overflow, tailLength);
+          if (overflow > 0) {
+            tail.copyWithin(0, overflow, tailLength);
+            tailSensitivity.copyWithin(0, overflow, tailLength);
+          }
           tailLength -= overflow;
           remainder.copy(tail, tailLength);
+          tailSensitivity.fill(0, tailLength, tailLength + remainder.byteLength);
           tailLength += remainder.byteLength;
+        }
+
+        const tailStartOffset = totalBytes - tailLength;
+        for (let index = 0; index < bytes.byteLength; index += 1) {
+          const offset = previousTotalBytes + index;
+          const observation = boundaryTracker.observe(bytes[index]!, offset);
+          if (offset >= tailStartOffset) {
+            tailSensitivity[offset - tailStartOffset] = observation.sensitive ? 1 : 0;
+          }
+          if (observation.sensitiveStart !== undefined) {
+            const start = Math.max(observation.sensitiveStart, tailStartOffset);
+            const end = Math.min(offset + 1, totalBytes);
+            if (start < end) tailSensitivity.fill(1, start - tailStartOffset, end - tailStartOffset);
+          }
         }
       } catch (error) {
         finished = true;
@@ -167,7 +473,7 @@ export function createCommandOutputCollector(): CommandOutputCollector {
           const rawHead = decodeCompletePrefix(head.subarray(0, headLength));
           const rawTail = decodeCompleteSuffix(tail.subarray(0, tailLength));
           raw = `${redactPrivateKeys(rawHead)}${truncationMarker}${redactPrivateKeyTail(
-            redactBoundaryTail(rawTail),
+            tailSensitivity[0] === 1 ? redactBoundaryTail(rawTail) : rawTail,
           )}`;
         } else {
           const decoder = new TextDecoder('utf-8');
