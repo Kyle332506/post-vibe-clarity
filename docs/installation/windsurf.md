@@ -4,11 +4,11 @@ Install these skills only in the current project's `.agents/skills` directory.
 
 ## Install
 
-From the project root, clone the reviewed release tag, stage all four skills, compare any existing copies, preserve them in a bounded backup, and record the exact installed commit:
+From the project root, clone the reviewed release tag, stage all five skills, compare any existing copies, preserve them in a bounded backup, and record the exact installed commit:
 
 ```bash
 set -eu
-PVC_VERSION="v0.1.0"
+PVC_VERSION="v0.2.0"
 PVC_REPO_URL="https://github.com/Kyle332506/post-vibe-clarity.git"
 PVC_TEMP_ROOT="$(mktemp -d)"
 PVC_SOURCE="$PVC_TEMP_ROOT/post-vibe-clarity"
@@ -17,10 +17,10 @@ PVC_REVISION="$(git -C "$PVC_SOURCE" rev-parse HEAD)"
 PVC_INSTALL_ROOT=".agents/skills"
 mkdir -p "$PVC_INSTALL_ROOT"
 PVC_STAGE="$(mktemp -d "$PVC_INSTALL_ROOT/.postvibeclarity-stage.XXXXXX")"
-for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials; do
+for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials universal-verification; do
   cp -R "$PVC_SOURCE/skills/$PVC_SKILL" "$PVC_STAGE/$PVC_SKILL"
 done
-for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials; do
+for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials universal-verification; do
   if [ ! -d "$PVC_STAGE/$PVC_SKILL" ]; then
     printf 'Staging failed: missing %s; live installation was not changed.\n' "$PVC_SKILL" >&2
     exit 1
@@ -28,7 +28,7 @@ for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-esse
 done
 mkdir -p "$PVC_INSTALL_ROOT/.postvibeclarity-backups"
 PVC_BACKUP_ROOT="$(mktemp -d "$PVC_INSTALL_ROOT/.postvibeclarity-backups/update.XXXXXX")"
-for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials; do
+for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials universal-verification; do
   if [ -e "$PVC_INSTALL_ROOT/$PVC_SKILL" ]; then
     diff -qr "$PVC_INSTALL_ROOT/$PVC_SKILL" "$PVC_STAGE/$PVC_SKILL" || true
     mv "$PVC_INSTALL_ROOT/$PVC_SKILL" "$PVC_BACKUP_ROOT/$PVC_SKILL"
@@ -42,11 +42,11 @@ printf 'version=%s\nrevision=%s\n' "$PVC_VERSION" "$PVC_REVISION" > "$PVC_INSTAL
 rmdir "$PVC_STAGE"
 ```
 
-The block exits on the first failed command and validates all four staged directories before moving any live skill. The `diff -qr` preflight reports changed paths without printing file contents. Existing destinations are moved, not deleted, and remain under the unique `PVC_BACKUP_ROOT`. Keep that backup until verification succeeds. You can then remove the explicit temporary directory represented by `PVC_TEMP_ROOT` and, after reviewing it, the specific backup directory printed in your shell state; do not use a broad or unresolved removal command.
+The block exits on the first failed command and validates all five staged directories before moving any live skill. The `diff -qr` preflight reports changed paths without printing file contents. Existing destinations are moved, not deleted, and remain under the unique `PVC_BACKUP_ROOT`. Keep that backup until verification succeeds. You can then remove the explicit temporary directory represented by `PVC_TEMP_ROOT` and, after reviewing it, the specific backup directory printed in your shell state; do not use a broad or unresolved removal command.
 
 ## Verify
 
-In this project, confirm Windsurf discovers `post-vibe-clarity`, `project-discovery`, `secret-exposure`, and `launch-essentials`. Invoke `@post-vibe-clarity`. If Windsurf does not discover a newly created top-level skill directory, restart Windsurf and verify again. Confirm `.agents/skills/.postvibeclarity-revision` records the expected tag and commit.
+In this project, confirm Windsurf discovers `post-vibe-clarity`, `project-discovery`, `secret-exposure`, `launch-essentials`, and `universal-verification`. Invoke `@post-vibe-clarity`. If Windsurf does not discover a newly created top-level skill directory, restart Windsurf and verify again. Confirm `.agents/skills/.postvibeclarity-revision` records the expected tag and commit.
 
 ## Run a review
 
@@ -58,7 +58,7 @@ Choose a reviewed release tag, change only `PVC_VERSION`, and repeat the install
 
 ## Uninstall
 
-Before uninstalling, compare the four installed directories with the revision recorded in `.agents/skills/.postvibeclarity-revision`. Move any locally changed `post-vibe-clarity`, `project-discovery`, `secret-exposure`, or `launch-essentials` directory into a named project backup before removing only those four bounded destinations and the revision record.
+Before uninstalling, compare the five installed directories with the revision recorded in `.agents/skills/.postvibeclarity-revision`. Move any locally changed `post-vibe-clarity`, `project-discovery`, `secret-exposure`, `launch-essentials`, or `universal-verification` directory into a named project backup before removing only those five bounded destinations and the revision record.
 
 ## Compatibility evidence
 

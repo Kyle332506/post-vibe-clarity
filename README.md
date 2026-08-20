@@ -2,21 +2,21 @@
 
 ## Prepare vibe-coded projects for production with evidence—not guesswork.
 
-PostVibeClarity discovers your project's shape, applies relevant launch-review skills, and reports risks, missing essentials, and unverified areas before you ship.
+PostVibeClarity reviews a project's visible launch risks and can optionally run its declared build, type-check, lint, and test commands after exact approval.
 
-`v0.1 · Stable foundation` · [Apache-2.0](LICENSE)
+`v0.2 · Universal verification` · [Apache-2.0](LICENSE)
 
 [Install](#install-with-your-coding-agent) · [Example project](examples/launch-candidate/README.md) · [Example report](docs/examples/sample-report.md) · [Current coverage](docs/foundation-coverage.md)
 
-PostVibeClarity provides evidence and next actions. It does not certify that a project is production-ready, secure, compliant, or defect-free.
+PostVibeClarity reduces uncertainty. It does not guarantee production readiness or complete security, and it does not certify that a project is compliant or free of defects.
 
 ## Install with your coding agent
 
 Paste this into your coding agent:
 
-> Install PostVibeClarity for this project from `github.com/Kyle332506/post-vibe-clarity`. Use the instructions for this agent, install the skills only inside the current project, verify all four skills are available, and then run a read-only launch review. Do not change project files during the review.
+> Install PostVibeClarity for this project from `github.com/Kyle332506/post-vibe-clarity` at `v0.2.0`. Follow the guide for this agent, install only inside the current project, verify all five skills are available, and run a read-only launch review. Do not change project files during the review.
 
-Choose the guide for the coding agent used in your project. Each guide installs the four canonical skills from a pinned release into that project's supported skill location.
+Installation is project-scoped and pinned to a release tag plus its resolved commit.
 
 | Agent | Project path | Invocation | Evidence label |
 | --- | --- | --- | --- |
@@ -26,7 +26,7 @@ Choose the guide for the coding agent used in your project. Each guide installs 
 | [Windsurf](docs/installation/windsurf.md) | `.agents/skills` | `@post-vibe-clarity` | Documented |
 | [Other Agent Skills hosts](docs/installation/agent-skills.md) | Host-defined | Host-defined | Format compatible |
 
-The [compatibility manifest](docs/installation/compatibility.yaml) is the source for these labels: Tested requires recorded runtime acceptance; Documented means the host documents the required format or location; Format compatible covers documented Agent Skills format without recorded host acceptance; and Not verified means neither evidence type is recorded.
+The [compatibility manifest](docs/installation/compatibility.yaml) records the pinned release, five canonical skills, and evidence labels. Documented and Format compatible are packaging claims, not runtime acceptance claims.
 
 ## Important limitation
 
@@ -34,132 +34,131 @@ The [compatibility manifest](docs/installation/compatibility.yaml) is the source
 
 Read the complete [disclaimer](DISCLAIMER.md) before relying on a report.
 
+## Review first, verify only when approved
+
+A read-only review inspects files without running project commands:
+
+```bash
+postvibe review . --skills skills --format markdown
+```
+
+Optional local verification has two separate steps. First create a plan:
+
+```bash
+postvibe plan . --skills skills --output .postvibe/verification-plan.json
+```
+
+Inspect the printed commands and containment warning. Approve the exact plan fingerprint, then copy that fingerprint into the execute command:
+
+```bash
+postvibe execute .postvibe/verification-plan.json --approve <exact-fingerprint> --output .postvibe --format markdown
+```
+
+Declared commands only are eligible to run. For a Node project, PostVibeClarity recognizes declared `build`, `typecheck` or `type-check`, `lint`, and `test` scripts when package-manager evidence is unambiguous. It never guesses a command from the framework alone. For example:
+
+```json
+{
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  }
+}
+```
+
+Non-Node projects and projects needing explicit commands can declare portable configuration in `postvibe.verification.yaml`:
+
+```yaml
+schemaVersion: "0.1"
+commands:
+  - id: backend-tests
+    category: test
+    argv: ["pytest", "-q"]
+    cwd: "."
+    timeoutSeconds: 600
+```
+
+Regenerate the plan after adding this file, inspect it, and approve its new exact fingerprint before execution. An `--exclude <command-id>` option creates a new plan; exclusions remain unverified and stay visible in the evidence.
+
+`.postvibe/` is an optional artifact location. PostVibeClarity never adds it to `.gitignore`, stages it, commits it, or removes it. Choose another plan or report path if that better matches the project.
+
+### Local-script containment boundary
+
+The local executor is not a security sandbox. Approved scripts run with the current user's privileges and may read files, load `.env` files themselves, change files, start processes, or use the network. PostVibeClarity filters sensitive inherited environment names, bounds and redacts captured output, records visible file changes, and enforces approved timeouts, but it does not block network or out-of-project filesystem access. It does not clean up changes made by scripts.
+
+Passing commands are evidence only for the exact commands that ran. They do not prove production readiness or complete security, and they do not establish that tests are complete or representative of production behavior.
+
 ## How it works
 
-PostVibeClarity follows this discovery-to-report flow:
-
 ```text
-Discover project
+Read-only review
       |
       v
-Identify capabilities and production concerns
+Optional plan with exact declared commands
       |
       v
-Route applicable review skills
+Approve one exact fingerprint
       |
       v
-Run safe checks and guided reviews
+Execute that unchanged plan
       |
       v
-Report evidence, missing work, and unknowns
+Report passes, failures, changes, exclusions, and unknowns
 ```
+
+Changing a command, timeout, working directory, source declaration, inspected input, project root, or executor setting makes the plan stale and requires a new fingerprint.
 
 ## Example report
 
-Read the renderer-backed [sample report](docs/examples/sample-report.md) to see how evidence, findings, and uncertainty are recorded. It is not a launch verdict or a certification.
+The renderer-backed [sample report](docs/examples/sample-report.md) is regenerated from the real `examples/launch-candidate/before` acceptance fixture. It shows read-only findings, approved command evidence, changed paths, exclusions, and remaining gaps. The [before-and-after launch candidate](examples/launch-candidate/README.md) provides a runnable walkthrough.
 
-For a runnable comparison, use the [before-and-after launch candidate](examples/launch-candidate/README.md). It demonstrates two findings being resolved while the report continues to disclose unverified production domains.
-
-Reports use plain labels:
-
-```text
-Stop before launch
-Potential credential found in project configuration.
-
-Human review needed
-Personal-data collection detected, but no privacy notice was found.
-
-Unverified
-Deployment configuration could not be inspected.
-
-Evidence recorded
-Project shape and applicable checks were identified.
-```
-
-> No overall readiness score is calculated. “No findings” does not mean “production-ready”; it means only that the checks performed did not produce findings from the available evidence.
+Reports use plain action and outcome labels. They do not calculate an overall numeric readiness score, and a report with no findings is not a launch verdict.
 
 ## Current coverage
 
-The [foundation coverage map](docs/foundation-coverage.md) is the source of truth for the implemented foundation. The [sample report](docs/examples/sample-report.md) shows its renderer output.
+The [foundation coverage map](docs/foundation-coverage.md) is the source of truth.
 
-| Capability | v0.1 status | Boundary |
+| Capability | v0.2 status | Boundary |
 | --- | --- | --- |
-| Project discovery | Automated for documented Node and static-project signals | Other or ambiguous project shapes require guided classification |
+| Project discovery | Automated for documented Node and static-project signals | Other or ambiguous shapes require guided classification |
 | Secret exposure checks | Automated, redacted scanning with a manual fallback | Not a complete security audit or proof of hardening |
-| Privacy-notice check | Automated when personal-data signals are detected | Not legal advice or a compliance determination |
-| Evidence reports | Markdown and JSON reports with explicit unknowns | No overall readiness score |
-| Broader readiness domains | Taxonomy established | Most specialist audits are not yet implemented |
-| Agent compatibility | Labeled as tested, documented, format-compatible, or not verified | No blanket cross-agent support claim |
+| Privacy-notice check | Automated when personal-data signals are detected | Not legal advice or a legal-sufficiency determination |
+| Local command evidence | Optional Level 1 plan and execution for declared commands | Local processes are not strongly sandboxed |
+| Evidence reports | Markdown and JSON reports with explicit unknowns | No overall numeric readiness score or launch verdict |
+| Agent compatibility | Evidence labels distinguish documentation from acceptance | No blanket cross-agent runtime claim |
 
 ## Project shapes represented by the architecture
 
-The architecture is designed to represent:
-
-- Web and native mobile projects.
-- Desktop applications.
-- CLI tools.
-- Backend-only services and APIs.
-- Workers and scheduled jobs.
-- Libraries and SDKs.
-- Browser extensions.
-- AI agents.
-- Infrastructure repositories.
-- Monorepos.
-
-Representation in the model does not mean every shape has equivalent deterministic coverage. Deterministic discovery confirms only documented Node/static signals, React alone does not imply web, and the portable discovery skill guides classification of other or ambiguous shapes. Apart from the packaged secret-exposure and privacy-notice manual fallbacks, the remaining domain lists are taxonomy-only omitted audits until specialist skills and checks are added.
+The model can represent web, native mobile, desktop, CLI, backend, worker, library, extension, AI-agent, infrastructure, and monorepo projects. Representation does not mean equivalent deterministic coverage. Detected but uncovered workspaces remain explicit gaps, and a passing aggregate command proves only that the declared command completed.
 
 ## Foundation scope
 
-The v0.1 foundation currently provides:
+The v0.2 foundation provides read-only discovery and two Level 0 checks, validated evidence reports, five portable skills, and optional Level 1 verification of declared commands. The executor records the approved fingerprint, results, output boundaries, visible file changes, exclusions, and remaining gaps.
 
-- Read-only Node-project discovery for evidence-backed web, mobile, library, CLI, framework, and likely account-email signals.
-- Capability-driven skill routing through validated `readiness.yaml` sidecars with catalog identity and ownership checks.
-- Redacted inspection for private-key markers and quoted credential assignments, including compound assignment operators, syntax-aware JavaScript/TypeScript scanning, explicit environment/key text-file coverage, and bounded omission of empty/template values.
-- Privacy-notice candidate inspection when account-related personal-data collection is detected.
-- Evidence-backed, runtime-validated Markdown and JSON reports with check/skill provenance, per-check execution states, explicit domain coverage gaps, and collision-safe output creation.
-- Portable orchestrator, discovery, secret-exposure, and launch-essential Agent Skills with manual fallbacks.
-
-The foundation does not yet implement a remediation engine, a complete nine-domain check catalog, deep artifact packs, framework/provider adapters, deployed-environment verification, or cross-agent runtime acceptance.
-
-Runtime states are intentionally distinct:
-
-- The portable discovery skill provides guided classification for project shapes the deterministic detector does not cover; it does not provide a readiness audit for those shapes.
-- Readiness concerns present only in the design taxonomy do not become synthetic findings; uncovered domains appear as `coverageGaps`, so the report remains partial.
-- Every routed check is recorded as `completed`, `unavailable`, `failed`, or `unverified`. A missing implementation becomes an `unverified` finding, and a thrown check is isolated so earlier evidence remains available.
-- An unsupported or unregistered domain has no synthetic finding, but it has an explicit per-run domain coverage gap and remains documented in the [foundation coverage map](docs/foundation-coverage.md).
-- Unreadable or invalid project/catalog input is fatal before a report is created. The CLI emits only a sanitized failure message, or sanitized diagnostics in debug mode.
+It does not provide deployment or production access, operational validation, performance testing, legal-sufficiency review, deep shape packs, automatic remediation, or strong sandboxing.
 
 ## Requirements
 
-Deterministic tooling requires:
-
-- Node.js 24 or newer
-- pnpm
-
-The `SKILL.md` manual workflows remain usable by compatible agents when the local CLI cannot run.
+Deterministic tooling requires Node.js 24 or newer and pnpm. The `SKILL.md` manual workflows remain usable by compatible hosts when the local CLI cannot run.
 
 ## Development
-
-Install dependencies, then run the build and test gates:
 
 ```bash
 pnpm install
 pnpm build
 pnpm test
 pnpm check
+pnpm test:executor
 ```
 
-Run a local review from this repository:
-
-```bash
-pnpm review fixtures/web-missing-basics --skills skills --format markdown
-pnpm review fixtures/cli-clean --skills skills --format json
-```
-
-The CLI contract is:
+The CLI contracts are:
 
 ```text
 postvibe review [project-path] --skills <skills-path> --format <markdown|json> [--output <directory>]
+postvibe plan [project-path] [--skills <skills-path>] [--exclude <command-id>] --output <plan-file>
+postvibe execute <plan-file> --approve <fingerprint> --output <directory> [--format <markdown|json>]
 ```
 
 ## Roadmap
@@ -167,11 +166,11 @@ postvibe review [project-path] --skills <skills-path> --format <markdown|json> [
 Near-term directions include:
 
 - Broader production-readiness checks.
-- Framework, provider, deployment, and operational verification.
-- Additional agent-runtime acceptance and approval-gated remediation.
-- Deeper artifact and evidence packs.
+- Deployment, operations, performance, and provider verification.
+- Stronger containment options and deeper shape-specific evidence packs.
+- Additional agent-runtime acceptance.
 
-These are directions, not current coverage or promised dates. Read the [full roadmap](ROADMAP.md) and use the [foundation coverage map](docs/foundation-coverage.md) for what exists now.
+These are directions, not current coverage or promised dates. Read the [full roadmap](ROADMAP.md).
 
 ## License
 
@@ -179,10 +178,10 @@ PostVibeClarity is available under the [Apache License 2.0](LICENSE).
 
 ## Community and project policies
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) explains how to prepare evidence-backed contributions and verify them.
+- [CONTRIBUTING.md](CONTRIBUTING.md) explains contribution and verification requirements.
 - [SUPPORT.md](SUPPORT.md) routes usage questions, defects, compatibility results, security reports, and conduct concerns.
-- [SECURITY.md](SECURITY.md) explains how to report vulnerabilities privately and the security support boundary.
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) describes the community standards and confidential conduct-reporting route.
-- [ROADMAP.md](ROADMAP.md) describes planned work and the current scope of the project.
-- [DISCLAIMER.md](DISCLAIMER.md) states the limits of the evidence provided by PostVibeClarity.
-- [LICENSE](LICENSE) contains the Apache License 2.0 governing use of the project.
+- [SECURITY.md](SECURITY.md) explains private vulnerability reporting and the security support boundary.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) describes community standards.
+- [ROADMAP.md](ROADMAP.md) describes planned work and current scope.
+- [DISCLAIMER.md](DISCLAIMER.md) states the limits of the evidence.
+- [LICENSE](LICENSE) contains the Apache License 2.0.

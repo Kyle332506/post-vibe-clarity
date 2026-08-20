@@ -1,10 +1,18 @@
-# PostVibeClarity v0.1 foundation coverage
+# PostVibeClarity v0.2 foundation coverage
 
-This document is the source of truth for the implemented v0.1 foundation behavior and its explicit boundaries.
+This document is the source of truth for the implemented v0.2 foundation behavior and its explicit boundaries.
+
+## Level 1 local command evidence
+
+Optional Level 1 verification is implemented for project-declared build, type-check, lint, and test commands. PostVibeClarity creates a plan without running commands, records the exact command sources and settings in a fingerprint, and executes only the unchanged plan after that exact fingerprint is approved.
+
+Node projects can use unambiguous package-manager evidence and declared package scripts. Other projects can use literal argument arrays in `postvibe.verification.yaml`. Missing, excluded, interrupted, timed-out, or unsupported commands remain unverified. Detected but uncovered monorepo workspaces remain explicit gaps.
+
+The executor filters named sensitive environment variables, bounds and redacts captured output, observes visible file changes, and attempts process-tree termination on timeout or interruption. This is not strong sandboxing. Local scripts may read project or outside files, load `.env`, change files, start processes, and use the network. Passing commands do not establish production behavior, complete test coverage, production readiness, or complete security.
 
 ## Runtime state semantics
 
-| Term | Exact v0.1 behavior |
+| Term | Exact v0.2 behavior |
 | --- | --- |
 | Guided classification | The portable `project-discovery` skill can guide a human or compatible agent in classifying project shapes and recording evidence that the deterministic detector does not cover. This does not run a readiness audit for those shapes. |
 | Taxonomy-only omitted audit | A readiness concern named in the design taxonomy but lacking a packaged routed sidecar/check is not turned into a finding. Its uncovered domain is recorded in `coverageGaps`, and the report is partial. |
@@ -35,7 +43,7 @@ None of these states is converted into a pass or a readiness claim.
 
 Except for the two specialist checks listed above and their documented manual fallbacks, the following design-taxonomy areas do not have packaged v0.1 audit implementations or dedicated guided audit skills:
 
-| Area | v0.1 audit status |
+| Area | v0.2 audit status |
 | --- | --- |
 | Product and user experience | Omitted taxonomy coverage gap. |
 | Security and privacy beyond secret exposure and the narrow privacy signal | Omitted taxonomy coverage gap. |
@@ -47,13 +55,17 @@ Except for the two specialist checks listed above and their documented manual fa
 | Release and delivery | Omitted taxonomy coverage gap. |
 | Policy and business essentials beyond privacy-notice candidate inspection | Omitted taxonomy coverage gap requiring appropriate human ownership where applicable. |
 
-## Not implemented by this plan
+## Remaining gaps
 
-| Area | v0.1 status | Required follow-on work |
+| Area | v0.2 status | Required follow-on work |
 | --- | --- | --- |
 | Remediation engine | Not implemented. The foundation is read-only and does not apply Level 2 or higher actions. | Add separately approved proposal, mutation, rollback, and independent re-verification workflows. |
 | Full domain catalog | Not implemented. Two Level 0 checks do not constitute broad coverage of the nine domains. | Add universal checks while preserving evidence, uncertainty, redaction, and no-score contracts. |
 | Deep artifact packs | Not implemented. | Add shape-specific checks, beginning with web, backend/API, mobile, and CLI. |
 | Framework and provider adapters | Not implemented. | Add technology-specific inspection and verification without weakening universal policies. |
+| Deployment and production verification | Not implemented. No deployment, staging, provider, or production account is accessed. | Add separately approved environment-specific verification. |
+| Operations and performance | Not implemented beyond any declared local command a user explicitly approves. | Add observability, recovery, load, and cost checks with explicit environments and evidence limits. |
+| Legal sufficiency | Not implemented. A privacy-notice candidate is existence-only evidence. | Require appropriate human owners or qualified counsel for applicable legal review. |
+| Strong sandboxing | Not implemented. The Level 1 executor is a bounded local process runner, not a security sandbox. | Add a replaceable container or stronger isolation backend without weakening exact-plan approval. |
 | Automated agent-specific installers | Not implemented. The documented host guides provide project-scoped, version-pinned manual installation and bounded backup/diff updates with recorded revision provenance. | Add host-native automation only with equivalent preview, preservation, provenance, and rollback semantics. |
 | Cross-agent runtime acceptance | Not implemented. Skill packaging is validated statically and pressure-tested as documentation, not executed across supported agent runtimes. | Add a versioned runtime acceptance matrix for Codex, Claude Code, Cursor, GitHub Copilot, Gemini CLI, and generic Agent Skills hosts. |

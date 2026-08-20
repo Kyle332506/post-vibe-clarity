@@ -29,6 +29,18 @@ describe('GitHub repository metadata', () => {
     expect(source).toContain('pnpm verify:foundation');
   });
 
+  it('runs executor acceptance on Ubuntu, macOS, and Windows', async () => {
+    const source = await readRepositoryFile('.github/workflows/ci.yml');
+    expect(source).toContain('executor:');
+    expect(source).toContain('fail-fast: false');
+    expect(source).toContain('os: [ubuntu-latest, macos-latest, windows-latest]');
+    expect(source).toContain('runs-on: ${{ matrix.os }}');
+    expect(source).toContain('version: 9.12.0');
+    expect(source).toContain('node-version: 24');
+    expect(source).toContain('pnpm install --frozen-lockfile');
+    expect(source).toContain('pnpm test:executor');
+  });
+
   it('keeps protection and CI status-check names aligned', async () => {
     const protection = JSON.parse(await readRepositoryFile('.github/branch-protection.json')) as {
       required_status_checks: { contexts: string[] };

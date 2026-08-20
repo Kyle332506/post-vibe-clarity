@@ -124,6 +124,13 @@ describe('foundation skill packages', () => {
     expect(body).toMatch(/selected checks/i);
     expect(body).toMatch(/required access/i);
     expect(body).toContain('postvibe review');
+    expect(body).toContain('postvibe plan');
+    expect(body).toContain('postvibe execute');
+    expect(body).toMatch(/exact[^\n]+fingerprint/i);
+    expect(body).toMatch(/declared commands only/i);
+    expect(body).toMatch(/exclusions remain unverified/i);
+    expect(body).toMatch(/not a security sandbox/i);
+    expect(body).toMatch(/read files[\s\S]{0,180}\.env[\s\S]{0,180}change files[\s\S]{0,180}start processes[\s\S]{0,180}network/i);
     expect(body).toMatch(/tooling is unavailable/i);
     expect(body).toMatch(/instruction-only|manual fallback/i);
     expect(body).toMatch(/Level 2[\s\S]*separate[\s\S]*approval/i);

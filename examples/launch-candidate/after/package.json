@@ -2,7 +2,12 @@
   "name": "postvibe-launch-candidate-after",
   "private": true,
   "type": "module",
+  "packageManager": "npm@11.5.1",
   "scripts": {
+    "build": "node --check src/server.js",
+    "typecheck": "node --check src/server.js",
+    "lint": "node --check src/server.js",
+    "test": "node -e \"const fs=require('node:fs'); process.exit(fs.existsSync('privacy.html') ? 0 : 1)\"",
     "start": "node src/server.js"
   },
   "engines": {

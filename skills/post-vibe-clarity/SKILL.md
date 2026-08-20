@@ -4,7 +4,7 @@ description: Use when evaluating whether a project can launch responsibly, espec
 license: Apache-2.0
 metadata:
   postvibeclarity.dev/role: orchestrator
-  postvibeclarity.dev/version: "0.1"
+  postvibeclarity.dev/version: "0.2"
 ---
 
 # PostVibeClarity
@@ -37,6 +37,26 @@ postvibe review [project-path] --skills [skills-path] --format markdown
 Use JSON format when structured output is requested. Preserve redaction and report each failed or unavailable check with its evidence boundary.
 
 When the tooling is unavailable, use an instruction-only manual fallback: follow each applicable specialist `SKILL.md`, use its deterministic path if possible, and otherwise perform its manual verification. Never invent tool results. Mark checks that cannot run, inaccessible environments, and unsupported coverage as `unverified`.
+
+### Optional local verification
+
+Keep the read-only review separate from Level 1 verification. Nothing in a review authorizes a project command. When the user asks for local verification, create a plan first:
+
+```text
+postvibe plan [project-path] --skills [skills-path] --output .postvibe/verification-plan.json
+```
+
+Show the selected and excluded commands, required access, containment warning, and exact plan fingerprint. Obtain approval for that exact fingerprint before running:
+
+```text
+postvibe execute .postvibe/verification-plan.json --approve [exact-fingerprint] --output .postvibe --format markdown
+```
+
+Run declared commands only. Never infer, compose, install, update, or substitute a command. If the project, declaration, inputs, limits, or plan change, require a fresh plan and fingerprint. Exclusions remain unverified and must stay visible in the report.
+
+`.postvibe/` is an optional artifact location. Never add it to `.gitignore`, stage it, commit it, or delete it automatically.
+
+The executor is not a security sandbox. Project scripts run with the current user's privileges. They may read files, load `.env` files themselves, change files, start processes, or use the network. The local executor does not promise to block out-of-project filesystem or network access and does not clean command-created changes. Passing commands reduce uncertainty only for the exact commands run; they do not prove production readiness or complete security.
 
 ## 4. Approve changes
 
