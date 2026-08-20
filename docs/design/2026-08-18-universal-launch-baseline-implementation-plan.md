@@ -236,6 +236,16 @@ export interface VerificationCommandSource {
   sha256: string;
 }
 
+export interface PackageScriptLauncher {
+  policyVersion: 'package-script-launcher/0.1';
+  kind: 'node-runtime' | 'node-package-bin' | 'direct-executable';
+  executable: string;
+  sha256: string;
+  entrypointArgvIndex?: number;
+  entrypoint?: InputDigest;
+  packageManifest?: InputDigest;
+}
+
 export interface VerificationCommand {
   id: string;
   category: CommandCategory;
@@ -244,6 +254,7 @@ export interface VerificationCommand {
   timeoutSeconds: number;
   requiredAccess: ['local-command'];
   source: VerificationCommandSource;
+  launcher?: PackageScriptLauncher;
 }
 
 export interface InputDigest {
@@ -296,6 +307,27 @@ export interface FileChange {
   kind: 'added' | 'modified' | 'removed';
 }
 
+export interface ProjectRootIdentity {
+  realPath: string;
+  device: string;
+  inode: string;
+}
+
+export interface ObservationBoundary {
+  policyVersion: 'project-observation/0.1';
+  rootIdentity: ProjectRootIdentity;
+  versionControlDirectories: ['.git'];
+  artifactDirectories: ['.postvibe'];
+  coverageDirectories: ['coverage'];
+  distributionDirectories: ['dist'];
+  dependencyDirectories: ['node_modules'];
+  exactArtifactExclusions: string[];
+  symlinks: 'not-followed';
+  nonRegularFiles: 'not-observed';
+  inaccessiblePaths: 'observation-fails';
+  metadata: 'content-sha256-only';
+}
+
 export interface VerificationCommandResult {
   commandId: string;
   status: CommandResultStatus;
@@ -323,6 +355,7 @@ export interface VerificationExecution {
   removedEnvironmentVariables: string[];
   results: VerificationCommandResult[];
   coverageGaps: VerificationCoverageGap[];
+  observationBoundary: ObservationBoundary;
   containmentWarning: string;
   disclaimer: string;
 }
@@ -352,9 +385,9 @@ Translate the interfaces one-for-one into JSON Schema draft 2020-12:
 
 - [ ] **Step 4: Add semantic validation**
 
-The plan validator must reject duplicate IDs across selected and excluded commands, duplicate input locations, a `planId` that is not `pvp-${fingerprint.slice(0, 16)}`, non-sorted digest arrays, an excluded command without a matching coverage gap, or category assessments that do not contain each of the four categories exactly once.
+The plan validator must reject duplicate IDs across selected and excluded commands, duplicate input locations, a `planId` that is not `pvp-${fingerprint.slice(0, 16)}`, non-sorted digest arrays, a source digest that does not hash the exact declaration, invalid launcher/argv binding, an excluded command without a matching coverage gap, or category assessments that do not contain each of the four categories exactly once. The containment warning is one exact policy constant.
 
-The execution validator must reject duplicate result IDs, any result not present in the selected plan when the plan is supplied to the semantic helper, missing selected results, a `completed` execution containing `interrupted` or `unverified` results, non-sorted environment names/file changes, and output over 262,144 UTF-8 bytes.
+The execution validator must require exact ordered result linkage, exact plan gaps plus only the fixed orchestration gap, the versioned observation boundary, `completedAt >= startedAt`, and the full status/exit-code/signal/reason/timing/truncation matrix. It also rejects duplicate result IDs, a `completed` execution containing `interrupted`, `unverified`, or orchestration-gap evidence, non-sorted environment names/file changes, unredacted credentials, and output over 262,144 UTF-8 bytes.
 
 Export a second semantic helper for linkage:
 
@@ -442,8 +475,9 @@ expect(result.commands.map(({ id }) => id)).toEqual([
   'package-script:lint',
   'package-script:test',
 ]);
-expect(result.commands[0]?.argv).toEqual(['pnpm', 'run', 'build']);
+expect(result.commands[0]?.argv[0]).toBe(process.execPath);
 expect(result.commands[0]?.source.location).toBe('package.json#scripts.build');
+expect(result.commands[0]?.launcher?.policyVersion).toBe('package-script-launcher/0.1');
 ```
 
 Also test npm, Yarn, and Bun evidence; conflicting lockfiles; unsupported `packageManager`; both `typecheck` and `type-check`; non-string scripts; explicit exclusions; duplicate IDs between automatic and portable commands; and multiple portable commands sharing one category.
@@ -470,7 +504,7 @@ pnpm vitest run tests/verification/project-path.test.ts tests/verification/load-
 
 - [ ] **Step 5: Implement strict discovery**
 
-Implement package-manager selection with the exact evidence table in the design. Use `packageManager` only for supported names and reject conflicts with lockfiles. Create commands only for exact script names. Store the exact script string in `source.declaration` and its SHA-256 digest in `source.sha256`.
+Implement package-manager selection with the exact evidence table in the design. Use `packageManager` only for supported names and reject conflicts with lockfiles. Create commands only for exact script names. Store and hash the exact script declaration, parse only the portable shell-free literal-argument subset, and freeze the fingerprinted Node runtime plus any contained direct entry point, or a contained local JavaScript bin manifest/entry point, into launcher evidence. Record each entry point's exact argv position. Never emit package-manager or `.cmd` argv for execution; unsupported Node option shapes, syntax, or unresolved launchers become explicit gaps. This final-review correction removes the live package-manager reread between approval and use.
 
 Parse `postvibe.verification.yaml` with `yaml`, validate its plain object shape before use, normalize `cwd` to forward-slash relative form, and never expand environment variables.
 
@@ -565,15 +599,15 @@ pnpm vitest run tests/verification/input-digests.test.ts tests/verification/plan
 
 - [ ] **Step 5: Implement canonical hashing and plan assembly**
 
-Canonicalize recursively: primitives use JSON encoding, arrays preserve order, and object keys sort with `localeCompare`. Build the unsigned fingerprint payload by omitting `planId`, `fingerprint`, `generatedAt`, and output path. Hash its UTF-8 bytes with `createHash('sha256')`.
+Canonicalize recursively: primitives use JSON encoding, arrays preserve order, and object keys sort with one locale-independent UTF-16 ordinal comparator. Use that same comparator everywhere ordering influences fingerprints, inventories, or evidence. Build the unsigned fingerprint payload by omitting `planId`, `fingerprint`, `generatedAt`, and output path. Hash its UTF-8 bytes with `createHash('sha256')`. This correction prevents host locale from changing approval bytes for accented or canonically distinct names.
 
 `buildVerificationPlan` must:
 
 1. resolve roots;
 2. run the current Level 0 review;
-3. load verify-mode skill provenance;
+3. load a deduplicated digest inventory for the complete catalog that can affect planning or the mandatory audit-mode fresh review;
 4. discover commands and workspaces;
-5. hash inspected project and selected-skill inputs;
+5. hash inspected project inputs and every loaded catalog instruction/sidecar in ordinal order;
 6. apply exclusions;
 7. construct policy/warning/disclaimer fields;
 8. fingerprint and assign the plan ID;
@@ -581,7 +615,7 @@ Canonicalize recursively: primitives use JSON encoding, arrays preserve order, a
 
 - [ ] **Step 6: Implement fail-closed state validation**
 
-`validatePlanState` must validate schema and semantics, require the current toolkit version, recalculate the fingerprint, resolve and compare the real project root, recalculate all recorded input and skill digests, and reject added, removed, or changed inspected inputs with one stable message: `Verification plan is stale; create and approve a new plan.`
+`validatePlanState` must validate schema and semantics, require the current toolkit version, recalculate the fingerprint, resolve and compare the real project root, recalculate all recorded input and complete-catalog digests, and reject added, removed, or changed inspected inputs or newly shipped catalog skills with one stable message: `Verification plan is stale; create and approve a new plan.`
 
 - [ ] **Step 7: Run focused and Level 0 regressions**
 
@@ -890,7 +924,7 @@ Inject a deterministic fake executor. Assert exact listed order, continuation af
 
 - [ ] **Step 3: Write failing artifact tests**
 
-Assert plan, execution, report, lock, and temporary naming are deterministic and collision-safe. Use execution ID `pve-${startedAt.replace(/\D/g, '')}`, execution file `<execution-id>.execution.json`, report file `<execution-id>.report.<md|json>`, and lock file `<execution-id>.lock`. Precreate each final target and verify no file is overwritten. Simulate a writer failure and assert no completed artifact name contains partial JSON.
+Assert plan, execution, report, lock, and temporary naming are deterministic and collision-safe. Use execution ID `pve-${startedAt.replace(/\D/g, '')}`, execution file `<execution-id>.execution.json`, report file `<execution-id>.report.<md|json>`, and lock file `<execution-id>.lock`. Precreate each final target and verify no file is overwritten. Add corrupt post-command manifest, occupied report target, and root/output identity drift cases. They must publish only validated partial execution evidence with sanitized orchestration coverage, preserve foreign targets, and publish no report.
 
 - [ ] **Step 4: Run focused tests and confirm failure**
 
@@ -905,16 +939,17 @@ Use this exact order:
 1. compare `--approve` to the plan fingerprint with constant-time byte comparison;
 2. validate plan schema and semantics;
 3. call `validatePlanState`;
-4. compute final artifact paths and acquire one exclusive run lock;
-5. execute selected commands sequentially;
-6. convert an abort into explicit remaining `unverified` results;
-7. build and validate the execution record;
-8. write the execution record exclusively;
-9. run a fresh Level 0 `runReview` against the resulting tree;
-10. build, validate, render, and exclusively write report `0.2`;
-11. release the run lock in `finally`.
+4. compute final, staging, and recovery artifact paths; pin project/output identities; acquire one exclusive run lock and owned staging entries;
+5. immediately before each command, revalidate its exact declaration and fingerprinted launcher, then execute selected commands sequentially;
+6. re-redact, re-bound, structurally copy, and status-matrix-check executor evidence at the recorder boundary; convert abort or invalid evidence into explicit remaining `unverified` results;
+7. build, validate, and retain the execution record in owned staging;
+8. recheck root/output identity and run a fresh Level 0 `runReview` against the resulting tree;
+9. build, validate, render, and stage report `0.2`;
+10. recheck identities and publish execution/report as one rollback-capable artifact set;
+11. after any post-command failure, rewrite staged evidence as validated partial execution with the fixed orchestration gap and publish it alone, using the stable recovery boundary if the requested output moved;
+12. release owned entries and the run lock in `finally` without deleting foreign replacements.
 
-Unexpected executor errors after step 5 produce a partial record from completed evidence when safe. Project command failures are data, not thrown orchestration errors.
+Unexpected executor errors after step 5 produce a partial record from completed evidence when safe. Project command failures are data, not thrown orchestration errors. The old execution-before-report order was removed because it could leave misleading completed evidence when mandatory post-processing failed.
 
 - [ ] **Step 6: Keep old report output behavior**
 

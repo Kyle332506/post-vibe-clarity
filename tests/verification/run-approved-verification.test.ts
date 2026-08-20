@@ -14,6 +14,7 @@ import {
   runApprovedVerification,
   type RunApprovedVerificationOptions,
 } from '../../src/verification/run-approved-verification.js';
+import { STALE_PLAN_ERROR } from '../../src/verification/validate-plan-state.js';
 
 const startedAt = '2026-08-18T12:01:00.000Z';
 const executionId = 'pve-20260818120100000';
@@ -27,7 +28,7 @@ async function writeFiles(root: string, files: Record<string, string>): Promise<
   }));
 }
 
-async function fixture(): Promise<{
+async function fixture(directNodeTest = false): Promise<{
   root: string;
   skillsRoot: string;
   planArtifactPath: string;
@@ -40,13 +41,17 @@ async function fixture(): Promise<{
   await writeFiles(root, {
     'package.json': `${JSON.stringify({
       packageManager: 'npm@11.5.1',
-      scripts: { build: 'node -e "process.exit(0)"', test: 'fixture-check' },
+      scripts: {
+        build: 'node -e "process.exit(0)"',
+        test: directNodeTest ? 'node scripts/direct-test.mjs' : 'fixture-check',
+      },
     }, null, 2)}\n`,
     'node_modules/fixture-check/package.json': `${JSON.stringify({
       name: 'fixture-check',
       bin: { 'fixture-check': 'cli.mjs' },
     }, null, 2)}\n`,
     'node_modules/fixture-check/cli.mjs': '#!/usr/bin/env node\nprocess.exit(0);\n',
+    'scripts/direct-test.mjs': 'process.exit(0);\n',
     'index.html': '<form><input type="email" name="email"></form>\n',
     'src/index.ts': 'export const account = { email: "person@example.test" };\n',
   });
@@ -236,17 +241,25 @@ describe('runApprovedVerification pre-execution gates', () => {
     const executor = executorFrom(async (id) => ({ result: result(id), removedEnvironmentVariables: [] }));
     await mutate(planned);
 
-    await expectNoExecution(executor, runApprovedVerification(options(planned, executor)));
+    await expect(runApprovedVerification(options(planned, executor))).rejects.toThrow(STALE_PLAN_ERROR);
+    expect(executor.calls).toEqual([]);
   });
 
   it('rejects a moved project root before invoking the executor', async () => {
     const planned = await fixture();
+    const externalArtifacts = await mkdtemp(join(tmpdir(), 'postvibe-moved-root-plan-'));
+    temporaryDirectories.push(externalArtifacts);
+    const externalPlanPath = join(externalArtifacts, 'approved-plan.json');
+    await writeFile(externalPlanPath, `${JSON.stringify(planned.plan, null, 2)}\n`);
     const movedRoot = `${planned.root}-moved`;
     temporaryDirectories.push(movedRoot);
     await rename(planned.root, movedRoot);
     const executor = executorFrom(async (id) => ({ result: result(id), removedEnvironmentVariables: [] }));
 
-    await expectNoExecution(executor, runApprovedVerification(options(planned, executor)));
+    await expect(runApprovedVerification(options(planned, executor, {
+      planArtifactPath: externalPlanPath,
+    }))).rejects.toThrow(STALE_PLAN_ERROR);
+    expect(executor.calls).toEqual([]);
   });
 
   it('rejects an unsupported toolkit version before invoking the executor', async () => {
@@ -255,12 +268,14 @@ describe('runApprovedVerification pre-execution gates', () => {
     unsupported.toolkitVersion = '99.0.0';
     unsupported.fingerprint = fingerprintPlan(unsupported);
     unsupported.planId = `pvp-${unsupported.fingerprint.slice(0, 16)}`;
+    await writeFile(planned.planArtifactPath, `${JSON.stringify(unsupported, null, 2)}\n`);
     const executor = executorFrom(async (id) => ({ result: result(id), removedEnvironmentVariables: [] }));
 
-    await expectNoExecution(executor, runApprovedVerification(options(planned, executor, {
+    await expect(runApprovedVerification(options(planned, executor, {
       plan: unsupported,
       approvedFingerprint: unsupported.fingerprint,
-    })));
+    }))).rejects.toThrow(STALE_PLAN_ERROR);
+    expect(executor.calls).toEqual([]);
   });
 
   it.each([
@@ -332,7 +347,7 @@ describe('runApprovedVerification execution and artifacts', () => {
     await expect(access(join(planned.outputDirectory, `${executionId}.lock`))).rejects.toMatchObject({ code: 'ENOENT' });
     const canonicalPlanArtifactPath = await realpath(planned.planArtifactPath);
     for (const context of executor.contexts) {
-      expect(context.excludedArtifactPaths).toEqual([
+      expect(context.excludedArtifactPaths.slice(0, 6)).toEqual([
         canonicalPlanArtifactPath,
         actual.executionPath,
         actual.reportPath,
@@ -340,6 +355,9 @@ describe('runApprovedVerification execution and artifacts', () => {
         `${actual.executionPath}.tmp`,
         `${actual.reportPath}.tmp`,
       ]);
+      const recoveryPath = context.excludedArtifactPaths[6];
+      expect(recoveryPath).toMatch(/postvibe-partial-[^/\\]+[/\\]pve-20260818120100000\.execution\.json$/u);
+      expect(context.excludedArtifactPaths[7]).toBe(`${recoveryPath}.tmp`);
     }
   });
 
@@ -378,6 +396,25 @@ describe('runApprovedVerification execution and artifacts', () => {
           join(planned.root, 'node_modules', 'fixture-check', 'cli.mjs'),
           '#!/usr/bin/env node\nprocess.stdout.write("unapproved launcher");\n',
         );
+      }
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+
+    const actual = await runApprovedVerification(options(planned, executor));
+
+    expect(executor.calls).toEqual(['package-script:build']);
+    expect(actual.execution.results[1]).toEqual(expect.objectContaining({
+      commandId: 'package-script:test',
+      status: 'unverified',
+      unverifiedReason: expect.stringMatching(/approved launcher evidence changed/i),
+    }));
+  });
+
+  it('never starts a direct Node script after an earlier command rewrites that approved entrypoint', async () => {
+    const planned = await fixture(true);
+    const executor = executorFrom(async (id, _context, index) => {
+      if (index === 0) {
+        await writeFile(join(planned.root, 'scripts', 'direct-test.mjs'), 'process.exit(1);\n');
       }
       return { result: result(id), removedEnvironmentVariables: [] };
     });
@@ -739,6 +776,43 @@ describe('runApprovedVerification execution and artifacts', () => {
     });
     expect(persisted).not.toContain('must-not-be-scanned');
     await expect(access(join(externalOutput, `${executionId}.report.md`))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('uses a stable recovery boundary when root drift moves the requested artifact directory', async () => {
+    const planned = await fixture();
+    const movedRoot = `${planned.root}-moved-with-artifacts`;
+    temporaryDirectories.push(movedRoot);
+    const executor = executorFrom(async (id, _context, index) => {
+      if (index === planned.plan.commands.length - 1) {
+        await rename(planned.root, movedRoot);
+        await mkdir(planned.root);
+        await writeFile(join(planned.root, 'replacement-secret.ts'), "export const apiKey = 'must-not-be-scanned';\n");
+      }
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+    let failure: unknown;
+
+    try {
+      await runApprovedVerification(options(planned, executor));
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({ name: 'VerificationPostProcessingError' });
+    const recoveryPath = (failure as { executionPath?: unknown }).executionPath;
+    expect(typeof recoveryPath).toBe('string');
+    if (typeof recoveryPath !== 'string') throw new Error('Root-drift recovery path was not published.');
+    expect(recoveryPath).not.toBe(join(planned.outputDirectory, `${executionId}.execution.json`));
+    expect(recoveryPath.endsWith(`${executionId}.execution.json`)).toBe(true);
+    const persisted = await readFile(recoveryPath, 'utf8');
+    expect(JSON.parse(persisted)).toMatchObject({
+      status: 'partial',
+      coverageGaps: expect.arrayContaining([
+        expect.objectContaining({ id: 'orchestration.post-processing' }),
+      ]),
+    });
+    expect(persisted).not.toContain('must-not-be-scanned');
+    temporaryDirectories.push(dirname(recoveryPath));
   });
 
   it('keeps artifact JSON out of the fresh Level 0 scan in an ordinary output directory', async () => {

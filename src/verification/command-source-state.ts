@@ -65,15 +65,24 @@ export async function commandLauncherMatchesApproval(
   if (launcher === undefined || command.argv[0] !== launcher.executable) return false;
   try {
     if (await digestFile(launcher.executable) !== launcher.sha256) return false;
-    if (launcher.kind === 'node-package-bin') {
-      if (launcher.entrypoint === undefined || launcher.packageManifest === undefined) return false;
-      if (command.argv[1] === undefined) return false;
+    if ((launcher.entrypoint === undefined) !== (launcher.entrypointArgvIndex === undefined)) return false;
+    if (launcher.entrypoint !== undefined && launcher.entrypointArgvIndex !== undefined) {
       const entrypoint = await resolveExistingFileInsideProject(root, launcher.entrypoint.location);
-      if (entrypoint === undefined || command.argv[1] !== entrypoint) return false;
-      return await inputDigestMatches(root, launcher.entrypoint.location, launcher.entrypoint.sha256)
+      if (entrypoint === undefined || command.argv[launcher.entrypointArgvIndex] !== entrypoint) return false;
+      if (!await inputDigestMatches(root, launcher.entrypoint.location, launcher.entrypoint.sha256)) return false;
+    }
+    if (launcher.kind === 'node-package-bin') {
+      return launcher.entrypoint !== undefined
+        && launcher.entrypointArgvIndex === 1
+        && launcher.packageManifest !== undefined
         && await inputDigestMatches(root, launcher.packageManifest.location, launcher.packageManifest.sha256);
     }
-    return launcher.entrypoint === undefined && launcher.packageManifest === undefined;
+    if (launcher.kind === 'direct-executable') {
+      return launcher.entrypoint === undefined
+        && launcher.entrypointArgvIndex === undefined
+        && launcher.packageManifest === undefined;
+    }
+    return launcher.packageManifest === undefined;
   } catch {
     return false;
   }

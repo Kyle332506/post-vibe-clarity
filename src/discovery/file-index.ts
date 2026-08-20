@@ -5,7 +5,8 @@ import { compareOrdinal } from '../ordinal.js';
 const ignoredDirectories = new Set(['.git', '.postvibe', 'coverage', 'dist', 'node_modules']);
 
 export function isProjectFileExcluded(path: string): boolean {
-  return path.split(/[\\/]+/u).some((segment) => ignoredDirectories.has(segment));
+  const segments = sep === '\\' ? path.split(/[\\/]+/u) : path.split(/\/+/u);
+  return segments.some((segment) => ignoredDirectories.has(segment));
 }
 
 function normalizePath(path: string): string {

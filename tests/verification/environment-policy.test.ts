@@ -29,11 +29,11 @@ describe('execution environment policy', () => {
       },
       removedNames: [
         'APP_TOKEN',
-        'databasePassword',
         'DYLD_INSERT_LIBRARIES',
         'LD_PRELOAD',
         'NODE_OPTIONS',
         'PYTHONPATH',
+        'databasePassword',
       ],
     });
     expect(controlledValues.some((value) => JSON.stringify(result).includes(value))).toBe(false);

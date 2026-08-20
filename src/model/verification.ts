@@ -22,6 +22,7 @@ export interface PackageScriptLauncher {
   kind: 'node-runtime' | 'node-package-bin' | 'direct-executable';
   executable: string;
   sha256: string;
+  entrypointArgvIndex?: number;
   entrypoint?: InputDigest;
   packageManifest?: InputDigest;
 }

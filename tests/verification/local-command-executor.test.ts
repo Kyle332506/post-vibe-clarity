@@ -5,10 +5,16 @@ import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VerificationCommand } from '../../src/model/verification.js';
 import { LocalCommandExecutor } from '../../src/verification/local-command-executor.js';
-import { COMMAND_OUTPUT_LIMIT_BYTES } from '../../src/verification/redact-command-output.js';
+import {
+  COMMAND_OUTPUT_LIMIT_BYTES,
+  createCommandOutputCollector,
+} from '../../src/verification/redact-command-output.js';
 
 const temporaryDirectories: string[] = [];
 const fixturePids: number[] = [];
@@ -226,6 +232,48 @@ describe('local command executor', () => {
       fileChanges: [],
     });
     expect(execution.result.unverifiedReason).toBe('Command could not be started (ERR_INVALID_ARG_VALUE).');
+  });
+
+  it('removes output listeners and disposes collectors when post-spawn observation rejects', async () => {
+    const root = await temporaryProject();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const child = Object.assign(new EventEmitter(), {
+      stdout,
+      stderr,
+      pid: undefined,
+    }) as unknown as ChildProcess;
+    let disposals = 0;
+    const executor = new LocalCommandExecutor({
+      spawnProcess: (() => {
+        setImmediate(async () => {
+          stdout.write('API_TOKEN=collector-secret');
+          await rm(root, { recursive: true, force: true });
+          child.emit('close', 0, null);
+        });
+        return child;
+      }) as never,
+      createOutputCollector(limitBytes) {
+        const collector = createCommandOutputCollector(limitBytes);
+        return {
+          append: collector.append,
+          finish: collector.finish,
+          dispose() {
+            disposals += 1;
+            collector.dispose();
+          },
+        };
+      },
+    });
+
+    await expect(executor.execute(
+      command([process.execPath, '-e', 'process.exit(0)']),
+      context(root, new AbortController().signal),
+    )).rejects.toThrow();
+
+    expect(stdout.listenerCount('data')).toBe(0);
+    expect(stderr.listenerCount('data')).toBe(0);
+    expect(disposals).toBe(2);
   });
 
   it('records additions, modifications, and removals without cleaning them up', async () => {

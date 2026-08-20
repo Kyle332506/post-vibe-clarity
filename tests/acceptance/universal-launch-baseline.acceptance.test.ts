@@ -99,6 +99,17 @@ function pathFrom(stdout: string, label: string): string {
   return line.slice(label.length + 2);
 }
 
+function scoreShapedFieldPaths(value: unknown, path = '$'): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => scoreShapedFieldPaths(item, `${path}[${index}]`));
+  }
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.entries(value).flatMap(([key, fieldValue]) => [
+    ...(/score/iu.test(key) ? [`${path}.${key}`] : []),
+    ...scoreShapedFieldPaths(fieldValue, `${path}.${key}`),
+  ]);
+}
+
 async function readValidatedPlan(path: string): Promise<VerificationPlan> {
   const input = JSON.parse(await readFile(path, 'utf8')) as unknown;
   expect(await validateVerificationPlan(input)).toEqual({ ok: true });
@@ -151,6 +162,9 @@ describe.each(runners)('universal launch baseline through the $label CLI', (runn
     const report = reportInput as VerifiedReadinessReport;
     expect(report.schemaVersion).toBe('0.2');
     expect(report.verification.executionRecordPath).toBe(executionPath);
+    expect(scoreShapedFieldPaths(plan)).toEqual([]);
+    expect(scoreShapedFieldPaths(execution)).toEqual([]);
+    expect(scoreShapedFieldPaths(reportInput)).toEqual([]);
 
     const persisted = [
       await readFile(planPath, 'utf8'),
@@ -182,7 +196,8 @@ describe('universal launch baseline safety cases', () => {
 
     expect(executed.code).toBe(0);
     const markdown = await readFile(pathFrom(executed.stdout, 'Report'), 'utf8');
-    expect(markdown.trimEnd().split('\n').at(-1)).toBe(disclaimer);
+    expect(markdown.endsWith(`${disclaimer}\n`)).toBe(true);
+    expect(markdown.slice(0, -`${disclaimer}\n`.length)).not.toContain(disclaimer);
     expect(markdown).not.toContain(controlledSecret);
     expect(markdown).not.toMatch(/readiness[ -]?score/i);
   });

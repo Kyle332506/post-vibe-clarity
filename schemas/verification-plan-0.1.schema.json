@@ -106,6 +106,7 @@
         "kind": { "enum": ["node-runtime", "node-package-bin", "direct-executable"] },
         "executable": { "type": "string", "minLength": 1 },
         "sha256": { "$ref": "#/$defs/sha256" },
+        "entrypointArgvIndex": { "type": "integer", "minimum": 1 },
         "entrypoint": { "$ref": "#/$defs/inputDigest" },
         "packageManifest": { "$ref": "#/$defs/inputDigest" }
       }

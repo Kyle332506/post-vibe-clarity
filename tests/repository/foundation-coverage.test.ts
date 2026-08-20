@@ -66,6 +66,13 @@ describe('foundation coverage documentation', () => {
     expect(example).toMatch(/unknown[\s\S]{0,160}remain unknown/i);
   });
 
+  it('distinguishes base report 0.1 from linked verified report 0.2 without stale implementation labels', async () => {
+    const coverage = await readRepositoryFile('docs/foundation-coverage.md');
+
+    expect(coverage).toMatch(/base[^\n]+v0\.1[\s\S]{0,180}verified[^\n]+v0\.2/i);
+    expect(coverage).not.toContain('packaged v0.1 audit implementations');
+  });
+
   it('keeps public guidance free of emoji, authorship attribution, readiness scores, and unconditional verdicts', async () => {
     for (const path of publicGuidance) {
       const source = await readRepositoryFile(path);

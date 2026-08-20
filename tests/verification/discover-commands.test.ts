@@ -56,6 +56,41 @@ describe('discoverVerificationCommands', () => {
   });
 
   it.each([
+    ['direct script', 'node scripts/check.mjs', 1],
+    ['syntax-check script', 'node --check scripts/check.mjs', 2],
+  ])('fingerprints the exact entrypoint for a %s declaration', async (_label, declaration, entrypointArgvIndex) => {
+    const entrypoint = 'process.stdout.write("approved entrypoint");\n';
+    const root = await temporaryProject({
+      'package.json': packageJson({
+        packageManager: 'npm@11.5.1',
+        scripts: { test: declaration },
+      }),
+      'scripts/check.mjs': entrypoint,
+    });
+    const resolvedEntrypoint = await realpath(join(root, 'scripts', 'check.mjs'));
+
+    const result = await discoverVerificationCommands(root, new Set());
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toMatchObject({
+      argv: declaration.includes('--check')
+        ? [process.execPath, '--check', resolvedEntrypoint]
+        : [process.execPath, resolvedEntrypoint],
+      launcher: {
+        policyVersion: 'package-script-launcher/0.1',
+        kind: 'node-runtime',
+        executable: process.execPath,
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        entrypointArgvIndex,
+        entrypoint: {
+          location: 'scripts/check.mjs',
+          sha256: createHash('sha256').update(entrypoint).digest('hex'),
+        },
+      },
+    });
+  });
+
+  it.each([
     'node build.mjs && node mutate.mjs',
     'node "$POSTVIBE_SCRIPT"',
   ])('keeps package script shell syntax unverified instead of interpreting %s', async (declaration) => {
@@ -105,6 +140,7 @@ describe('discoverVerificationCommands', () => {
           kind: 'node-package-bin',
           executable: process.execPath,
           sha256: runtimeSha256,
+          entrypointArgvIndex: 1,
           entrypoint: {
             location: 'node_modules/fixture-tool/cli.mjs',
             sha256: createHash('sha256').update(entrypoint).digest('hex'),
@@ -130,9 +166,14 @@ describe('discoverVerificationCommands', () => {
           deploy: 'deploy-production',
         },
       }),
+      'build.mjs': '',
+      'typecheck.mjs': '',
+      'lint.mjs': '',
+      'test.mjs': '',
     });
 
     const result = await discoverVerificationCommands(root, new Set());
+    const resolvedBuild = await realpath(join(root, 'build.mjs'));
 
     expect(result.commands.map(({ id }) => id)).toEqual([
       'package-script:build',
@@ -141,7 +182,7 @@ describe('discoverVerificationCommands', () => {
       'package-script:test',
     ]);
     expect(result.commands[0]).toMatchObject({
-      argv: [process.execPath, 'build.mjs'],
+      argv: [process.execPath, resolvedBuild],
       cwd: '.',
       timeoutSeconds: 600,
       requiredAccess: ['local-command'],
@@ -155,6 +196,8 @@ describe('discoverVerificationCommands', () => {
         policyVersion: 'package-script-launcher/0.1',
         kind: 'node-runtime',
         executable: process.execPath,
+        entrypointArgvIndex: 1,
+        entrypoint: expect.objectContaining({ location: 'build.mjs' }),
       }),
     });
     expect(result.commands.some(({ argv }) => argv.includes('deploy'))).toBe(false);
@@ -237,6 +280,8 @@ describe('discoverVerificationCommands', () => {
         packageManager: 'pnpm@9.12.0',
         scripts: { build: 'node build.mjs', typecheck: 'first', 'type-check': 'second', test: 'node test.mjs' },
       }),
+      'build.mjs': '',
+      'test.mjs': '',
     });
 
     const result = await discoverVerificationCommands(root, new Set());
@@ -339,6 +384,8 @@ describe('discoverVerificationCommands', () => {
   it('retains explicitly excluded commands and their coverage gaps', async () => {
     const root = await temporaryProject({
       'package.json': packageJson({ packageManager: 'npm@11.5.1', scripts: { build: 'node build.mjs', lint: 'node lint.mjs' } }),
+      'build.mjs': '',
+      'lint.mjs': '',
     });
 
     const result = await discoverVerificationCommands(root, new Set(['package-script:lint']));
@@ -365,6 +412,7 @@ describe('discoverVerificationCommands', () => {
   it('rejects duplicate IDs between automatic and portable declarations', async () => {
     const root = await temporaryProject({
       'package.json': packageJson({ packageManager: 'npm@11.5.1', scripts: { build: 'node build.mjs' } }),
+      'build.mjs': '',
       'postvibe.verification.yaml': [
         'schemaVersion: "0.1"',
         'commands:',

@@ -48,7 +48,7 @@ This command does not run project commands.
 postvibe plan [project-path] [--skills <skills-path>] --output <plan-file>
 ```
 
-Plan creation performs discovery and the existing Level 0 read-only checks. It also discovers eligible project-declared commands. It does not execute those commands. `--skills` has the same defaulting behavior as the existing review command, and the plan records the selected skill/check versions and source hashes.
+Plan creation performs discovery and the existing Level 0 read-only checks. It also discovers eligible project-declared commands. It does not execute those commands. `--skills` has the same defaulting behavior as the existing review command, and the plan records a deduplicated digest inventory for the complete loaded catalog because any shipped audit skill can affect planning or the mandatory fresh review.
 
 The command prints:
 
@@ -74,7 +74,7 @@ postvibe execute <plan-file> --approve <fingerprint> --output <directory> [--for
 
 The approval means only: run the exact selected commands under the limits recorded in this plan. It is not approval of project safety, a launch decision, or acceptance of unrelated risks.
 
-Before any project command starts, execution validates the plan, fingerprint, project root, command sources, inspected inputs, and executor settings. A mismatch stops execution and requires a fresh plan.
+Before any project command starts, execution validates the plan, fingerprint, project root, command sources, inspected inputs, and executor settings. It rechecks the exact source declaration and fingerprinted launcher immediately before each command. A mismatch stops that command from starting and remains explicit unverified evidence.
 
 ### 4. Produce evidence
 
@@ -95,7 +95,7 @@ Each plan receives a deterministic SHA-256 fingerprint over its security- and be
 - discovery and applicable-check inputs;
 - hashes of inspected project files and command declaration sources;
 - selected and excluded commands;
-- each command's ID, category, argument array, working directory, timeout, source, and required access;
+- each command's ID, category, immutable argument array, working directory, timeout, exact source declaration, fingerprinted launcher evidence, and required access;
 - execution-policy settings.
 
 Presentation-only values such as generation time, output path, and formatting metadata are excluded from the fingerprint. Command execution order is included.
@@ -119,7 +119,7 @@ The first automatic adapter recognizes these exact script categories:
 
 If both `typecheck` and `type-check` exist, plan creation reports an ambiguity instead of choosing one silently.
 
-The adapter executes a script through the project's declared package manager. The package manager is accepted when it is named by the `packageManager` field or identified by one unambiguous recognized lockfile:
+Package-manager evidence establishes whether automatic package-script discovery is eligible. It is accepted when named by the `packageManager` field or identified by one unambiguous recognized lockfile:
 
 | Evidence | Package manager |
 | --- | --- |
@@ -130,7 +130,7 @@ The adapter executes a script through the project's declared package manager. Th
 
 The `packageManager` field takes priority only when its supported name is valid and its other project evidence does not conflict. Multiple conflicting lockfiles, an unsupported package-manager name, or missing package-manager evidence leaves the scripts unverified and directs the user to the portable configuration file.
 
-PostVibeClarity directly starts the package-manager executable with an argument array such as `['pnpm', 'run', 'test']`. It does not invoke a shell at the executor layer. Package managers may themselves interpret script text through a shell; the plan therefore records and hashes the exact declared script text. This behavior is part of the arbitrary-project-code warning.
+PostVibeClarity does not invoke the package manager at execution time because doing so would reread mutable script text after approval and standard Windows `.cmd` shims would require shell handling. Instead, plan creation parses a deliberately portable literal-argument subset and freezes a shell-free launcher: the fingerprinted current Node runtime plus any direct project entry point, or a fingerprinted local JavaScript package manifest and entry point started with that runtime. The plan records the exact argument position of every entry point. Inline-evaluation and informational Node forms have no entry-point file; other Node option shapes remain unsupported. The executor uses the frozen argument array with `shell: false`, never `cmd.exe`, and rechecks both declaration and launcher evidence immediately before use. Shell operators, expansion, redirection, ambiguous binaries, or other unsupported syntax become an explicit unverified coverage gap with portable configuration as the fallback. This correction preserves exact-source approval across platforms rather than narrowing the promise to a live package-manager reread.
 
 ### Portable configuration
 
@@ -174,10 +174,10 @@ The versioned plan is human-readable JSON with schema ID `postvibe-verification-
 - discovery evidence;
 - read-only findings and coverage gaps observed during planning;
 - hashes of inputs required for stale-plan detection;
-- selected skill/check identities, versions, and source hashes;
+- the complete loaded skill catalog's deduplicated, ordinally ordered instruction and sidecar hashes;
 - selected commands in execution order;
 - excluded commands and their resulting coverage gaps;
-- command source evidence;
+- exact command source digests and immutable launcher evidence;
 - required access and execution limits;
 - the containment warning and required no-verdict disclaimer.
 
@@ -205,7 +205,7 @@ For each command, the executor:
 
 This initial policy is identified as `env-filter/0.1`. Its version and exact rules are recorded in the plan and covered by the fingerprint. Removed names are evidence; removed values are never recorded.
 
-The file comparison excludes version-control internals, dependency directories, the exact PostVibeClarity artifact paths chosen for the run, and other paths already excluded by the bounded project-file index. The execution record states this boundary. It does not claim to observe changes inside excluded or inaccessible paths.
+Before commands start, PostVibeClarity pins the canonical project root by real path, device, and inode. It rechecks that identity before every traversal and the fresh review; drift stops scanning. The file comparison excludes version-control internals, `.postvibe`, dependencies, coverage, distribution output, the exact primary/staging/recovery artifact paths, symlinks, and non-regular files. Inaccessible paths fail observation. The required `project-observation/0.1` object records these rules and the content-SHA-256-only metadata boundary in both execution evidence and report linkage.
 
 PostVibeClarity never cleans, deletes, reverts, or stages command-created changes.
 
@@ -277,6 +277,7 @@ The structured execution record uses schema ID `postvibe-verification-execution/
 - exclusions and commands not reached;
 - bounded, redacted output evidence;
 - observed file changes and their stated boundary;
+- the required `project-observation/0.1` boundary and pinned root identity;
 - interruption or runner-failure details in sanitized form;
 - the containment warning and disclaimer.
 
@@ -291,8 +292,9 @@ No artifact contains an overall numeric readiness score or an unconditional laun
 - Plan, execution, and report files use exclusive creation and never overwrite an existing file.
 - The user chooses output locations.
 - Documentation may recommend `.postvibe/`, but the tool never silently edits `.gitignore` or commits artifacts.
-- Execution output targets are validated and reserved before the first project command starts.
-- Completed artifacts are written atomically where practical.
+- Execution output targets and owned staging entries are validated and reserved before the first project command starts.
+- Completed execution evidence remains staged until the fresh review and report both validate. Execution and report publish as a rollback-capable artifact set, so a later publication failure cannot leave a completed execution without its report.
+- If root drift moves the requested artifact directory, sanitized partial execution evidence is published at a stable recovery boundary and that exact path is surfaced; moved owned staging entries are never followed through the replacement root.
 - A graceful interruption produces a clearly marked partial execution record.
 - An abrupt process or machine termination may leave a temporary file, but that file is never presented as a completed record.
 
@@ -305,6 +307,7 @@ After execution begins:
 - ordinary command failures are recorded and later commands continue;
 - a graceful user interruption stops further commands and marks them unverified;
 - an unexpected runner failure preserves completed evidence where safely possible and marks the execution partial;
+- a mandatory fresh-review, report-validation, or report-publication failure publishes validated partial execution evidence with the fixed `orchestration.post-processing` gap and publishes no report;
 - normal CLI output uses stable sanitized errors;
 - debug output uses bounded sanitized diagnostics and must not reveal project-controlled content or secrets.
 

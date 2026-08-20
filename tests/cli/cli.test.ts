@@ -707,6 +707,100 @@ describe('postvibe execute CLI', () => {
     }
   });
 
+  it.runIf(process.platform !== 'win32')('records SIGINT as partial evidence and removes its process handler after execute', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-execute-sigint-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const planPath = join(temporaryRoot, 'plan.json');
+    const outputDirectory = join(temporaryRoot, 'artifacts');
+    const startedMarker = join(projectRoot, 'started.marker');
+
+    try {
+      await mkdir(projectRoot);
+      await writeFile(join(projectRoot, 'long.mjs'), [
+        "import { writeFileSync } from 'node:fs';",
+        `writeFileSync(${JSON.stringify(startedMarker)}, 'started\\n');`,
+        'setInterval(() => {}, 1000);',
+        '',
+      ].join('\n'));
+      await writeFile(join(projectRoot, 'postvibe.verification.yaml'), [
+        'schemaVersion: "0.1"',
+        'commands:',
+        '  - id: interrupt-lifecycle',
+        '    category: test',
+        '    argv: ["node", "long.mjs"]',
+        '    cwd: "."',
+        '    timeoutSeconds: 30',
+        '',
+      ].join('\n'));
+      const planned = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        planPath,
+      ]);
+      expect(planned.code).toBe(0);
+      const plan = JSON.parse(await readFile(planPath, 'utf8')) as { fingerprint: string };
+
+      const child = spawn(process.execPath, [
+        '--import',
+        tsxImport,
+        join(repositoryRoot, 'src', 'cli.ts'),
+        'execute',
+        planPath,
+        '--approve',
+        plan.fingerprint,
+        '--output',
+        outputDirectory,
+        '--format',
+        'json',
+      ], {
+        cwd: repositoryRoot,
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+      child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+      const completion = new Promise<number | null>((resolve, reject) => {
+        child.once('error', reject);
+        child.once('close', resolve);
+      });
+      await expect.poll(async () => {
+        try {
+          return (await readFile(startedMarker, 'utf8')) === 'started\n';
+        } catch {
+          return false;
+        }
+      }, { timeout: 5_000, interval: 25 }).toBe(true);
+      expect(child.kill('SIGINT')).toBe(true);
+
+      expect(await completion).toBe(0);
+      expect(stderr).toBe('');
+      expect(stdout).toMatch(/Status: partial \(passed: 0, failed: 0, unverified: 1\)\./);
+      const executionPath = /^Execution record: (.+)$/m.exec(stdout)?.[1];
+      if (executionPath === undefined) throw new Error('Interrupted execute output omitted its execution path.');
+      const execution = JSON.parse(await readFile(executionPath, 'utf8')) as {
+        status: string;
+        results: Array<{ status: string; unverifiedReason?: string }>;
+      };
+      expect(execution).toMatchObject({
+        status: 'partial',
+        results: [expect.objectContaining({
+          status: 'interrupted',
+          unverifiedReason: expect.stringMatching(/interrupted/i),
+        })],
+      });
+      expect((await readdir(outputDirectory)).some((name) => name.endsWith('.lock') || name.endsWith('.tmp'))).toBe(false);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it('accepts a leading-hyphen plan path after the option terminator', async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-execute-terminator-'));
     const projectRoot = join(temporaryRoot, 'project');

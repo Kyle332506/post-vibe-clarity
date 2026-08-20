@@ -24,6 +24,8 @@ async function fixture(): Promise<{ root: string; skillsRoot: string }> {
       packageManager: 'npm@11.5.1',
       scripts: { build: 'node build.mjs', test: 'node test.mjs' },
     }, null, 2)}\n`,
+    'build.mjs': '',
+    'test.mjs': '',
     'src/index.ts': 'export const answer = 42;\n',
   });
   await writeFiles(skillsRoot, {

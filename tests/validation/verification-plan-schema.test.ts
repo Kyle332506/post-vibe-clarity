@@ -57,6 +57,20 @@ describe('validateVerificationPlan', () => {
     );
   });
 
+  it('rejects a direct Node script command without exact entrypoint evidence', async () => {
+    const input = structuredClone(sampleVerificationPlan);
+    const command = input.commands[0]!;
+    command.argv = [command.launcher!.executable, '/example/project/scripts/build.mjs'];
+    delete command.launcher!.entrypoint;
+    delete command.launcher!.entrypointArgvIndex;
+    input.fingerprint = fingerprintPlan(input);
+    input.planId = `pvp-${input.fingerprint.slice(0, 16)}`;
+
+    expect(await invalidErrors(input)).toContain(
+      '/commands/package-script:build/launcher direct Node script requires exact entrypoint evidence',
+    );
+  });
+
   it('rejects duplicate command IDs across selected and excluded commands', async () => {
     const input = structuredClone(sampleVerificationPlan);
     const selected = input.commands[0];

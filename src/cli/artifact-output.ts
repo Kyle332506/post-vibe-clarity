@@ -271,6 +271,10 @@ export async function releaseOwnedFile(file: OwnedFile, hooks: OwnedFileReleaseH
   if (primaryError !== undefined) throw primaryError;
 }
 
+export async function closeOwnedFilePreservingEntry(file: OwnedFile): Promise<void> {
+  await closeOwnedFile(file);
+}
+
 async function cleanupQuarantinedSource(file: OwnedFile, sourceQuarantine: string): Promise<void> {
   if (releasedFiles.has(file)) return;
   await removeOwnedQuarantine(file, sourceQuarantine);

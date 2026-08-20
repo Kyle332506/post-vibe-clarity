@@ -49,6 +49,11 @@ export interface CommandExecutor {
   ): Promise<CommandExecutionResult>;
 }
 
+export interface LocalCommandExecutorDependencies {
+  spawnProcess: typeof spawn;
+  createOutputCollector: typeof createCommandOutputCollector;
+}
+
 interface NaturalOutcome {
   kind: 'close' | 'error';
   exitCode: number | null;
@@ -127,6 +132,15 @@ function finishCommandOutput(
 }
 
 export class LocalCommandExecutor implements CommandExecutor {
+  readonly #dependencies: LocalCommandExecutorDependencies;
+
+  constructor(dependencies: Partial<LocalCommandExecutorDependencies> = {}) {
+    this.#dependencies = {
+      spawnProcess: dependencies.spawnProcess ?? spawn,
+      createOutputCollector: dependencies.createOutputCollector ?? createCommandOutputCollector,
+    };
+  }
+
   async execute(
     command: VerificationCommand,
     context: ExecuteCommandContext,
@@ -163,128 +177,140 @@ export class LocalCommandExecutor implements CommandExecutor {
 
     // Stream budgets sum with the fixed separator to the persisted output cap.
     // Independent capture makes composition deterministic regardless of pipe event timing.
-    const stdoutCollector = createCommandOutputCollector(stdoutOutputLimitBytes);
-    const stderrCollector = createCommandOutputCollector(stderrOutputLimitBytes);
-    let child: ChildProcess;
+    const stdoutCollector = this.#dependencies.createOutputCollector(stdoutOutputLimitBytes);
+    const stderrCollector = this.#dependencies.createOutputCollector(stderrOutputLimitBytes);
+    let child: ChildProcess | undefined;
+    let stdoutListener: ((chunk: Buffer) => void) | undefined;
+    let stderrListener: ((chunk: Buffer) => void) | undefined;
+    let timeout: NodeJS.Timeout | undefined;
+    let abortListener: (() => void) | undefined;
     try {
-      child = spawn(executable, command.argv.slice(1), {
-        cwd,
-        env: filteredEnvironment.environment,
-        shell: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: process.platform !== 'win32',
-        windowsHide: true,
-      });
-    } catch (error) {
-      const collected = finishCommandOutput(stdoutCollector, stderrCollector);
-      const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths, context.rootIdentity);
-      return {
-        removedEnvironmentVariables: filteredEnvironment.removedNames,
-        result: {
-          commandId: command.id,
-          status: 'could-not-start',
-          startedAt,
-          durationMs: Math.max(0, Math.round(performance.now() - monotonicStart)),
+      try {
+        child = this.#dependencies.spawnProcess(executable, command.argv.slice(1), {
+          cwd,
+          env: filteredEnvironment.environment,
+          shell: false,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: process.platform !== 'win32',
+          windowsHide: true,
+        });
+      } catch (error) {
+        const collected = finishCommandOutput(stdoutCollector, stderrCollector);
+        const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths, context.rootIdentity);
+        return {
+          removedEnvironmentVariables: filteredEnvironment.removedNames,
+          result: {
+            commandId: command.id,
+            status: 'could-not-start',
+            startedAt,
+            durationMs: Math.max(0, Math.round(performance.now() - monotonicStart)),
+            exitCode: null,
+            signal: null,
+            output: collected.output,
+            outputTruncated: collected.truncated,
+            fileChanges: diffWorkingTrees(before, after),
+            unverifiedReason: safeSpawnErrorReason(error instanceof Error ? error : undefined),
+          },
+        };
+      }
+      stdoutListener = (chunk: Buffer): void => stdoutCollector.append(chunk);
+      stderrListener = (chunk: Buffer): void => stderrCollector.append(chunk);
+      child.stdout?.on('data', stdoutListener);
+      child.stderr?.on('data', stderrListener);
+
+      const naturalOutcome = new Promise<NaturalOutcome>((resolve) => {
+        child?.once('error', (error) => resolve({
+          kind: 'error',
           exitCode: null,
           signal: null,
-          output: collected.output,
-          outputTruncated: collected.truncated,
-          fileChanges: diffWorkingTrees(before, after),
-          unverifiedReason: safeSpawnErrorReason(error instanceof Error ? error : undefined),
-        },
+          error,
+        }));
+        child?.once('close', (exitCode, signal) => resolve({
+          kind: 'close',
+          exitCode,
+          signal,
+        }));
+      });
+      let forced = false;
+      let resolveForced: ((outcome: ForcedOutcome) => void) | undefined;
+      const forcedOutcome = new Promise<ForcedOutcome>((resolve) => {
+        resolveForced = resolve;
+      });
+      const triggerForcedOutcome = (kind: ForcedOutcome['kind']): void => {
+        if (forced) return;
+        forced = true;
+        if (timeout !== undefined) clearTimeout(timeout);
+        if (abortListener !== undefined) context.signal.removeEventListener('abort', abortListener);
+        const cleanup = child?.pid === undefined
+          ? Promise.resolve<ProcessTreeTermination>({
+              terminationBoundary: process.platform === 'win32' ? 'windows-taskkill-tree' : 'unix-process-group',
+              verified: false,
+              limitation: 'Process-tree cleanup could not start because no process identifier was available.',
+            })
+          : terminateProcessTree(child.pid);
+        resolveForced?.({ kind, cleanup });
       };
-    }
-    const stdoutListener = (chunk: Buffer): void => stdoutCollector.append(chunk);
-    const stderrListener = (chunk: Buffer): void => stderrCollector.append(chunk);
-    child.stdout?.on('data', stdoutListener);
-    child.stderr?.on('data', stderrListener);
+      abortListener = (): void => triggerForcedOutcome('interrupted');
+      context.signal.addEventListener('abort', abortListener, { once: true });
+      timeout = setTimeout(
+        () => triggerForcedOutcome('timed-out'),
+        command.timeoutSeconds * 1_000,
+      );
 
-    const naturalOutcome = new Promise<NaturalOutcome>((resolve) => {
-      child.once('error', (error) => resolve({
-        kind: 'error',
-        exitCode: null,
-        signal: null,
-        error,
-      }));
-      child.once('close', (exitCode, signal) => resolve({
-        kind: 'close',
+      const outcome = await Promise.race([naturalOutcome, forcedOutcome]);
+      let status: CommandResultStatus;
+      let exitCode: number | null;
+      let signal: NodeJS.Signals | null;
+      let unverifiedReason: string | undefined;
+
+      if ('cleanup' in outcome) {
+        const cleanup = await outcome.cleanup;
+        const closed = await waitForCloseAfterCleanup(naturalOutcome);
+        if (closed === undefined && cleanup.verified) {
+          cleanup.verified = false;
+          cleanup.limitation = 'The command process did not close within the bounded cleanup wait.';
+        }
+        status = outcome.kind;
+        exitCode = closed?.exitCode ?? null;
+        signal = closed?.signal ?? null;
+        unverifiedReason = cleanupEvidence(outcome.kind, command.timeoutSeconds, cleanup);
+      } else {
+        if (timeout !== undefined) clearTimeout(timeout);
+        if (abortListener !== undefined) context.signal.removeEventListener('abort', abortListener);
+        status = outcome.kind === 'error'
+          ? 'could-not-start'
+          : outcome.exitCode === 0 ? 'passed' : 'failed';
+        exitCode = outcome.exitCode;
+        signal = outcome.signal;
+        if (outcome.kind === 'error') unverifiedReason = safeSpawnErrorReason(outcome.error);
+      }
+
+      const collected = finishCommandOutput(stdoutCollector, stderrCollector);
+      const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths, context.rootIdentity);
+      const result = addOptionalReason({
+        commandId: command.id,
+        status,
+        startedAt,
+        durationMs: Math.max(0, Math.round(performance.now() - monotonicStart)),
         exitCode,
         signal,
-      }));
-    });
-    let forced = false;
-    let timeout: NodeJS.Timeout | undefined;
-    let resolveForced: ((outcome: ForcedOutcome) => void) | undefined;
-    const forcedOutcome = new Promise<ForcedOutcome>((resolve) => {
-      resolveForced = resolve;
-    });
-    const triggerForcedOutcome = (kind: ForcedOutcome['kind']): void => {
-      if (forced) return;
-      forced = true;
+        output: collected.output,
+        outputTruncated: collected.truncated,
+        fileChanges: diffWorkingTrees(before, after),
+      }, unverifiedReason);
+
+      return {
+        result,
+        removedEnvironmentVariables: filteredEnvironment.removedNames,
+      };
+    } finally {
       if (timeout !== undefined) clearTimeout(timeout);
-      context.signal.removeEventListener('abort', abortListener);
-      const cleanup = child.pid === undefined
-        ? Promise.resolve<ProcessTreeTermination>({
-            terminationBoundary: process.platform === 'win32' ? 'windows-taskkill-tree' : 'unix-process-group',
-            verified: false,
-            limitation: 'Process-tree cleanup could not start because no process identifier was available.',
-          })
-        : terminateProcessTree(child.pid);
-      resolveForced?.({ kind, cleanup });
-    };
-    const abortListener = (): void => triggerForcedOutcome('interrupted');
-    context.signal.addEventListener('abort', abortListener, { once: true });
-    timeout = setTimeout(
-      () => triggerForcedOutcome('timed-out'),
-      command.timeoutSeconds * 1_000,
-    );
-
-    const outcome = await Promise.race([naturalOutcome, forcedOutcome]);
-    let status: CommandResultStatus;
-    let exitCode: number | null;
-    let signal: NodeJS.Signals | null;
-    let unverifiedReason: string | undefined;
-
-    if ('cleanup' in outcome) {
-      const cleanup = await outcome.cleanup;
-      const closed = await waitForCloseAfterCleanup(naturalOutcome);
-      if (closed === undefined && cleanup.verified) {
-        cleanup.verified = false;
-        cleanup.limitation = 'The command process did not close within the bounded cleanup wait.';
+      if (abortListener !== undefined) context.signal.removeEventListener('abort', abortListener);
+      if (child !== undefined && stdoutListener !== undefined && stderrListener !== undefined) {
+        removeOutputListeners(child, stdoutListener, stderrListener);
       }
-      status = outcome.kind;
-      exitCode = closed?.exitCode ?? null;
-      signal = closed?.signal ?? null;
-      unverifiedReason = cleanupEvidence(outcome.kind, command.timeoutSeconds, cleanup);
-    } else {
-      if (timeout !== undefined) clearTimeout(timeout);
-      context.signal.removeEventListener('abort', abortListener);
-      status = outcome.kind === 'error'
-        ? 'could-not-start'
-        : outcome.exitCode === 0 ? 'passed' : 'failed';
-      exitCode = outcome.exitCode;
-      signal = outcome.signal;
-      if (outcome.kind === 'error') unverifiedReason = safeSpawnErrorReason(outcome.error);
+      stdoutCollector.dispose();
+      stderrCollector.dispose();
     }
-
-    removeOutputListeners(child, stdoutListener, stderrListener);
-    const collected = finishCommandOutput(stdoutCollector, stderrCollector);
-    const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths, context.rootIdentity);
-    const result = addOptionalReason({
-      commandId: command.id,
-      status,
-      startedAt,
-      durationMs: Math.max(0, Math.round(performance.now() - monotonicStart)),
-      exitCode,
-      signal,
-      output: collected.output,
-      outputTruncated: collected.truncated,
-      fileChanges: diffWorkingTrees(before, after),
-    }, unverifiedReason);
-
-    return {
-      result,
-      removedEnvironmentVariables: filteredEnvironment.removedNames,
-    };
   }
 }

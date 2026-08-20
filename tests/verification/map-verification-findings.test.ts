@@ -6,6 +6,7 @@ import type {
   VerificationPlan,
 } from '../../src/model/verification.js';
 import { mapVerificationEvidence } from '../../src/verification/map-verification-findings.js';
+import { ORCHESTRATION_COVERAGE_GAP } from '../../src/verification/contract-constants.js';
 import { fingerprintPlan } from '../../src/verification/plan-fingerprint.js';
 import { sampleVerificationExecution } from '../fixtures/sample-verification-execution.js';
 import { sampleVerificationPlan } from '../fixtures/sample-verification-plan.js';
@@ -164,7 +165,7 @@ describe('mapVerificationEvidence', () => {
     ]);
   });
 
-  it('preserves the deterministic union of approved and runtime coverage gaps', () => {
+  it('preserves approved coverage gaps plus the one allowed orchestration gap in ordinal order', () => {
     const plan = structuredClone(sampleVerificationPlan);
     plan.coverageGaps.push({
       id: 'workspace.packages-api',
@@ -172,10 +173,8 @@ describe('mapVerificationEvidence', () => {
       workspace: 'packages/api',
     });
     const execution = structuredClone(sampleVerificationExecution);
-    execution.coverageGaps.push(
-      structuredClone(plan.coverageGaps.at(-1)!),
-      { id: 'runtime.observer-boundary', reason: 'A runtime observer boundary remained.' },
-    );
+    execution.status = 'partial';
+    execution.coverageGaps = [...structuredClone(plan.coverageGaps), structuredClone(ORCHESTRATION_COVERAGE_GAP)];
     approve(plan, execution);
 
     const result = mapVerificationEvidence(plan, execution);
@@ -184,7 +183,7 @@ describe('mapVerificationEvidence', () => {
     expect(result.coverageGaps.map(({ id }) => id)).toEqual([
       'check.universal-verification.commands.gap.category.type-check',
       'check.universal-verification.commands.gap.command.package-script:lint',
-      'check.universal-verification.commands.gap.runtime.observer-boundary',
+      'check.universal-verification.commands.gap.orchestration.post-processing',
       'check.universal-verification.commands.gap.workspace.packages-api',
     ]);
     expect(result.coverageGaps.at(-1)?.reason).toContain('packages/api');
@@ -201,7 +200,7 @@ describe('mapVerificationEvidence', () => {
     approve(plan, execution);
 
     expect(() => mapVerificationEvidence(plan, execution)).toThrow(
-      /must preserve plan coverage gap workspace\.packages-api/i,
+      /coverageGaps must exactly match plan coverage gaps or the allowed orchestration gap/i,
     );
   });
 

@@ -1,10 +1,12 @@
 import { timingSafeEqual } from 'node:crypto';
-import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { lstat, mkdir, mkdtemp, readFile, realpath, rmdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import {
   ArtifactFileCollisionError,
   acquireOwnedFileExclusively,
   artifactTemporaryPath,
+  closeOwnedFilePreservingEntry,
   publishOwnedArtifactSetExclusively,
   releaseOwnedFile,
   writeArtifactExclusively,
@@ -197,10 +199,18 @@ export async function runApprovedVerification(
   let lockFile: OwnedFile | undefined;
   let executionStagingFile: OwnedFile | undefined;
   let reportStagingFile: OwnedFile | undefined;
+  let retainRecoveryDirectory = false;
 
   await mkdir(outputDirectory, { recursive: true });
   for (const path of [executionPath, reportPath, lockPath, ...temporaryPaths]) {
     await requireAvailable(path);
+  }
+  const recoveryDirectory = await mkdtemp(join(tmpdir(), 'postvibe-partial-'));
+  const recoveryExecutionPath = join(recoveryDirectory, basename(executionPath));
+  const recoveryTemporaryPath = artifactTemporaryPath(recoveryExecutionPath);
+  if ([recoveryDirectory, recoveryExecutionPath, recoveryTemporaryPath].some(containsMarkdownLineOrControl)) {
+    await rmdir(recoveryDirectory).catch(() => undefined);
+    throw new Error('Artifact paths must not contain line or control characters.');
   }
 
   try {
@@ -222,8 +232,11 @@ export async function runApprovedVerification(
       reportPath,
       lockPath,
       ...temporaryPaths,
+      recoveryExecutionPath,
+      recoveryTemporaryPath,
     ];
     const rootIdentity = await captureProjectRootIdentity(options.plan.projectRoot);
+    const outputIdentity = await captureProjectRootIdentity(outputDirectory);
     const observationBoundary = buildObservationBoundary(rootIdentity, excludedArtifactPaths);
     executionStagingFile = await acquireOwnedFileExclusively(temporaryPaths[0]!);
     reportStagingFile = await acquireOwnedFileExclusively(temporaryPaths[1]!);
@@ -231,6 +244,7 @@ export async function runApprovedVerification(
     const results: VerificationCommandResult[] = [];
     const removedEnvironmentVariables = new Set<string>();
     let partial = false;
+    let publicationAttempted = false;
     try {
       for (let index = 0; index < options.plan.commands.length; index += 1) {
         const command = options.plan.commands[index]!;
@@ -335,6 +349,7 @@ export async function runApprovedVerification(
       await stageOwnedArtifact(executionStagingFile, `${JSON.stringify(execution, null, 2)}\n`);
 
       await assertProjectRootIdentity(options.plan.projectRoot, rootIdentity);
+      await assertProjectRootIdentity(outputDirectory, outputIdentity);
       const freshReview = await runReview({
         root: options.plan.projectRoot,
         skillsRoot: options.plan.skillsRoot,
@@ -355,6 +370,9 @@ export async function runApprovedVerification(
         ? renderVerifiedMarkdown(report)
         : renderJson(report);
       await stageOwnedArtifact(reportStagingFile, renderedReport);
+      await assertProjectRootIdentity(options.plan.projectRoot, rootIdentity);
+      await assertProjectRootIdentity(outputDirectory, outputIdentity);
+      publicationAttempted = true;
       await publishOwnedArtifactSetExclusively([
         { file: executionStagingFile, path: executionPath },
         { file: reportStagingFile, path: reportPath },
@@ -386,15 +404,43 @@ export async function runApprovedVerification(
         disclaimer: options.plan.disclaimer,
       };
       await validateExecutionArtifact(partialExecution, options.plan);
-      if (executionStagingFile !== undefined) await releaseOwnedFile(executionStagingFile);
-      executionStagingFile = undefined;
-      if (reportStagingFile !== undefined) await releaseOwnedFile(reportStagingFile);
-      reportStagingFile = undefined;
-      await writeArtifactExclusively(
-        executionPath,
-        `${JSON.stringify(partialExecution, null, 2)}\n`,
-      );
-      throw new VerificationPostProcessingError(partialExecution, executionPath);
+      const partialContents = `${JSON.stringify(partialExecution, null, 2)}\n`;
+      if (!publicationAttempted) {
+        if (executionStagingFile !== undefined) {
+          await stageOwnedArtifact(executionStagingFile, partialContents);
+        }
+        if (reportStagingFile !== undefined) await stageOwnedArtifact(reportStagingFile, '');
+      }
+      let outputBoundaryStable = true;
+      try {
+        await assertProjectRootIdentity(outputDirectory, outputIdentity);
+      } catch {
+        outputBoundaryStable = false;
+      }
+      if (outputBoundaryStable) {
+        if (executionStagingFile !== undefined) await releaseOwnedFile(executionStagingFile);
+        executionStagingFile = undefined;
+        if (reportStagingFile !== undefined) await releaseOwnedFile(reportStagingFile);
+        reportStagingFile = undefined;
+        await writeArtifactExclusively(executionPath, partialContents);
+        throw new VerificationPostProcessingError(partialExecution, executionPath);
+      }
+
+      if (executionStagingFile !== undefined) {
+        await closeOwnedFilePreservingEntry(executionStagingFile);
+        executionStagingFile = undefined;
+      }
+      if (reportStagingFile !== undefined) {
+        await closeOwnedFilePreservingEntry(reportStagingFile);
+        reportStagingFile = undefined;
+      }
+      if (lockFile !== undefined) {
+        await closeOwnedFilePreservingEntry(lockFile);
+        lockFile = undefined;
+      }
+      await writeArtifactExclusively(recoveryExecutionPath, partialContents);
+      retainRecoveryDirectory = true;
+      throw new VerificationPostProcessingError(partialExecution, recoveryExecutionPath);
     }
   } finally {
     try {
@@ -403,7 +449,11 @@ export async function runApprovedVerification(
       try {
         if (reportStagingFile !== undefined) await releaseOwnedFile(reportStagingFile);
       } finally {
-        if (lockFile !== undefined) await releaseOwnedFile(lockFile);
+        try {
+          if (lockFile !== undefined) await releaseOwnedFile(lockFile);
+        } finally {
+          if (!retainRecoveryDirectory) await rmdir(recoveryDirectory).catch(() => undefined);
+        }
       }
     }
   }

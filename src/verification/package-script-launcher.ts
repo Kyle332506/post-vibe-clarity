@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { PackageScriptLauncher } from '../model/verification.js';
 
 export interface ResolvedPackageScript {
@@ -119,6 +119,7 @@ async function resolveLocalNodeBin(
       kind: 'node-package-bin',
       executable: process.execPath,
       sha256: await nodeRuntimeDigest(),
+      entrypointArgvIndex: 1,
       entrypoint: { location: match.entrypointLocation, sha256: match.entrypointSha256 },
       packageManifest: { location: match.manifestLocation, sha256: match.manifestSha256 },
     },
@@ -215,13 +216,50 @@ export async function resolvePackageScript(
     return resolveLocalNodeBin(root, declaredExecutable, parsed.slice(1));
   }
 
-  return {
-    argv: [process.execPath, ...parsed.slice(1)],
-    launcher: {
-      policyVersion: 'package-script-launcher/0.1',
-      kind: 'node-runtime',
-      executable: process.execPath,
-      sha256: await nodeRuntimeDigest(),
-    },
+  const nodeArguments = parsed.slice(1);
+  const firstArgument = nodeArguments[0];
+  let entrypointArgvIndex: number | undefined;
+  if (firstArgument !== undefined && !firstArgument.startsWith('-')) {
+    entrypointArgvIndex = 1;
+  } else if (firstArgument === '--check' || firstArgument === '-c') {
+    if (nodeArguments.length !== 2) return undefined;
+    entrypointArgvIndex = 2;
+  } else if (firstArgument === '--eval' || firstArgument === '-e' || firstArgument === '--print' || firstArgument === '-p') {
+    if (nodeArguments[1] === undefined) return undefined;
+  } else if ((firstArgument === '--version' || firstArgument === '-v' || firstArgument === '--help' || firstArgument === '-h') && nodeArguments.length === 1) {
+    // These informational forms do not load a project entrypoint.
+  } else {
+    return undefined;
+  }
+
+  let entrypoint: PackageScriptLauncher['entrypoint'];
+  if (entrypointArgvIndex !== undefined) {
+    const declaredEntrypoint = parsed[entrypointArgvIndex];
+    if (declaredEntrypoint === undefined) return undefined;
+    try {
+      const resolvedRoot = await realpath(root);
+      const entrypointPath = await realpath(resolve(resolvedRoot, declaredEntrypoint));
+      if (!isContained(resolvedRoot, entrypointPath) || !(await stat(entrypointPath)).isFile()) return undefined;
+      const bytes = await readFile(entrypointPath);
+      parsed[entrypointArgvIndex] = entrypointPath;
+      entrypoint = {
+        location: normalizeLocation(relative(resolvedRoot, entrypointPath)),
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  const launcher: PackageScriptLauncher = {
+    policyVersion: 'package-script-launcher/0.1',
+    kind: 'node-runtime',
+    executable: process.execPath,
+    sha256: await nodeRuntimeDigest(),
   };
+  if (entrypointArgvIndex !== undefined && entrypoint !== undefined) {
+    launcher.entrypointArgvIndex = entrypointArgvIndex;
+    launcher.entrypoint = entrypoint;
+  }
+  return { argv: [process.execPath, ...parsed.slice(1)], launcher };
 }

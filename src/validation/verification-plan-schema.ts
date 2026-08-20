@@ -113,11 +113,45 @@ function validateSemantics(plan: VerificationPlan): string[] {
         errors.push(`/commands/${command.id}/argv executable must match the approved launcher`);
       }
       if (launcher?.kind === 'node-package-bin') {
-        if (launcher.entrypoint === undefined || launcher.packageManifest === undefined) {
+        if (launcher.entrypoint === undefined || launcher.entrypointArgvIndex !== 1 || launcher.packageManifest === undefined) {
           errors.push(`/commands/${command.id}/launcher node-package-bin requires entrypoint and package manifest evidence`);
         }
-      } else if (launcher?.entrypoint !== undefined || launcher?.packageManifest !== undefined) {
-        errors.push(`/commands/${command.id}/launcher evidence is only valid for a node-package-bin`);
+      } else if (launcher?.packageManifest !== undefined) {
+        errors.push(`/commands/${command.id}/launcher package manifest evidence is only valid for a node-package-bin`);
+      }
+      if (launcher?.kind === 'direct-executable' && (launcher.entrypoint !== undefined || launcher.entrypointArgvIndex !== undefined)) {
+        errors.push(`/commands/${command.id}/launcher direct executable cannot carry Node entrypoint evidence`);
+      }
+      if (launcher?.kind === 'node-runtime') {
+        const nodeArguments = command.argv.slice(1);
+        const firstArgument = nodeArguments[0];
+        const directEntrypointIndex = firstArgument !== undefined && !firstArgument.startsWith('-')
+          ? 1
+          : firstArgument === '--check' || firstArgument === '-c'
+            ? 2
+            : undefined;
+        const noEntrypointForm = (
+          (['--eval', '-e', '--print', '-p'].includes(firstArgument ?? '') && nodeArguments[1] !== undefined)
+          || (['--version', '-v', '--help', '-h'].includes(firstArgument ?? '') && nodeArguments.length === 1)
+        );
+        const validCheckShape = directEntrypointIndex !== 2 || nodeArguments.length === 2;
+        if (directEntrypointIndex !== undefined && validCheckShape) {
+          if (launcher.entrypoint === undefined || launcher.entrypointArgvIndex !== directEntrypointIndex) {
+            errors.push(`/commands/${command.id}/launcher direct Node script requires exact entrypoint evidence`);
+          }
+        } else if (!noEntrypointForm) {
+          errors.push(`/commands/${command.id}/launcher Node argv is outside the approved shell-free policy`);
+        } else if (launcher.entrypoint !== undefined || launcher.entrypointArgvIndex !== undefined) {
+          errors.push(`/commands/${command.id}/launcher non-file Node form cannot carry entrypoint evidence`);
+        }
+      }
+      if ((launcher?.entrypoint === undefined) !== (launcher?.entrypointArgvIndex === undefined)) {
+        errors.push(`/commands/${command.id}/launcher entrypoint evidence requires its exact argv index`);
+      } else if (launcher?.entrypoint !== undefined && launcher.entrypointArgvIndex !== undefined) {
+        const expectedEntrypoint = resolve(plan.projectRoot, launcher.entrypoint.location);
+        if (command.argv[launcher.entrypointArgvIndex] !== expectedEntrypoint) {
+          errors.push(`/commands/${command.id}/launcher entrypoint must match its exact argv position`);
+        }
       }
     }
   }
