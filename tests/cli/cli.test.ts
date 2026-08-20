@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { renderPlatformCommand } from '../../src/cli/command-renderer.js';
+import { runPlanCommand } from '../../src/cli/commands/plan.js';
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const tsxImport = import.meta.resolve('tsx');
@@ -169,17 +171,44 @@ describe('postvibe review CLI', () => {
     }
   });
 
-  it.each([
-    'skills',
-    'format',
-    'output',
-  ])('rejects repeated review --%s before creating an artifact', async (_option) => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-review-duplicate-'));
-    const duplicateArgs = _option === 'skills'
-      ? ['--skills', join(repositoryRoot, 'tests', 'fixtures', 'skills'), '--skills', join(temporaryRoot, 'missing-skills')]
-      : _option === 'format'
-        ? ['--format', 'json', '--format', 'markdown']
-        : ['--output', join(temporaryRoot, 'first-output'), '--output', join(temporaryRoot, 'second-output')];
+  it('retains legacy last-value behavior for repeated review --skills', async () => {
+    const result = await runCli([
+      'review',
+      'fixtures/web-missing-basics',
+      '--skills',
+      'controlled-missing-skills',
+      '--skills',
+      'tests/fixtures/skills',
+      '--format',
+      'json',
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({ schemaVersion: '0.1' });
+  });
+
+  it('retains legacy last-value behavior for repeated review --format', async () => {
+    const result = await runCli([
+      'review',
+      'fixtures/web-missing-basics',
+      '--skills',
+      'tests/fixtures/skills',
+      '--format',
+      'markdown',
+      '--format',
+      'json',
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({ schemaVersion: '0.1' });
+  });
+
+  it('retains legacy last-value behavior for repeated review --output', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-review-last-output-'));
+    const firstOutput = join(temporaryRoot, 'first-output');
+    const secondOutput = join(temporaryRoot, 'second-output');
 
     try {
       const result = await runCli([
@@ -190,14 +219,16 @@ describe('postvibe review CLI', () => {
         '--format',
         'json',
         '--output',
-        join(temporaryRoot, 'ordinary-output'),
-        ...duplicateArgs,
+        firstOutput,
+        '--output',
+        secondOutput,
       ]);
 
-      expect(result.code).toBe(1);
-      expect(result.stdout).toBe('');
-      expect(result.stderr).toBe(`Option --${_option} may be specified only once.\n`);
-      expect(await readdir(temporaryRoot)).toEqual([]);
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout.startsWith(`${secondOutput}/pvc-`)).toBe(true);
+      await expect(readdir(firstOutput)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await readdir(secondOutput)).toHaveLength(1);
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
     }
@@ -273,6 +304,54 @@ describe('postvibe review CLI', () => {
 });
 
 describe('postvibe plan CLI', () => {
+  it('does not publish when execute-command rendering exceeds its bound', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-plan-overbound-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const planPath = join(temporaryRoot, 'artifacts', 'verification-plan.json');
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      let thrown: unknown;
+      try {
+        await runPlanCommand([
+          projectRoot,
+          '--skills',
+          join(repositoryRoot, 'skills'),
+          '--output',
+          planPath,
+        ], {
+          renderPlatformCommand: (platform, executable, args) => renderPlatformCommand(
+            platform,
+            executable,
+            [...args, 'x'.repeat(16_384)],
+          ),
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toMatchObject({ message: 'Rendered command exceeds the bounded display length.' });
+      expect(await readdir(temporaryRoot)).toEqual(['project']);
+      await expect(readFile(planPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(readFile(join(projectRoot, 'verification-order.log'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+
+      const retried = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        planPath,
+      ]);
+      expect(retried.code).toBe(0);
+      expect(retried.stderr).toBe('');
+      expect(await readdir(join(temporaryRoot, 'artifacts'))).toEqual(['verification-plan.json']);
+      await expect(readFile(join(projectRoot, 'verification-order.log'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
   it('writes one exclusive plan and prints only the bounded approval summary', async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-plan-'));
     const projectRoot = join(temporaryRoot, 'project');

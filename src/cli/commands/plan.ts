@@ -13,6 +13,12 @@ const categories: CommandCategory[] = ['build', 'type-check', 'lint', 'test'];
 const maximumGapIds = 12;
 const maximumGapIdLength = 80;
 
+interface PlanCommandDependencies {
+  renderPlatformCommand: typeof renderPlatformCommand;
+}
+
+const defaultDependencies: PlanCommandDependencies = { renderPlatformCommand };
+
 function parsePlanArgs(args: string[]) {
   let parsed;
   try {
@@ -53,7 +59,10 @@ function gapSummary(plan: VerificationPlan): string {
   return `Gaps (${plan.coverageGaps.length}): ${shown.join(', ')}${suffix}.`;
 }
 
-export async function runPlanCommand(args: string[]): Promise<void> {
+export async function runPlanCommand(
+  args: string[],
+  dependencies: PlanCommandDependencies = defaultDependencies,
+): Promise<void> {
   const { values, positionals } = parsePlanArgs(args);
   if (positionals.length > 1) throw new CliUsageError('Expected at most one project path.');
   if (values.output === undefined) throw new CliUsageError('Expected --output <plan-file>.');
@@ -78,10 +87,8 @@ export async function runPlanCommand(args: string[]): Promise<void> {
     throw error;
   }
 
-  await mkdir(dirname(outputPath), { recursive: true });
-  await writeArtifactExclusively(outputPath, `${JSON.stringify(plan, null, 2)}\n`);
   const outputDirectory = dirname(outputPath);
-  const execute = renderPlatformCommand(process.platform, 'postvibe', [
+  const execute = dependencies.renderPlatformCommand(process.platform, 'postvibe', [
     'execute',
     outputPath,
     '--approve',
@@ -89,7 +96,8 @@ export async function runPlanCommand(args: string[]): Promise<void> {
     '--output',
     outputDirectory,
   ]);
-  process.stdout.write([
+  const artifact = `${JSON.stringify(plan, null, 2)}\n`;
+  const stdout = [
     `Plan: ${outputPath}`,
     `Fingerprint: ${plan.fingerprint}`,
     commandSummary(plan),
@@ -97,5 +105,9 @@ export async function runPlanCommand(args: string[]): Promise<void> {
     `Warning: ${plan.containmentWarning}`,
     `Execute (${execute.shellLabel}): ${execute.command}`,
     '',
-  ].join('\n'));
+  ].join('\n');
+
+  await mkdir(outputDirectory, { recursive: true });
+  await writeArtifactExclusively(outputPath, artifact);
+  process.stdout.write(stdout);
 }
