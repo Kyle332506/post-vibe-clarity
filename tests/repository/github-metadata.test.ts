@@ -38,7 +38,8 @@ describe('GitHub repository metadata', () => {
     expect(source).toContain('version: 9.12.0');
     expect(source).toContain('node-version: 24');
     expect(source).toContain('pnpm install --frozen-lockfile');
-    expect(source).toContain('pnpm test:executor');
+    expect(source).toContain('run: pnpm test:executor');
+    expect(source).not.toContain('run: vitest run tests/verification');
   });
 
   it('keeps protection and CI status-check names aligned', async () => {

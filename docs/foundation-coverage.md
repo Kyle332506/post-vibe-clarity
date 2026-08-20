@@ -12,6 +12,8 @@ Node projects can use unambiguous package-manager evidence and declared package 
 
 The executor filters named sensitive environment variables, bounds and redacts captured output, observes visible file changes, and attempts process-tree termination on timeout or interruption. This is not strong sandboxing. Local scripts may read project or outside files, load `.env`, change files, start processes, and use the network. Passing commands do not establish production behavior, complete test coverage, production readiness, or complete security.
 
+Every OS matrix job calls `pnpm test:executor`. That script builds its own compiled CLI before running the executor and source/compiled acceptance tests, so it does not depend on another job's workspace or an untracked `dist` directory.
+
 ## Runtime state semantics
 
 | Term | Exact v0.2 behavior |

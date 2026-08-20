@@ -12,7 +12,7 @@
     "check": "pnpm build && pnpm test",
     "review": "tsx src/cli.ts review",
     "test": "vitest run",
-    "test:executor": "vitest run tests/verification tests/acceptance/universal-launch-baseline.acceptance.test.ts",
+    "test:executor": "pnpm build && vitest run tests/verification tests/acceptance/universal-launch-baseline.acceptance.test.ts",
     "verify:foundation": "pnpm check && pnpm review fixtures/web-missing-basics --skills skills --format json"
   },
   "engines": {

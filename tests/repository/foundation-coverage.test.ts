@@ -23,7 +23,7 @@ describe('foundation coverage documentation', () => {
     };
     expect(manifest.version).toBe('0.2.0');
     expect(manifest.scripts?.['test:executor']).toBe(
-      'vitest run tests/verification tests/acceptance/universal-launch-baseline.acceptance.test.ts',
+      'pnpm build && vitest run tests/verification tests/acceptance/universal-launch-baseline.acceptance.test.ts',
     );
   });
 
@@ -54,6 +54,7 @@ describe('foundation coverage documentation', () => {
     expect(readme).toContain('postvibe.verification.yaml');
     expect(coverage).toMatch(/exact command declaration[\s\S]{0,120}direct launch/i);
     expect(coverage).toMatch(/does not freeze[\s\S]{0,120}dependencies/i);
+    expect(coverage).toMatch(/every OS matrix job[\s\S]{0,160}own compiled CLI[\s\S]{0,160}another job's workspace/i);
   });
 
   it('states implemented Level 1 evidence and the remaining coverage gaps', async () => {
