@@ -82,6 +82,7 @@ export async function buildVerifiedReport(
       executionId: execution.executionId,
       executionRecordPath,
       observationBoundary: structuredClone(execution.observationBoundary),
+      approvalBoundary: structuredClone(execution.approvalBoundary),
     },
   };
   const reportValidation = await validateVerifiedReadinessReport(

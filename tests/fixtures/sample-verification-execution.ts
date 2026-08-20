@@ -1,5 +1,6 @@
 import type { VerificationExecution } from '../../src/model/verification.js';
 import { sampleVerificationPlan } from './sample-verification-plan.js';
+import { copyCommandApprovalBoundary } from '../../src/verification/command-approval-boundary.js';
 
 export const sampleVerificationExecution: VerificationExecution = {
   schemaId: 'postvibe-verification-execution/0.1',
@@ -55,6 +56,7 @@ export const sampleVerificationExecution: VerificationExecution = {
     inaccessiblePaths: 'observation-fails',
     metadata: 'content-sha256-only',
   },
+  approvalBoundary: copyCommandApprovalBoundary(),
   containmentWarning: sampleVerificationPlan.containmentWarning,
   disclaimer: 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
 };

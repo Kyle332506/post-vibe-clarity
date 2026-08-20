@@ -145,6 +145,7 @@ describe('sample report documentation', () => {
       executionId: execution.executionId,
       executionRecordPath,
       observationBoundary: execution.observationBoundary,
+      approvalBoundary: execution.approvalBoundary,
     });
 
     const mutatedPlan = structuredClone(plan);

@@ -342,6 +342,7 @@ export async function runApprovedVerification(
         results,
         coverageGaps: structuredClone(options.plan.coverageGaps),
         observationBoundary,
+        approvalBoundary: structuredClone(options.plan.approvalBoundary),
         containmentWarning: options.plan.containmentWarning,
         disclaimer: options.plan.disclaimer,
       };
@@ -400,6 +401,7 @@ export async function runApprovedVerification(
         results,
         coverageGaps: [...structuredClone(options.plan.coverageGaps), structuredClone(ORCHESTRATION_COVERAGE_GAP)],
         observationBoundary,
+        approvalBoundary: structuredClone(options.plan.approvalBoundary),
         containmentWarning: options.plan.containmentWarning,
         disclaimer: options.plan.disclaimer,
       };

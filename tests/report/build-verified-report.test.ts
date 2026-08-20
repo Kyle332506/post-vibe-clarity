@@ -24,6 +24,7 @@ describe('buildVerifiedReport', () => {
       executionId: sampleVerificationExecution.executionId,
       executionRecordPath,
       observationBoundary: sampleVerificationExecution.observationBoundary,
+      approvalBoundary: sampleVerificationExecution.approvalBoundary,
     });
     expect(report.findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'secret-exposure.fixture-secret' }),

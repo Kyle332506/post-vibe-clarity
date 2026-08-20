@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { VerificationPlan } from '../../src/model/verification.js';
 import { fingerprintPlan } from '../../src/verification/plan-fingerprint.js';
+import { copyCommandApprovalBoundary } from '../../src/verification/command-approval-boundary.js';
 import { sampleReadinessReport } from './sample-readiness-report.js';
 
 const sha256 = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
@@ -118,6 +119,7 @@ const plan: VerificationPlan = {
     outputLimitBytes: 262144,
     executor: 'local-process/0.1',
   },
+  approvalBoundary: copyCommandApprovalBoundary(),
   containmentWarning,
   disclaimer: 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
 };

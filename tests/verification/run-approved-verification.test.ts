@@ -341,6 +341,7 @@ describe('runApprovedVerification execution and artifacts', () => {
       executionId,
       executionRecordPath: actual.executionPath,
       observationBoundary: actual.execution.observationBoundary,
+      approvalBoundary: actual.execution.approvalBoundary,
     });
     expect(await readFile(actual.executionPath, 'utf8')).toBe(`${JSON.stringify(actual.execution, null, 2)}\n`);
     expect(await readFile(actual.reportPath, 'utf8')).toContain('## Local verification');

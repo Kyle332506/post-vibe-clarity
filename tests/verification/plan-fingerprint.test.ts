@@ -28,6 +28,13 @@ describe('fingerprintPlan', () => {
     expect(fingerprintPlan(second)).toBe(fingerprintPlan(first));
   });
 
+  it('fingerprints the command approval boundary', () => {
+    const changed = structuredClone(sampleVerificationPlan);
+    changed.approvalBoundary.policyVersion = 'changed-policy' as never;
+
+    expect(fingerprintPlan(changed)).not.toBe(fingerprintPlan(sampleVerificationPlan));
+  });
+
   it.each([
     ['command order', (plan: typeof sampleVerificationPlan) => plan.commands.reverse()],
     ['script text', (plan: typeof sampleVerificationPlan) => { plan.commands[0]!.source.declaration = 'different'; }],

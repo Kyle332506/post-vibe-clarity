@@ -16,6 +16,7 @@ export interface FingerprintPlanInput {
   categoryAssessments: VerificationPlan['categoryAssessments'];
   coverageGaps: VerificationPlan['coverageGaps'];
   executionPolicy: VerificationPlan['executionPolicy'];
+  approvalBoundary: VerificationPlan['approvalBoundary'];
   containmentWarning: VerificationPlan['containmentWarning'];
   disclaimer: VerificationPlan['disclaimer'];
 }
@@ -81,6 +82,7 @@ function normalizedFingerprintPayload(plan: FingerprintPlanInput): unknown {
     categoryAssessments: plan.categoryAssessments,
     coverageGaps: plan.coverageGaps,
     executionPolicy: plan.executionPolicy,
+    approvalBoundary: plan.approvalBoundary,
     containmentWarning: plan.containmentWarning,
     disclaimer: plan.disclaimer,
   };

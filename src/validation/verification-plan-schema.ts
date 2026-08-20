@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { Ajv2020 as Ajv2020Constructor } from 'ajv/dist/2020.js';
 import type { FormatsPlugin } from 'ajv-formats';
 import type {
@@ -13,6 +14,7 @@ import type {
 import { compareOrdinal } from '../ordinal.js';
 import type { ValidationResult } from './readiness-schema.js';
 import { fingerprintPlan } from '../verification/plan-fingerprint.js';
+import { COMMAND_APPROVAL_BOUNDARY } from '../verification/command-approval-boundary.js';
 
 const require = createRequire(import.meta.url);
 const Ajv2020 = require('ajv/dist/2020.js') as typeof Ajv2020Constructor;
@@ -82,7 +84,12 @@ export async function validateVerificationPlan(input: unknown): Promise<Validati
   if (!validate(input)) {
     return {
       ok: false,
-      errors: (validate.errors ?? []).map((error) => `${error.instancePath || '/'} ${error.message ?? 'is invalid'}`),
+      errors: (validate.errors ?? []).map((error) => {
+        const path = error.keyword === 'required' && typeof error.params.missingProperty === 'string'
+          ? `${error.instancePath}/${error.params.missingProperty}`
+          : error.instancePath || '/';
+        return `${path} ${error.message ?? 'is invalid'}`;
+      }),
     };
   }
 
@@ -97,6 +104,9 @@ function validateSemantics(plan: VerificationPlan): string[] {
   }
   if (plan.planId !== `pvp-${plan.fingerprint.slice(0, 16)}`) {
     errors.push('/planId must equal pvp-${fingerprint.slice(0, 16)}');
+  }
+  if (!isDeepStrictEqual(plan.approvalBoundary, COMMAND_APPROVAL_BOUNDARY)) {
+    errors.push('/approvalBoundary must match the exact command approval policy');
   }
 
   const commandIds = new Set<string>();

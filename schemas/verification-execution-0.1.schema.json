@@ -18,6 +18,7 @@
     "results",
     "coverageGaps",
     "observationBoundary",
+    "approvalBoundary",
     "containmentWarning",
     "disclaimer"
   ],
@@ -46,6 +47,7 @@
       "items": { "$ref": "#/$defs/coverageGap" }
     },
     "observationBoundary": { "$ref": "#/$defs/observationBoundary" },
+    "approvalBoundary": { "$ref": "#/$defs/approvalBoundary" },
     "containmentWarning": { "const": "Commands run as local processes with the current user privileges; this is not a security sandbox and does not block network or out-of-project filesystem access." },
     "disclaimer": { "const": "This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects." }
   },
@@ -128,6 +130,35 @@
         "nonRegularFiles": { "const": "not-observed" },
         "inaccessiblePaths": { "const": "observation-fails" },
         "metadata": { "const": "content-sha256-only" }
+      }
+    },
+    "approvalBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyVersion", "confirms", "doesNotConfirm"],
+      "properties": {
+        "policyVersion": { "const": "command-authorization/0.2" },
+        "confirms": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "exact-command-declaration" },
+            { "const": "resolved-argument-array" },
+            { "const": "direct-launcher-evidence-checked-before-start" }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "doesNotConfirm": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "transitive-runtime-loads" },
+            { "const": "immutability-between-check-and-use" },
+            { "const": "same-user-process-isolation" },
+            { "const": "operating-system-runtime-closure" }
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        }
       }
     },
     "result": {

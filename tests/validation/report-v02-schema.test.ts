@@ -6,6 +6,7 @@ import {
   sampleExecutionRecordPath,
   sampleVerifiedReadinessReport,
 } from '../fixtures/sample-verified-report.js';
+import { validateExecutionAgainstPlan } from '../../src/validation/verification-execution-schema.js';
 import { sampleVerificationExecution } from '../fixtures/sample-verification-execution.js';
 import { sampleVerificationPlan } from '../fixtures/sample-verification-plan.js';
 
@@ -33,6 +34,23 @@ describe('validateVerifiedReadinessReport', () => {
       sampleVerificationExecution,
       sampleExecutionRecordPath,
     )).toEqual({ ok: true });
+  });
+
+  it('requires execution and report approval boundaries to match the approved plan', async () => {
+    const execution = structuredClone(sampleVerificationExecution);
+    execution.approvalBoundary.doesNotConfirm.reverse();
+    expect(validateExecutionAgainstPlan(execution, sampleVerificationPlan)).toContain(
+      '/approvalBoundary must match the verification plan',
+    );
+
+    const report = await sampleVerifiedReadinessReport();
+    report.verification.approvalBoundary.confirms.reverse();
+    expect((await validateVerifiedReadinessReport(
+      report,
+      sampleVerificationPlan,
+      sampleVerificationExecution,
+      '/evidence/execution.json',
+    )).ok).toBe(false);
   });
 
   it('retains strict report 0.1 fields while requiring a complete verification link', async () => {

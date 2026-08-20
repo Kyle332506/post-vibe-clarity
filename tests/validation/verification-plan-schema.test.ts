@@ -19,6 +19,16 @@ describe('validateVerificationPlan', () => {
     expect(await validateVerificationPlan(sampleVerificationPlan)).toEqual({ ok: true });
   });
 
+  it('rejects a plan without the exact command approval boundary', async () => {
+    const missing = structuredClone(sampleVerificationPlan) as unknown as Record<string, unknown>;
+    delete missing.approvalBoundary;
+    expect((await invalidErrors(missing)).join('\n')).toContain('/approvalBoundary');
+
+    const changed = structuredClone(sampleVerificationPlan);
+    changed.approvalBoundary.doesNotConfirm[0] = 'changed-policy-text' as never;
+    expect((await invalidErrors(changed)).join('\n')).toContain('/approvalBoundary');
+  });
+
   it('rejects unknown fields throughout the strict plan contract', async () => {
     const input = structuredClone(sampleVerificationPlan) as unknown as Record<string, unknown>;
     Reflect.set(input, 'readinessScore', 100);

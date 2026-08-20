@@ -20,6 +20,7 @@ import {
   VERIFICATION_DISCLAIMER,
 } from '../verification/contract-constants.js';
 import { redactCommandOutput } from '../verification/redact-command-output.js';
+import { COMMAND_APPROVAL_BOUNDARY } from '../verification/command-approval-boundary.js';
 import type { ValidationResult } from './readiness-schema.js';
 
 const require = createRequire(import.meta.url);
@@ -105,6 +106,9 @@ export function validateExecutionAgainstPlan(
   if (execution.disclaimer !== plan.disclaimer || execution.disclaimer !== VERIFICATION_DISCLAIMER) {
     errors.push('/disclaimer must match the exact verification policy and plan');
   }
+  if (!isDeepStrictEqual(execution.approvalBoundary, plan.approvalBoundary)) {
+    errors.push('/approvalBoundary must match the verification plan');
+  }
   if (execution.observationBoundary.rootIdentity.realPath !== plan.projectRoot) {
     errors.push('/observationBoundary/rootIdentity/realPath must match the verification plan project root');
   }
@@ -135,6 +139,9 @@ export function validateExecutionAgainstPlan(
 
 function validateSemantics(execution: VerificationExecution): string[] {
   const errors: string[] = [];
+  if (!isDeepStrictEqual(execution.approvalBoundary, COMMAND_APPROVAL_BOUNDARY)) {
+    errors.push('/approvalBoundary must match the exact command approval policy');
+  }
   if (Date.parse(execution.completedAt) < Date.parse(execution.startedAt)) {
     errors.push('/completedAt must be at or after /startedAt');
   }

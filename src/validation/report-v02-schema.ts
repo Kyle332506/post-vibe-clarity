@@ -102,6 +102,9 @@ function linkageErrors(
   if (!isDeepStrictEqual(report.verification.observationBoundary, execution.observationBoundary)) {
     errors.push('/verification/observationBoundary must match the verification execution');
   }
+  if (!isDeepStrictEqual(report.verification.approvalBoundary, execution.approvalBoundary)) {
+    errors.push('/verification/approvalBoundary must match the verification execution');
+  }
   if (report.verification.executionRecordPath.trim().length === 0) {
     errors.push('/verification/executionRecordPath must not be blank');
   }

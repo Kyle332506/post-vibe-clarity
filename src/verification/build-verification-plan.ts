@@ -10,6 +10,7 @@ import { collectProjectInputDigests, digestInputLocations } from './input-digest
 import { fingerprintPlan, type FingerprintPlanInput } from './plan-fingerprint.js';
 import { resolveProjectRoot } from './project-path.js';
 import { CONTAINMENT_WARNING, VERIFICATION_DISCLAIMER } from './contract-constants.js';
+import { copyCommandApprovalBoundary } from './command-approval-boundary.js';
 
 export interface BuildVerificationPlanOptions {
   root: string;
@@ -74,6 +75,7 @@ export async function buildVerificationPlan(options: BuildVerificationPlanOption
       outputLimitBytes: 262144,
       executor: 'local-process/0.1',
     },
+    approvalBoundary: copyCommandApprovalBoundary(),
     containmentWarning: CONTAINMENT_WARNING,
     disclaimer: VERIFICATION_DISCLAIMER,
   };

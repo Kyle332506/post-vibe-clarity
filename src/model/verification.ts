@@ -62,6 +62,21 @@ export interface ExecutionPolicy {
   executor: 'local-process/0.1';
 }
 
+export interface CommandApprovalBoundary {
+  policyVersion: 'command-authorization/0.2';
+  confirms: [
+    'exact-command-declaration',
+    'resolved-argument-array',
+    'direct-launcher-evidence-checked-before-start',
+  ];
+  doesNotConfirm: [
+    'transitive-runtime-loads',
+    'immutability-between-check-and-use',
+    'same-user-process-isolation',
+    'operating-system-runtime-closure',
+  ];
+}
+
 export interface VerificationPlan {
   schemaId: 'postvibe-verification-plan/0.1';
   schemaVersion: '0.1';
@@ -79,6 +94,7 @@ export interface VerificationPlan {
   categoryAssessments: VerificationCategoryAssessment[];
   coverageGaps: VerificationCoverageGap[];
   executionPolicy: ExecutionPolicy;
+  approvalBoundary: CommandApprovalBoundary;
   containmentWarning: string;
   disclaimer: string;
 }
@@ -137,6 +153,7 @@ export interface VerificationExecution {
   results: VerificationCommandResult[];
   coverageGaps: VerificationCoverageGap[];
   observationBoundary: ObservationBoundary;
+  approvalBoundary: CommandApprovalBoundary;
   containmentWarning: string;
   disclaimer: string;
 }
