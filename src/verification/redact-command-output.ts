@@ -25,6 +25,12 @@ interface SensitiveByteObservation {
   sensitiveStart?: number;
 }
 
+interface SensitiveBoundaryTracker {
+  observe(byte: number, offset: number): SensitiveByteObservation;
+  privateKeyOpen(): boolean;
+  reset(): void;
+}
+
 export interface CollectedCommandOutput {
   output: string;
   truncated: boolean;
@@ -328,20 +334,17 @@ function createPrivateKeyMarkerTracker(kind: 'BEGIN' | 'END'): {
   };
 }
 
-function createSensitiveBoundaryTracker(): {
-  observe(byte: number, offset: number): SensitiveByteObservation;
-  reset(): void;
-} {
+function createSensitiveBoundaryTracker(): SensitiveBoundaryTracker {
   const assignments = createAssignmentTracker();
   const privateKeyBegin = createPrivateKeyMarkerTracker('BEGIN');
   const privateKeyEnd = createPrivateKeyMarkerTracker('END');
-  let privateKeyOpen = false;
+  let isPrivateKeyOpen = false;
 
   return {
     observe(byte, offset): SensitiveByteObservation {
-      if (privateKeyOpen) {
+      if (isPrivateKeyOpen) {
         if (privateKeyEnd.observe(byte, offset) !== undefined) {
-          privateKeyOpen = false;
+          isPrivateKeyOpen = false;
           privateKeyBegin.reset();
           assignments.reset();
         }
@@ -351,15 +354,18 @@ function createSensitiveBoundaryTracker(): {
       const assignment = assignments.observe(byte, offset);
       const privateKeyStart = privateKeyBegin.observe(byte, offset);
       if (privateKeyStart !== undefined) {
-        privateKeyOpen = true;
+        isPrivateKeyOpen = true;
         privateKeyEnd.reset();
         assignments.reset();
         return { sensitive: true, sensitiveStart: privateKeyStart };
       }
       return assignment;
     },
+    privateKeyOpen(): boolean {
+      return isPrivateKeyOpen;
+    },
     reset(): void {
-      privateKeyOpen = false;
+      isPrivateKeyOpen = false;
       assignments.reset();
       privateKeyBegin.reset();
       privateKeyEnd.reset();
@@ -485,9 +491,10 @@ export function createCommandOutputCollector(
         if (rawTruncated) {
           const rawHead = decodeCompletePrefix(head.subarray(0, headLength));
           const rawTail = decodeCompleteSuffix(tail.subarray(0, tailLength));
-          raw = `${redactPrivateKeys(rawHead)}${truncationMarker}${redactPrivateKeyTail(
-            tailSensitivity[0] === 1 ? redactBoundaryTail(rawTail) : rawTail,
-          )}`;
+          const redactedTail = boundaryTracker.privateKeyOpen()
+            ? '[REDACTED]'
+            : redactPrivateKeyTail(tailSensitivity[0] === 1 ? redactBoundaryTail(rawTail) : rawTail);
+          raw = `${redactPrivateKeys(rawHead)}${truncationMarker}${redactedTail}`;
         } else {
           const decoder = new TextDecoder('utf-8');
           raw = decoder.decode(head.subarray(0, headLength), { stream: true })

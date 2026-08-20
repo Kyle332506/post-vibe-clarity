@@ -606,6 +606,36 @@ describe('runApprovedVerification execution and artifacts', () => {
     expect(await readFile(actual.executionPath, 'utf8')).not.toContain(rawCredential);
   });
 
+  it('does not persist later lines from a replacement executor truncated inside a private key', async () => {
+    const planned = await fixture();
+    const secondKeyLine = 'RECORDER_SECOND_KEY_LINE_6nT3';
+    const thirdKeyLine = 'RECORDER_THIRD_KEY_LINE_8pW5';
+    const executor = executorFrom(async (id) => ({
+      result: {
+        ...result(id),
+        output: [
+          'safe-prefix',
+          '-----BEGIN PRIVATE KEY-----',
+          'A'.repeat(300_000),
+          secondKeyLine,
+          thirdKeyLine,
+          '',
+        ].join('\n'),
+        outputTruncated: true,
+      },
+      removedEnvironmentVariables: [],
+    }));
+
+    const actual = await runApprovedVerification(options(planned, executor));
+    const persisted = await readFile(actual.executionPath, 'utf8');
+
+    expect(actual.execution.results[0]!.output).toContain('[REDACTED]');
+    expect(actual.execution.results[0]!.output).not.toContain(secondKeyLine);
+    expect(actual.execution.results[0]!.output).not.toContain(thirdKeyLine);
+    expect(persisted).not.toContain(secondKeyLine);
+    expect(persisted).not.toContain(thirdKeyLine);
+  });
+
   it('turns contradictory replacement-executor evidence into sanitized partial evidence', async () => {
     const planned = await fixture();
     const executor = executorFrom(async (id) => ({

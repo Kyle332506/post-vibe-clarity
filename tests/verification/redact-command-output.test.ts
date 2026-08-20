@@ -150,6 +150,35 @@ describe('command output redaction', () => {
     expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(COMMAND_OUTPUT_LIMIT_BYTES);
   });
 
+  it('drops every retained tail line when truncation ends inside a private key', () => {
+    const collector = createCommandOutputCollector(192);
+    collector.append('safe-prefix\n');
+    collector.append('-----BEGIN PRIVATE KEY-----\n');
+    collector.append(`${'A'.repeat(240)}\n`);
+    collector.append('SECOND_RETAINED_KEY_LINE_7vK2\n');
+    collector.append('THIRD_RETAINED_KEY_LINE_9mQ4\n');
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output).toContain('[REDACTED]');
+    expect(result.output).not.toContain('SECOND_RETAINED_KEY_LINE_7vK2');
+    expect(result.output).not.toContain('THIRD_RETAINED_KEY_LINE_9mQ4');
+  });
+
+  it('preserves an ordinary safe tail after truncation', () => {
+    const collector = createCommandOutputCollector(192);
+    collector.append('safe-prefix\n');
+    collector.append(`${'x'.repeat(240)}\n`);
+    collector.append('SAFE_FINAL_LINE_4jR8\n');
+
+    const result = collector.finish();
+
+    expect(result.truncated).toBe(true);
+    expect(result.output).toContain('[... output truncated ...]');
+    expect(result.output).toContain('SAFE_FINAL_LINE_4jR8');
+  });
+
   it('does not retain a single-line authorization value when its assignment is wholly omitted', () => {
     const halfLimit = COMMAND_OUTPUT_LIMIT_BYTES / 2;
     const secret = 'authorization-single-line-secret';
