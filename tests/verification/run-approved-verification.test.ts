@@ -1,8 +1,12 @@
-import { access, mkdir, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { VerificationCommandResult, VerificationPlan } from '../../src/model/verification.js';
+import type {
+  VerificationCommandResult,
+  VerificationExecution,
+  VerificationPlan,
+} from '../../src/model/verification.js';
 import type {
   CommandExecutionResult,
   CommandExecutor,
@@ -14,7 +18,9 @@ import {
   runApprovedVerification,
   type RunApprovedVerificationOptions,
 } from '../../src/verification/run-approved-verification.js';
+import { ORCHESTRATION_COVERAGE_GAP } from '../../src/verification/contract-constants.js';
 import { STALE_PLAN_ERROR } from '../../src/verification/validate-plan-state.js';
+import { validateVerificationExecution } from '../../src/validation/verification-execution-schema.js';
 
 const startedAt = '2026-08-18T12:01:00.000Z';
 const executionId = 'pve-20260818120100000';
@@ -741,6 +747,41 @@ describe('runApprovedVerification execution and artifacts', () => {
     expect(persisted.status).toBe('partial');
     expect(persisted.coverageGaps.at(-1)?.id).toBe('orchestration.post-processing');
     expect(await readFile(reportPath, 'utf8')).toBe('foreign report target\n');
+  });
+
+  it('recovers partial evidence when a command occupies the final execution path', async () => {
+    const planned = await fixture();
+    const plannedExecutionPath = join(planned.outputDirectory, `${executionId}.execution.json`);
+    const plannedReportPath = join(planned.outputDirectory, `${executionId}.report.md`);
+    const executor = executorFrom(async (id, _context, index) => {
+      if (index === 0) await writeFile(plannedExecutionPath, 'foreign execution target\n');
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+    let failure: unknown;
+
+    try {
+      await runApprovedVerification(options(planned, executor));
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      name: 'VerificationPostProcessingError',
+      execution: expect.objectContaining({ status: 'partial' }),
+      executionPath: expect.stringContaining('postvibe-partial-'),
+    });
+    const recoveryPath = (failure as { executionPath?: unknown }).executionPath;
+    expect(typeof recoveryPath).toBe('string');
+    if (typeof recoveryPath !== 'string') throw new Error('Collision recovery path was not published.');
+    expect(recoveryPath).not.toBe(plannedExecutionPath);
+    const recoveredExecution = JSON.parse(await readFile(recoveryPath, 'utf8')) as VerificationExecution;
+    expect(await readFile(plannedExecutionPath, 'utf8')).toBe('foreign execution target\n');
+    expect(await validateVerificationExecution(recoveredExecution)).toEqual({ ok: true });
+    expect(recoveredExecution.coverageGaps).toContainEqual(ORCHESTRATION_COVERAGE_GAP);
+    await expect(access(plannedReportPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    const stableOutputEntries = await readdir(planned.outputDirectory);
+    expect(stableOutputEntries.filter((entry) => entry.endsWith('.tmp') || entry.endsWith('.lock'))).toEqual([]);
+    temporaryDirectories.push(dirname(recoveryPath));
   });
 
   it('does not scan a replacement root and publishes sanitized partial evidence to an external artifact boundary', async () => {

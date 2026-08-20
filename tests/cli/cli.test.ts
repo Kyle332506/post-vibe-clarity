@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { renderPlatformCommand } from '../../src/cli/command-renderer.js';
@@ -705,6 +705,72 @@ describe('postvibe execute CLI', () => {
       expect(entries).toEqual(['plan.json', 'project']);
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('prints the recovered partial execution path without a report path after a final execution collision', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-cli-execute-collision-'));
+    const projectRoot = join(temporaryRoot, 'project');
+    const planPath = join(temporaryRoot, 'plan.json');
+    const outputDirectory = join(temporaryRoot, 'artifacts');
+    let recoveryDirectory: string | undefined;
+
+    try {
+      await cp(join(repositoryRoot, 'fixtures', 'verification-node'), projectRoot, { recursive: true });
+      await mkdir(join(projectRoot, 'scripts'));
+      await writeFile(join(projectRoot, 'scripts', 'occupy-execution-target.mjs'), [
+        "import { readdirSync, writeFileSync } from 'node:fs';",
+        "import { join } from 'node:path';",
+        `const outputDirectory = ${JSON.stringify(outputDirectory)};`,
+        "const temporaryName = readdirSync(outputDirectory).find((name) => name.endsWith('.execution.json.tmp'));",
+        "if (temporaryName === undefined) throw new Error('controlled missing staged execution');",
+        "writeFileSync(join(outputDirectory, temporaryName.slice(0, -4)), 'foreign execution target controlled value\\n');",
+        '',
+      ].join('\n'));
+      await writeFile(join(projectRoot, 'package.json'), `${JSON.stringify({
+        name: 'postvibe-cli-execute-collision-fixture',
+        private: true,
+        packageManager: 'npm@11.5.1',
+        scripts: {
+          build: 'node scripts/occupy-execution-target.mjs',
+        },
+      }, null, 2)}\n`);
+      const planned = await runCli([
+        'plan',
+        projectRoot,
+        '--skills',
+        join(repositoryRoot, 'skills'),
+        '--output',
+        planPath,
+      ]);
+      expect(planned.code).toBe(0);
+      const plan = JSON.parse(await readFile(planPath, 'utf8')) as { fingerprint: string };
+
+      const result = await runCli([
+        'execute',
+        planPath,
+        '--approve',
+        plan.fingerprint,
+        '--output',
+        outputDirectory,
+        '--format',
+        'json',
+      ]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      const recoveryMatch = /^Mandatory post-command processing did not complete\. Partial execution evidence was published at: (.+postvibe-partial-.+\.execution\.json)\n$/u.exec(result.stderr);
+      expect(recoveryMatch).not.toBeNull();
+      const recoveryPath = recoveryMatch?.[1];
+      if (recoveryPath === undefined) throw new Error('CLI output omitted the recovered execution path.');
+      recoveryDirectory = dirname(recoveryPath);
+      expect(JSON.parse(await readFile(recoveryPath, 'utf8'))).toMatchObject({ status: 'partial' });
+      expect(result.stderr).not.toContain('Report:');
+      expect(result.stderr).not.toContain('.report.');
+      expect(result.stderr).not.toContain('foreign execution target controlled value');
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+      if (recoveryDirectory !== undefined) await rm(recoveryDirectory, { recursive: true, force: true });
     }
   });
 

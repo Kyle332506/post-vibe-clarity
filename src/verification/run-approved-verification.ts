@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import {
   ArtifactFileCollisionError,
+  ArtifactFileOwnershipError,
   acquireOwnedFileExclusively,
   artifactTemporaryPath,
   closeOwnedFilePreservingEntry,
@@ -62,6 +63,11 @@ export interface ApprovedVerificationResult {
   report: VerifiedReadinessReport;
   executionPath: string;
   reportPath: string;
+}
+
+interface PartialPublicationResult {
+  executionPath: string;
+  retainedRecoveryDirectory: boolean;
 }
 
 export class VerificationPostProcessingError extends Error {
@@ -167,6 +173,26 @@ async function validateExecutionArtifact(
   if (linkageErrors.length > 0) {
     throw invalidArtifact('Verification execution linkage is invalid', linkageErrors);
   }
+}
+
+async function publishPartialExecution(
+  partialContents: string,
+  executionPath: string,
+  recoveryExecutionPath: string,
+  outputBoundaryStable: boolean,
+): Promise<PartialPublicationResult> {
+  if (outputBoundaryStable) {
+    try {
+      await writeArtifactExclusively(executionPath, partialContents);
+      return { executionPath, retainedRecoveryDirectory: false };
+    } catch (error) {
+      if (!(error instanceof ArtifactFileCollisionError)
+        && !(error instanceof ArtifactFileOwnershipError)) throw error;
+    }
+  }
+
+  await writeArtifactExclusively(recoveryExecutionPath, partialContents);
+  return { executionPath: recoveryExecutionPath, retainedRecoveryDirectory: true };
 }
 
 export async function runApprovedVerification(
@@ -424,25 +450,28 @@ export async function runApprovedVerification(
         executionStagingFile = undefined;
         if (reportStagingFile !== undefined) await releaseOwnedFile(reportStagingFile);
         reportStagingFile = undefined;
-        await writeArtifactExclusively(executionPath, partialContents);
-        throw new VerificationPostProcessingError(partialExecution, executionPath);
+      } else {
+        if (executionStagingFile !== undefined) {
+          await closeOwnedFilePreservingEntry(executionStagingFile);
+          executionStagingFile = undefined;
+        }
+        if (reportStagingFile !== undefined) {
+          await closeOwnedFilePreservingEntry(reportStagingFile);
+          reportStagingFile = undefined;
+        }
+        if (lockFile !== undefined) {
+          await closeOwnedFilePreservingEntry(lockFile);
+          lockFile = undefined;
+        }
       }
-
-      if (executionStagingFile !== undefined) {
-        await closeOwnedFilePreservingEntry(executionStagingFile);
-        executionStagingFile = undefined;
-      }
-      if (reportStagingFile !== undefined) {
-        await closeOwnedFilePreservingEntry(reportStagingFile);
-        reportStagingFile = undefined;
-      }
-      if (lockFile !== undefined) {
-        await closeOwnedFilePreservingEntry(lockFile);
-        lockFile = undefined;
-      }
-      await writeArtifactExclusively(recoveryExecutionPath, partialContents);
-      retainRecoveryDirectory = true;
-      throw new VerificationPostProcessingError(partialExecution, recoveryExecutionPath);
+      const published = await publishPartialExecution(
+        partialContents,
+        executionPath,
+        recoveryExecutionPath,
+        outputBoundaryStable,
+      );
+      retainRecoveryDirectory = published.retainedRecoveryDirectory;
+      throw new VerificationPostProcessingError(partialExecution, published.executionPath);
     }
   } finally {
     try {
