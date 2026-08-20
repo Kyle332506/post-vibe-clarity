@@ -20,8 +20,12 @@ function detection<T extends string>(
   return { value, confidence, evidence: [{ kind: 'file', location, summary }] };
 }
 
-export async function discoverProject(root: string, now: () => string): Promise<CapabilityManifest> {
-  const files = await listProjectFiles(root);
+export async function discoverProject(
+  root: string,
+  now: () => string,
+  excludedArtifactPaths: readonly string[] = [],
+): Promise<CapabilityManifest> {
+  const files = await listProjectFiles(root, excludedArtifactPaths);
   const artifacts: Detection<ArtifactType>[] = [];
   const frameworks: Detection<string>[] = [];
   const capabilities: Detection<string>[] = [];

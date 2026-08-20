@@ -73,11 +73,13 @@ export const privacyNoticeCheck: CheckImplementation = {
   version: '0.1.0',
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
-  async run({ root, manifest }) {
+  async run({ root, manifest, excludedArtifactPaths }) {
     const collectionCapability = manifest.capabilities.find((capability) => capability.value === 'collects-personal-data');
     if (!collectionCapability) return [notApplicableFinding()];
 
-    const policyFiles = (await listProjectFiles(root)).filter((file) => file.toLowerCase().includes('privacy'));
+    const policyFiles = (await listProjectFiles(root, excludedArtifactPaths)).filter(
+      (file) => file.toLowerCase().includes('privacy'),
+    );
     if (policyFiles.length > 0) return [policyCandidateFinding(policyFiles)];
 
     return [missingPolicyFinding(collectionCapability.evidence)];

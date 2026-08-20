@@ -6,6 +6,7 @@ export type RequiredAccess = 'filesystem-read' | 'local-command' | 'network' | '
 export interface CheckContext {
   root: string;
   manifest: CapabilityManifest;
+  excludedArtifactPaths?: readonly string[];
 }
 
 export interface CheckImplementation {

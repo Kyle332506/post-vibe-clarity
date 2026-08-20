@@ -1,12 +1,14 @@
 import { timingSafeEqual } from 'node:crypto';
-import { lstat, mkdir, open, readFile, unlink } from 'node:fs/promises';
-import type { FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   ArtifactFileCollisionError,
+  acquireOwnedFileExclusively,
   artifactTemporaryPath,
+  releaseOwnedFile,
   writeArtifactExclusively,
 } from '../cli/artifact-output.js';
+import type { OwnedFile } from '../cli/artifact-output.js';
 import type { VerifiedReadinessReport } from '../model/verified-report.js';
 import type {
   VerificationCommand,
@@ -51,7 +53,10 @@ const approvalError = 'Approval fingerprint does not match the verification plan
 const invalidPlanError = 'Verification plan failed versioned runtime validation.';
 const invalidExecutionError = 'Verification execution failed versioned runtime validation.';
 const interruptedReason = 'Command was not run because verification was interrupted.';
-const executorFailureReason = 'Command was not run because the executor failed unexpectedly.';
+const currentExecutorFailureReason = 'Command outcome is unavailable because the executor failed after the command may have started; the command may have run.';
+const remainingExecutorFailureReason = 'Command was not run because verification stopped after an unexpected executor failure.';
+const currentInterruptedReason = 'Command outcome is unavailable because verification was interrupted after the command may have started; the command may have run.';
+const mismatchedResultReason = 'Command outcome is unavailable because the executor returned evidence for a different command; the command may have run.';
 
 function constantTimeTextEqual(left: unknown, right: unknown): boolean {
   const leftIsString = typeof left === 'string';
@@ -127,8 +132,9 @@ export async function runApprovedVerification(
   const planValidation = await validateVerificationPlan(options.plan);
   if (!planValidation.ok) throw invalidArtifact(invalidPlanError, planValidation.errors);
 
-  await requireMatchingPlanArtifact(options.plan, options.planArtifactPath);
-  await validatePlanState(options.plan, { planArtifactPath: options.planArtifactPath });
+  const planArtifactPath = await realpath(options.planArtifactPath);
+  await requireMatchingPlanArtifact(options.plan, planArtifactPath);
+  await validatePlanState(options.plan, { planArtifactPath });
 
   const startedAt = now();
   const executionId = `pve-${startedAt.replace(/\D/g, '')}`;
@@ -141,8 +147,7 @@ export async function runApprovedVerification(
   if ([executionPath, reportPath, lockPath, ...temporaryPaths].some(containsMarkdownLineOrControl)) {
     throw new Error('Artifact paths must not contain line or control characters.');
   }
-  let lockFile: FileHandle | undefined;
-  let acquiredLock = false;
+  let lockFile: OwnedFile | undefined;
 
   await mkdir(outputDirectory, { recursive: true });
   for (const path of [executionPath, reportPath, lockPath, ...temporaryPaths]) {
@@ -151,13 +156,11 @@ export async function runApprovedVerification(
 
   try {
     try {
-      lockFile = await open(lockPath, 'wx');
-      acquiredLock = true;
-      await lockFile.writeFile(`${executionId}\n`, 'utf8');
-      await lockFile.sync();
+      lockFile = await acquireOwnedFileExclusively(lockPath);
+      await lockFile.handle.writeFile(`${executionId}\n`, 'utf8');
+      await lockFile.handle.sync();
     } catch (error) {
-      await lockFile?.close().catch(() => undefined);
-      lockFile = undefined;
+      if (lockFile !== undefined) await releaseOwnedFile(lockFile);
       if (isAlreadyExistsError(error)) {
         throw new ArtifactFileCollisionError(`Artifact file already exists; no file was overwritten: ${lockPath}`);
       }
@@ -168,7 +171,7 @@ export async function runApprovedVerification(
     const results: VerificationCommandResult[] = [];
     const removedEnvironmentVariables = new Set<string>();
     const excludedArtifactPaths = [
-      options.planArtifactPath,
+      planArtifactPath,
       executionPath,
       reportPath,
       lockPath,
@@ -194,6 +197,14 @@ export async function runApprovedVerification(
           excludedArtifactPaths,
           now,
         });
+        if (commandExecution.result.commandId !== command.id) {
+          partial = true;
+          results.push(unverifiedResult(command, mismatchedResultReason));
+          results.push(...options.plan.commands.slice(index + 1).map((remaining) => (
+            unverifiedResult(remaining, remainingExecutorFailureReason)
+          )));
+          break;
+        }
         results.push(commandExecution.result);
         for (const name of commandExecution.removedEnvironmentVariables) {
           removedEnvironmentVariables.add(name);
@@ -208,9 +219,12 @@ export async function runApprovedVerification(
         }
       } catch {
         partial = true;
-        const reason = options.signal.aborted ? interruptedReason : executorFailureReason;
-        results.push(...options.plan.commands.slice(index).map((remaining) => (
-          unverifiedResult(remaining, reason)
+        results.push(unverifiedResult(
+          command,
+          options.signal.aborted ? currentInterruptedReason : currentExecutorFailureReason,
+        ));
+        results.push(...options.plan.commands.slice(index + 1).map((remaining) => (
+          unverifiedResult(remaining, options.signal.aborted ? interruptedReason : remainingExecutorFailureReason)
         )));
         break;
       }
@@ -244,6 +258,7 @@ export async function runApprovedVerification(
       root: options.plan.projectRoot,
       skillsRoot: options.plan.skillsRoot,
       now,
+      excludedArtifactPaths,
     });
     const report = await buildVerifiedReport(freshReview, options.plan, execution, executionPath);
     const reportValidation = await validateVerifiedReadinessReport(
@@ -262,8 +277,7 @@ export async function runApprovedVerification(
 
     return { execution, report, executionPath, reportPath };
   } finally {
-    await lockFile?.close().catch(() => undefined);
-    if (acquiredLock) await unlink(lockPath).catch(() => undefined);
+    if (lockFile !== undefined) await releaseOwnedFile(lockFile);
   }
 }
 

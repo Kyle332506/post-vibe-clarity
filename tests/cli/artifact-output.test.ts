@@ -1,9 +1,12 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ArtifactFileCollisionError,
+  ArtifactFileOwnershipError,
+  acquireOwnedFileExclusively,
+  publishOwnedFileExclusively,
   writeArtifactExclusively,
 } from '../../src/cli/artifact-output.js';
 
@@ -64,5 +67,21 @@ describe('writeArtifactExclusively', () => {
     await expect(writeArtifactExclusively(path, '{"partial":')).rejects.toThrow();
 
     await expectMissing(path);
+  });
+
+  it('fails closed and preserves a foreign replacement of its acquired temporary file', async () => {
+    const root = await temporaryRoot('postvibe-artifact-temp-replacement-');
+    const path = join(root, 'pve-20260818120100000.execution.json');
+    const temporaryPath = `${path}.tmp`;
+    const owned = await acquireOwnedFileExclusively(temporaryPath);
+    await owned.handle.writeFile('{"owned":true}\n', 'utf8');
+    await owned.handle.sync();
+    await unlink(temporaryPath);
+    await writeFile(temporaryPath, 'foreign replacement\n');
+
+    await expect(publishOwnedFileExclusively(owned, path)).rejects.toThrow(ArtifactFileOwnershipError);
+
+    await expectMissing(path);
+    expect(await readFile(temporaryPath, 'utf8')).toBe('foreign replacement\n');
   });
 });

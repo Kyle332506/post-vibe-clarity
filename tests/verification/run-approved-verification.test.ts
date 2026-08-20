@@ -1,6 +1,6 @@
-import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VerificationCommandResult, VerificationPlan } from '../../src/model/verification.js';
 import type {
@@ -86,6 +86,26 @@ async function fixture(): Promise<{
       'modes: [verify]',
       'maxActionLevel: 1',
       'checks: [universal-verification.commands]',
+      '',
+    ].join('\n'),
+    'secret-exposure/SKILL.md': [
+      '---',
+      'name: secret-exposure',
+      'description: Test secret exposure skill.',
+      'license: Apache-2.0',
+      '---',
+      '',
+      '# Secret exposure',
+      '',
+    ].join('\n'),
+    'secret-exposure/readiness.yaml': [
+      'schemaVersion: "0.1"',
+      'id: secret-exposure',
+      'skillVersion: "0.1.0"',
+      'domains: [security-privacy]',
+      'modes: [audit, verify]',
+      'maxActionLevel: 0',
+      'checks: [secret-exposure.scan]',
       '',
     ].join('\n'),
   });
@@ -304,12 +324,16 @@ describe('runApprovedVerification execution and artifacts', () => {
     expect(await readFile(actual.executionPath, 'utf8')).toBe(`${JSON.stringify(actual.execution, null, 2)}\n`);
     expect(await readFile(actual.reportPath, 'utf8')).toContain('## Local verification');
     await expect(access(join(planned.outputDirectory, `${executionId}.lock`))).rejects.toMatchObject({ code: 'ENOENT' });
+    const canonicalPlanArtifactPath = await realpath(planned.planArtifactPath);
     for (const context of executor.contexts) {
-      expect(context.excludedArtifactPaths).toEqual(expect.arrayContaining([
-        planned.planArtifactPath,
+      expect(context.excludedArtifactPaths).toEqual([
+        canonicalPlanArtifactPath,
         actual.executionPath,
         actual.reportPath,
-      ]));
+        join(planned.outputDirectory, `${executionId}.lock`),
+        `${actual.executionPath}.tmp`,
+        `${actual.reportPath}.tmp`,
+      ]);
     }
   });
 
@@ -336,6 +360,25 @@ describe('runApprovedVerification execution and artifacts', () => {
 
     await expectNoExecution(executor, runApprovedVerification(options(planned, executor, {
       planArtifactPath: addedSourcePath,
+    })));
+  });
+
+  it('canonicalizes a relative external plan path before excluding it from project state', async () => {
+    const planned = await fixture();
+    const ignoredPlanPath = join(planned.outputDirectory, 'approved-plan.json');
+    await rename(planned.planArtifactPath, ignoredPlanPath);
+    const externalRoot = await mkdtemp(join(process.cwd(), '.postvibe-relative-plan-'));
+    temporaryDirectories.push(externalRoot);
+    const externalPlanPath = join(externalRoot, 'approved-plan.json');
+    await writeFile(externalPlanPath, `${JSON.stringify(planned.plan, null, 2)}\n`);
+    const relativeExternalPlanPath = relative(process.cwd(), externalPlanPath);
+    await writeFiles(planned.root, {
+      [relativeExternalPlanPath]: 'ordinary project input with the same relative path\n',
+    });
+    const executor = executorFrom(async (id) => ({ result: result(id), removedEnvironmentVariables: [] }));
+
+    await expectNoExecution(executor, runApprovedVerification(options(planned, executor, {
+      planArtifactPath: relativeExternalPlanPath,
     })));
   });
 
@@ -394,22 +437,87 @@ describe('runApprovedVerification execution and artifacts', () => {
     expect(actual.execution.results[1]).toEqual(expect.objectContaining({
       commandId: 'package-script:test',
       status: 'unverified',
-      unverifiedReason: expect.stringMatching(/executor failed/i),
+      unverifiedReason: expect.stringMatching(/outcome.*unavailable.*may have run/i),
     }));
     expect(JSON.stringify(actual.execution)).not.toContain('project-controlled secret text');
   });
 
-  it('releases its acquired lock when unsafe executor output prevents a valid partial record', async () => {
+  it('distinguishes the possibly-run rejected command from later commands that were not run', async () => {
     const planned = await fixture();
-    const executor = executorFrom(async () => ({
-      result: result('not-an-approved-command'),
+    const executor = executorFrom(async () => {
+      throw new Error('post-command snapshot rejected');
+    });
+
+    const actual = await runApprovedVerification(options(planned, executor));
+
+    expect(actual.execution.results).toEqual([
+      expect.objectContaining({
+        commandId: 'package-script:build',
+        status: 'unverified',
+        unverifiedReason: expect.stringMatching(/outcome.*unavailable.*may have run/i),
+      }),
+      expect.objectContaining({
+        commandId: 'package-script:test',
+        status: 'unverified',
+        unverifiedReason: expect.stringMatching(/not run/i),
+      }),
+    ]);
+    expect(JSON.stringify(actual.execution)).not.toContain('post-command snapshot rejected');
+  });
+
+  it('rejects swapped executor result IDs as sanitized partial evidence before accumulation', async () => {
+    const planned = await fixture();
+    const executor = executorFrom(async (_id, _context, index) => ({
+      result: result(index === 0 ? 'package-script:test' : 'package-script:build'),
       removedEnvironmentVariables: [],
     }));
+
+    const actual = await runApprovedVerification(options(planned, executor));
+
+    expect(executor.calls).toEqual(['package-script:build']);
+    expect(actual.execution.status).toBe('partial');
+    expect(actual.execution.results.map(({ commandId }) => commandId)).toEqual([
+      'package-script:build',
+      'package-script:test',
+    ]);
+    expect(actual.execution.results[0]).toEqual(expect.objectContaining({
+      status: 'unverified',
+      unverifiedReason: expect.stringMatching(/outcome.*unavailable.*may have run/i),
+    }));
+    expect(JSON.stringify(actual.execution)).not.toContain('swapped');
+  });
+
+  it('releases its acquired lock when unsafe executor output prevents a valid partial record', async () => {
+    const planned = await fixture();
+    const executor = executorFrom(async (id) => {
+      const unsafe = result(id);
+      unsafe.fileChanges = [
+        { path: 'z-last.ts', kind: 'added' },
+        { path: 'a-first.ts', kind: 'added' },
+      ];
+      return { result: unsafe, removedEnvironmentVariables: [] };
+    });
     const lockPath = join(planned.outputDirectory, `${executionId}.lock`);
 
     await expect(runApprovedVerification(options(planned, executor))).rejects.toThrow(/validation|linkage/i);
 
     await expect(access(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('fails lock release closed and preserves a foreign lock-path replacement', async () => {
+    const planned = await fixture();
+    const lockPath = join(planned.outputDirectory, `${executionId}.lock`);
+    const executor = executorFrom(async (id, _context, index) => {
+      if (index === 0) {
+        await unlink(lockPath);
+        await writeFile(lockPath, 'foreign replacement lock\n');
+      }
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+
+    await expect(runApprovedVerification(options(planned, executor))).rejects.toThrow(/ownership/i);
+
+    expect(await readFile(lockPath, 'utf8')).toBe('foreign replacement lock\n');
   });
 
   it('runs the fresh Level 0 review after commands change the resulting tree', async () => {
@@ -427,6 +535,30 @@ describe('runApprovedVerification execution and artifacts', () => {
     expect(actual.report.findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'launch-essentials.privacy-notice-candidate-found' }),
     ]));
+  });
+
+  it('keeps artifact JSON out of the fresh Level 0 scan in an ordinary output directory', async () => {
+    const planned = await fixture();
+    planned.plan.containmentWarning = "apiKey='artifact-only-controlled-value'";
+    planned.plan.fingerprint = fingerprintPlan(planned.plan);
+    planned.plan.planId = `pvp-${planned.plan.fingerprint.slice(0, 16)}`;
+    await writeFile(planned.planArtifactPath, `${JSON.stringify(planned.plan, null, 2)}\n`);
+    const executor = executorFrom(async (id, context, index) => {
+      if (index === 0) {
+        await writeFile(join(context.root, 'src', 'generated.ts'), "export const apiKey = 'command-tree-controlled-value';\n");
+      }
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+
+    const actual = await runApprovedVerification(options(planned, executor, {
+      approvedFingerprint: planned.plan.fingerprint,
+      outputDirectory: join(planned.root, 'reports'),
+    }));
+
+    const secretLocations = actual.report.findings
+      .filter(({ checkId }) => checkId === 'secret-exposure.scan')
+      .flatMap(({ evidence }) => evidence.map(({ location }) => location));
+    expect(secretLocations).toEqual(['src/generated.ts:1']);
   });
 
   it('uses the deterministic JSON report target when requested', async () => {

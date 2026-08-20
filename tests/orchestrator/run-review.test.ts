@@ -61,6 +61,31 @@ describe('runReview', () => {
     expect(markdownContainsControlledValue).toBe(false);
   });
 
+  it('optionally excludes only exact artifact paths from discovery and check scans', async () => {
+    const projectRoot = fixture('web-missing-basics');
+    const secretPath = join(projectRoot, 'src', 'config.ts');
+
+    const ordinary = await runReview({
+      root: projectRoot,
+      skillsRoot,
+      now: () => fixedTimestamp,
+    });
+    const excludingArtifact = await runReview({
+      root: projectRoot,
+      skillsRoot,
+      now: () => fixedTimestamp,
+      excludedArtifactPaths: [secretPath],
+    });
+
+    expect(ordinary.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'secret-exposure.src/config.ts:1.quoted-credential-assignment' }),
+    ]));
+    expect(excludingArtifact.findings.some(({ id }) => id.includes('src/config.ts'))).toBe(false);
+    expect(excludingArtifact.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'launch-essentials.privacy-notice-missing' }),
+    ]));
+  });
+
   it('reports a routed check without an implementation as unverified', async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-unavailable-'));
     const unavailableSkill = join(temporaryRoot, 'unavailable-check');

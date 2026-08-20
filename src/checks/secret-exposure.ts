@@ -237,9 +237,9 @@ export const secretExposureCheck: CheckImplementation = {
   version: '0.1.0',
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
-  async run({ root }) {
+  async run({ root, excludedArtifactPaths }) {
     const findings: Finding[] = [];
-    const files = await listProjectFiles(root);
+    const files = await listProjectFiles(root, excludedArtifactPaths);
 
     for (const file of files.filter(isScannableTextFile)) {
       const content = decodeText(await readFile(join(root, file)));

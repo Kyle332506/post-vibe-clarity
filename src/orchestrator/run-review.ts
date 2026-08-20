@@ -22,6 +22,7 @@ export interface RunReviewOptions {
   skillsRoot: string;
   now?: () => string;
   checkImplementations?: readonly CheckImplementation[];
+  excludedArtifactPaths?: readonly string[];
 }
 
 const disclaimer = 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.';
@@ -107,8 +108,9 @@ function domainCoverageGaps(checkExecutions: CheckExecution[]): CoverageGap[] {
 export async function runReview(options: RunReviewOptions): Promise<ReadinessReport> {
   const root = resolve(options.root);
   const skillsRoot = resolve(options.skillsRoot);
+  const excludedArtifactPaths = Object.freeze([...(options.excludedArtifactPaths ?? [])]);
   const generatedAt = (options.now ?? (() => new Date().toISOString()))();
-  const manifest = await discoverProject(root, () => generatedAt);
+  const manifest = await discoverProject(root, () => generatedAt, excludedArtifactPaths);
   const catalog = await loadSkillCatalog(skillsRoot);
   const routedSkills = routeSkills(manifest, catalog, 'audit');
   const registeredImplementations = options.checkImplementations === undefined
@@ -152,7 +154,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
     if (!implementation) throw new Error(`Ready check implementation not found for ${item.checkId}`);
 
     try {
-      const checkFindings = await implementation.run({ root, manifest });
+      const checkFindings = await implementation.run({ root, manifest, excludedArtifactPaths });
       findings.push(...checkFindings);
       const unverifiedFindings = checkFindings.filter(({ outcome }) => outcome === 'unverified');
       const status = unverifiedFindings.length > 0 ? 'unverified' : 'completed';
