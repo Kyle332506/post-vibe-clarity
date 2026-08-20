@@ -1,5 +1,12 @@
+import { spawnSync } from 'node:child_process';
+import { access } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { expectLocalLinksResolve, expectNoEmoji, readRepositoryFile } from './repository-docs.js';
+import {
+  expectLocalLinksResolve,
+  expectNoEmoji,
+  readRepositoryFile,
+  repositoryPath,
+} from './repository-docs.js';
 
 const publicGuidance = [
   'README.md',
@@ -86,5 +93,24 @@ describe('foundation coverage documentation', () => {
         test: expect.stringContaining('node'),
       });
     }
+  });
+
+  it('builds the compiled CLI through the launch walkthrough prerequisites', async () => {
+    const example = await readRepositoryFile('examples/launch-candidate/README.md');
+    const install = example.indexOf('pnpm install --frozen-lockfile');
+    const build = example.indexOf('pnpm build');
+    const firstCompiledInvocation = example.indexOf('node dist/src/cli.js');
+
+    expect(install).toBeGreaterThan(0);
+    expect(build).toBeGreaterThan(install);
+    expect(firstCompiledInvocation).toBeGreaterThan(build);
+
+    const result = spawnSync('pnpm', ['build'], {
+      cwd: repositoryPath('.'),
+      encoding: 'utf8',
+      shell: false,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    await expect(access(repositoryPath('dist/src/cli.js'))).resolves.toBeUndefined();
   });
 });

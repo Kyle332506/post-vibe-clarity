@@ -1,3 +1,7 @@
+> **Presentation-only sanitization:** This sample comes from a real approved run of the `examples/launch-candidate/before` acceptance fixture.
+> Absolute local paths, run timestamps and IDs, command durations, and the machine-dependent fingerprint were replaced with `[generated for this run]` only after the original plan, execution, and report passed validation.
+> Findings, outcomes, command results, and coverage gaps are from that run. The placeholder was not approved and is not a reusable fingerprint.
+
 # PostVibeClarity launch review
 
 ## Summary
@@ -97,28 +101,28 @@
 
 ## Scope
 
-- Project root: ` /example/launch-candidate/before `
+- Project root: ` [generated for this run] `
 - Artifact types: ` web `.
-- Generated at: ` 2026-08-18T12:00:00.000Z `
+- Generated at: ` [generated for this run] `
 - Toolkit version: ` 0.2.0 `
 - Partial review: yes
 
 ## Local verification
 
-- Plan ID: ` pvp-540f271dc9098a20 `
-- Plan fingerprint: ` 540f271dc9098a207703f6680789dcf3d074869403b59fac6c38016497535102 `
-- Execution ID: ` pve-20260818120100000 `
-- Execution record: ` .postvibe/pve-20260818120100000.execution.json `
+- Plan ID: ` [generated for this run] `
+- Plan fingerprint: ` [generated for this run] `
+- Execution ID: ` [generated for this run] `
+- Execution record: ` [generated for this run] `
 
 ### Command evidence
 
-- ` package-script:build `: Status: passed; duration: unavailable.
+- ` package-script:build `: Status: passed; duration: [generated for this run].
   - Source: ` package.json#scripts.build `
-- ` package-script:lint `: Status: passed; duration: unavailable.
+- ` package-script:lint `: Status: passed; duration: [generated for this run].
   - Source: ` package.json#scripts.lint `
-- ` package-script:test `: Status: failed; duration: unavailable.
+- ` package-script:test `: Status: failed; duration: [generated for this run].
   - Source: ` package.json#scripts.test `
-- ` package-script:type-check `: Status: passed; duration: unavailable.
+- ` package-script:type-check `: Status: passed; duration: [generated for this run].
   - Source: ` package.json#scripts.typecheck `
 
 ### Changed paths

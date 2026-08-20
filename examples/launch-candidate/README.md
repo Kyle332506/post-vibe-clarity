@@ -4,6 +4,17 @@ This dependency-free web example shows how specific evidence changes after two f
 
 The comparison reduces uncertainty; it does not show that the after project is production-ready or completely secure. Deployment, authorization, durable data handling, abuse prevention, monitoring, recovery, accessibility, performance, legal sufficiency, and operational ownership remain unknown.
 
+## Prepare a fresh checkout
+
+From the PostVibeClarity repository root, install the pinned dependency graph and build the compiled CLI used below:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+The build creates `dist/src/cli.js`. Run these prerequisites before the walkthrough in a fresh checkout or after removing `dist`.
+
 ## Read-only comparison
 
 From the PostVibeClarity repository root, review the before project:
