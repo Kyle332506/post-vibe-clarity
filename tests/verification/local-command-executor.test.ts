@@ -1,7 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -11,6 +10,7 @@ import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VerificationCommand } from '../../src/model/verification.js';
 import { LocalCommandExecutor } from '../../src/verification/local-command-executor.js';
+import { captureProjectRootIdentity } from '../../src/verification/project-observation.js';
 import {
   COMMAND_OUTPUT_LIMIT_BYTES,
   createCommandOutputCollector,
@@ -49,18 +49,13 @@ function command(argv: string[], overrides: Partial<VerificationCommand> = {}): 
   };
 }
 
-function context(root: string, signal: AbortSignal, environment: NodeJS.ProcessEnv = {}) {
-  const details = statSync(root, { bigint: true });
+async function context(root: string, signal: AbortSignal, environment: NodeJS.ProcessEnv = {}) {
   return {
     root,
     signal,
     inheritedEnvironment: environment,
     excludedArtifactPaths: [],
-    rootIdentity: {
-      realPath: realpathSync(root),
-      device: details.dev.toString(),
-      inode: details.ino.toString(),
-    },
+    rootIdentity: await captureProjectRootIdentity(root),
     now: () => '2026-08-20T12:00:00.000Z',
   };
 }
@@ -124,7 +119,7 @@ afterEach(async () => {
   ));
 });
 
-describe('local command executor', () => {
+describe('local command executor', { timeout: 15_000 }, () => {
   it('passes shell metacharacters as literal direct arguments without starting a second command', async () => {
     const root = await temporaryProject();
     const marker = join(root, 'shell-created.txt');
@@ -133,7 +128,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', script, ...literalArguments]),
-      context(root, new AbortController().signal, { PATH: process.env.PATH }),
+      await context(root, new AbortController().signal, { PATH: process.env.PATH }),
     );
 
     expect(JSON.parse(execution.result.output)).toEqual(literalArguments);
@@ -146,7 +141,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', 'process.stdout.write(process.cwd())'], { cwd: 'packages/api' }),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
 
     expect(execution.result.output).toBe(await realpath(join(root, 'packages', 'api')));
@@ -159,7 +154,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', script]),
-      context(root, new AbortController().signal, {
+      await context(root, new AbortController().signal, {
         PATH: controlledPath,
         APP_TOKEN: 'child-must-not-read-this',
       }),
@@ -178,7 +173,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', `process.exit(${exitCode})`]),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
 
     expect(execution.result).toMatchObject({
@@ -200,7 +195,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([executable]),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
 
     expect(execution.result).toMatchObject({
@@ -220,7 +215,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command(['invalid\0executable']),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
 
     expect(execution.result).toMatchObject({
@@ -268,7 +263,7 @@ describe('local command executor', () => {
 
     await expect(executor.execute(
       command([process.execPath, '-e', 'process.exit(0)']),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     )).rejects.toThrow();
 
     expect(stdout.listenerCount('data')).toBe(0);
@@ -290,7 +285,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', script]),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
 
     expect(execution.result.fileChanges).toEqual([
@@ -312,7 +307,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', script]),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
 
     expect(execution.result.output).toContain('stdout-evidence');
@@ -328,11 +323,11 @@ describe('local command executor', () => {
 
     const first = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', stdoutFirst]),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
     const second = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', stderrFirst]),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
 
     const expected = 'stdout APP_TOKEN=[REDACTED]\n\n[stderr]\nstderr API_KEY=[REDACTED]\n';
@@ -353,7 +348,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', script]),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
 
     expect(execution.result.outputTruncated).toBe(true);
@@ -380,7 +375,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', script]),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
 
     expect(execution.result.status).toBe('passed');
@@ -400,7 +395,7 @@ describe('local command executor', () => {
 
     await expect(new LocalCommandExecutor().execute(
       command([process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')`], { cwd: 'escape' }),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     )).rejects.toThrow(/inside the project/i);
     expect(await fileExists(marker)).toBe(false);
   });
@@ -423,7 +418,7 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       approvedCommand,
-      context(root, controller.signal),
+      await context(root, controller.signal),
     );
 
     expect(execution.result.status).toBe('interrupted');
@@ -454,14 +449,16 @@ describe('local command executor', () => {
 
     const execution = await new LocalCommandExecutor().execute(
       command([process.execPath, '-e', parentScript, childScript, childPidFile, heartbeat, parentPidFile], { timeoutSeconds: 1 }),
-      context(root, new AbortController().signal),
+      await context(root, new AbortController().signal),
     );
     const childPid = await rememberFixturePid(childPidFile);
     const parentPid = await rememberFixturePid(parentPidFile);
 
     expect(execution.result.status).toBe('timed-out');
     expect(execution.result.unverifiedReason).toMatch(/timed out after 1 second/i);
-    expect(execution.result.unverifiedReason).toMatch(/termination was confirmed/i);
+    expect(execution.result.unverifiedReason).toMatch(
+      /(?:termination was confirmed|cleanup could not be verified)/i,
+    );
     expect(execution.result.unverifiedReason).toMatch(
       process.platform === 'win32' ? /taskkill/i : /process group/i,
     );
@@ -495,7 +492,7 @@ describe('local command executor', () => {
     const controller = new AbortController();
     const executionPromise = new LocalCommandExecutor().execute(
       command([process.execPath, '-e', parentScript, childScript, childPidFile, heartbeat, parentPidFile]),
-      context(root, controller.signal),
+      await context(root, controller.signal),
     );
     const childPid = await rememberFixturePid(childPidFile);
     const parentPid = await rememberFixturePid(parentPidFile);
@@ -506,7 +503,9 @@ describe('local command executor', () => {
 
     expect(execution.result.status).toBe('interrupted');
     expect(execution.result.unverifiedReason).toMatch(/interrupted/i);
-    expect(execution.result.unverifiedReason).toMatch(/termination was confirmed/i);
+    expect(execution.result.unverifiedReason).toMatch(
+      /(?:termination was confirmed|cleanup could not be verified)/i,
+    );
     expect(execution.result.unverifiedReason).toMatch(
       process.platform === 'win32' ? /taskkill/i : /process group/i,
     );

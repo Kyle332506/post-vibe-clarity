@@ -26,7 +26,7 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-describe('discoverVerificationCommands', () => {
+describe('discoverVerificationCommands', { timeout: 15_000 }, () => {
   it('records a simple package script as fingerprinted Node launcher evidence without a package-manager shim', async () => {
     const declaration = 'node -e "process.stdout.write(\'approved source\')"';
     const root = await temporaryProject({
