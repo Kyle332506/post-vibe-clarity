@@ -46,7 +46,23 @@ describe('renderVerifiedMarkdown', () => {
     expect(markdown).toContain('## Command approval boundary');
     expect(markdown).toContain('The exact command declaration and direct launch details were checked before start.');
     expect(markdown).toContain('This does not freeze imported files, dependencies, operating-system code, or changes made by other processes.');
+    expect(markdown).toContain([
+      '## Command approval boundary',
+      '',
+      'The exact command declaration and direct launch details were checked before start.',
+      '',
+      'This does not freeze imported files, dependencies, operating-system code, or changes made by other processes.',
+      '',
+      '### Containment warning',
+    ].join('\n'));
     expect(markdown.endsWith(`${VERIFICATION_DISCLAIMER}\n`)).toBe(true);
+  });
+
+  it('rejects a report whose command approval boundary is not the exact validated policy', async () => {
+    const report = await sampleVerifiedReadinessReport();
+    report.verification.approvalBoundary.policyVersion = 'command-authorization/untrusted' as never;
+
+    expect(() => renderVerifiedMarkdown(report)).toThrow('Cannot render an unvalidated command approval boundary.');
   });
 
   it('never adds secrets, a score, verdict, emoji, or authorship', async () => {
