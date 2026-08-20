@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -26,15 +27,106 @@ afterEach(async () => {
 });
 
 describe('discoverVerificationCommands', () => {
+  it('freezes a simple package script into a fingerprinted Node launcher without a package-manager shim', async () => {
+    const declaration = 'node -e "process.stdout.write(\'approved source\')"';
+    const root = await temporaryProject({
+      'package.json': packageJson({
+        packageManager: 'npm@11.5.1',
+        scripts: { test: declaration },
+      }),
+    });
+    const runtimeSha256 = createHash('sha256').update(await readFile(process.execPath)).digest('hex');
+
+    const result = await discoverVerificationCommands(root, new Set());
+
+    expect(result.commands).toEqual([
+      expect.objectContaining({
+        id: 'package-script:test',
+        argv: [process.execPath, '-e', "process.stdout.write('approved source')"],
+        launcher: {
+          policyVersion: 'package-script-launcher/0.1',
+          kind: 'node-runtime',
+          executable: process.execPath,
+          sha256: runtimeSha256,
+        },
+        source: expect.objectContaining({ declaration }),
+      }),
+    ]);
+    expect(result.commands[0]?.argv).not.toContain('npm');
+  });
+
+  it.each([
+    'node build.mjs && node mutate.mjs',
+    'node "$POSTVIBE_SCRIPT"',
+  ])('keeps package script shell syntax unverified instead of interpreting %s', async (declaration) => {
+    const root = await temporaryProject({
+      'package.json': packageJson({
+        packageManager: 'npm@11.5.1',
+        scripts: { build: declaration },
+      }),
+    });
+
+    const result = await discoverVerificationCommands(root, new Set());
+
+    expect(result.commands).toEqual([]);
+    expect(result.categoryAssessments.find(({ category }) => category === 'build')).toMatchObject({
+      state: 'unverified',
+      reason: expect.stringMatching(/shell-free package-script launcher/i),
+    });
+    expect(result.coverageGaps).toContainEqual(expect.objectContaining({
+      id: 'category.build',
+      category: 'build',
+      reason: expect.stringMatching(/shell-free package-script launcher/i),
+    }));
+  });
+
+  it('binds a local JavaScript package bin to reviewed runtime, manifest, and entrypoint evidence', async () => {
+    const entrypoint = '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)));\n';
+    const packageManifest = packageJson({ name: 'fixture-tool', bin: { fixture: 'cli.mjs' } });
+    const root = await temporaryProject({
+      'package.json': packageJson({
+        packageManager: 'npm@11.5.1',
+        scripts: { lint: 'fixture --label "approved value"' },
+      }),
+      'node_modules/fixture-tool/package.json': packageManifest,
+      'node_modules/fixture-tool/cli.mjs': entrypoint,
+    });
+    const resolvedEntrypoint = await realpath(join(root, 'node_modules', 'fixture-tool', 'cli.mjs'));
+    const runtimeSha256 = createHash('sha256').update(await readFile(process.execPath)).digest('hex');
+
+    const result = await discoverVerificationCommands(root, new Set());
+
+    expect(result.commands).toEqual([
+      expect.objectContaining({
+        id: 'package-script:lint',
+        argv: [process.execPath, resolvedEntrypoint, '--label', 'approved value'],
+        launcher: {
+          policyVersion: 'package-script-launcher/0.1',
+          kind: 'node-package-bin',
+          executable: process.execPath,
+          sha256: runtimeSha256,
+          entrypoint: {
+            location: 'node_modules/fixture-tool/cli.mjs',
+            sha256: createHash('sha256').update(entrypoint).digest('hex'),
+          },
+          packageManifest: {
+            location: 'node_modules/fixture-tool/package.json',
+            sha256: createHash('sha256').update(packageManifest).digest('hex'),
+          },
+        },
+      }),
+    ]);
+  });
+
   it('discovers exact package scripts in fixed order with declaration evidence', async () => {
     const root = await temporaryProject({
       'package.json': packageJson({
         packageManager: 'pnpm@9.12.0',
         scripts: {
-          test: 'vitest run',
-          lint: 'eslint .',
-          typecheck: 'tsc --noEmit',
-          build: 'tsc -p tsconfig.json',
+          test: 'node test.mjs',
+          lint: 'node lint.mjs',
+          typecheck: 'node typecheck.mjs',
+          build: 'node build.mjs',
           deploy: 'deploy-production',
         },
       }),
@@ -49,16 +141,21 @@ describe('discoverVerificationCommands', () => {
       'package-script:test',
     ]);
     expect(result.commands[0]).toMatchObject({
-      argv: ['pnpm', 'run', 'build'],
+      argv: [process.execPath, 'build.mjs'],
       cwd: '.',
       timeoutSeconds: 600,
       requiredAccess: ['local-command'],
       source: {
         kind: 'package-script',
         location: 'package.json#scripts.build',
-        declaration: 'tsc -p tsconfig.json',
-        sha256: '7652c2428b2473a8218d6e2e2ed23badb397e208397717ed04463c66bbf64852',
+        declaration: 'node build.mjs',
+        sha256: createHash('sha256').update('node build.mjs').digest('hex'),
       },
+      launcher: expect.objectContaining({
+        policyVersion: 'package-script-launcher/0.1',
+        kind: 'node-runtime',
+        executable: process.execPath,
+      }),
     });
     expect(result.commands.some(({ argv }) => argv.includes('deploy'))).toBe(false);
     expect(Object.fromEntries(result.categoryAssessments.map(({ category, state }) => [category, state]))).toEqual({
@@ -82,26 +179,27 @@ describe('discoverVerificationCommands', () => {
     ['Bun packageManager', { packageManager: 'bun@1.2.0' }, {}, 'bun'],
     ['Bun text lockfile', {}, { 'bun.lock': '{}' }, 'bun'],
     ['Bun binary lockfile', {}, { 'bun.lockb': '' }, 'bun'],
-  ])('uses %s evidence', async (_label, manifestFields, evidenceFiles, executable) => {
+  ])('uses %s evidence without invoking the %s command shim', async (_label, manifestFields, evidenceFiles, executable) => {
     const root = await temporaryProject({
-      'package.json': packageJson({ ...manifestFields, scripts: { test: 'run-tests' } }),
+      'package.json': packageJson({ ...manifestFields, scripts: { test: 'node --version' } }),
       ...evidenceFiles,
     });
 
     const result = await discoverVerificationCommands(root, new Set());
 
     expect(result.commands).toHaveLength(1);
-    expect(result.commands[0]?.argv).toEqual([executable, 'run', 'test']);
+    expect(result.commands[0]?.argv).toEqual([process.execPath, '--version']);
+    expect(result.commands[0]?.argv).not.toContain(executable);
   });
 
   it('accepts multiple lockfiles only when they identify the same manager', async () => {
     const root = await temporaryProject({
-      'package.json': packageJson({ scripts: { test: 'run-tests' } }),
+      'package.json': packageJson({ scripts: { test: 'node --version' } }),
       'package-lock.json': '{}',
       'npm-shrinkwrap.json': '{}',
     });
 
-    expect((await discoverVerificationCommands(root, new Set())).commands[0]?.argv).toEqual(['npm', 'run', 'test']);
+    expect((await discoverVerificationCommands(root, new Set())).commands[0]?.argv).toEqual([process.execPath, '--version']);
   });
 
   it('rejects a root package.json symlink whose target leaves the project', async () => {
@@ -137,7 +235,7 @@ describe('discoverVerificationCommands', () => {
     const root = await temporaryProject({
       'package.json': packageJson({
         packageManager: 'pnpm@9.12.0',
-        scripts: { build: 'build', typecheck: 'first', 'type-check': 'second', test: 'test' },
+        scripts: { build: 'node build.mjs', typecheck: 'first', 'type-check': 'second', test: 'node test.mjs' },
       }),
     });
 
@@ -240,7 +338,7 @@ describe('discoverVerificationCommands', () => {
 
   it('retains explicitly excluded commands and their coverage gaps', async () => {
     const root = await temporaryProject({
-      'package.json': packageJson({ packageManager: 'npm@11.5.1', scripts: { build: 'build', lint: 'lint' } }),
+      'package.json': packageJson({ packageManager: 'npm@11.5.1', scripts: { build: 'node build.mjs', lint: 'node lint.mjs' } }),
     });
 
     const result = await discoverVerificationCommands(root, new Set(['package-script:lint']));
@@ -266,7 +364,7 @@ describe('discoverVerificationCommands', () => {
 
   it('rejects duplicate IDs between automatic and portable declarations', async () => {
     const root = await temporaryProject({
-      'package.json': packageJson({ packageManager: 'npm@11.5.1', scripts: { build: 'build' } }),
+      'package.json': packageJson({ packageManager: 'npm@11.5.1', scripts: { build: 'node build.mjs' } }),
       'postvibe.verification.yaml': [
         'schemaVersion: "0.1"',
         'commands:',

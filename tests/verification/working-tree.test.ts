@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -92,5 +92,22 @@ describe('working-tree snapshots', () => {
     const snapshot = await snapshotWorkingTree(root, []);
 
     expect([...snapshot.keys()]).toEqual(['visible.txt']);
+  });
+
+  it('refuses to traverse a path that was re-rooted after approval', async () => {
+    const root = await temporaryProject({ 'approved.txt': 'approved' });
+    const details = await stat(root, { bigint: true });
+    const identity = {
+      realPath: await realpath(root),
+      device: details.dev.toString(),
+      inode: details.ino.toString(),
+    };
+    const moved = `${root}-moved`;
+    temporaryDirectories.push(moved);
+    await rename(root, moved);
+    await mkdir(root);
+    await writeFile(join(root, 'replacement.txt'), 'must not be observed');
+
+    await expect(snapshotWorkingTree(root, [], identity)).rejects.toThrow(/root identity changed/i);
   });
 });

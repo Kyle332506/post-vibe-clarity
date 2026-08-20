@@ -1,3 +1,5 @@
+import { compareOrdinal } from '../ordinal.js';
+
 export interface FilteredEnvironment {
   environment: NodeJS.ProcessEnv;
   removedNames: string[];
@@ -50,5 +52,5 @@ export function filterExecutionEnvironment(input: NodeJS.ProcessEnv): FilteredEn
     }
   }
 
-  return { environment, removedNames: removedNames.sort((left, right) => left.localeCompare(right)) };
+  return { environment, removedNames: removedNames.sort(compareOrdinal) };
 }

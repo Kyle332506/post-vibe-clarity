@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 import type { ArtifactType } from '../model/capability.js';
 import type { Domain } from '../model/finding.js';
+import { compareOrdinal } from '../ordinal.js';
 import { validateReadinessManifest } from '../validation/readiness-schema.js';
 
 export interface SkillDescriptor {
@@ -27,7 +28,7 @@ export async function loadSkillCatalog(root: string): Promise<SkillDescriptor[]>
   const entries = await readdir(root, { withFileTypes: true });
   const candidates: CatalogCandidate[] = [];
 
-  for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => compareOrdinal(a.name, b.name))) {
     const directory = join(root, entry.name);
     let readiness: string;
 

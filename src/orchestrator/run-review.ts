@@ -13,6 +13,7 @@ import {
   type CoverageGap,
   type ReadinessReport,
 } from '../model/report.js';
+import { compareOrdinal } from '../ordinal.js';
 import { validateReadinessReport } from '../validation/report-schema.js';
 import { TOOLKIT_VERSION } from '../version.js';
 import { buildReviewPlan, type ReviewPlanItem } from './build-review-plan.js';
@@ -46,7 +47,7 @@ export const foundationCheckImplementations: readonly CheckImplementation[] = Ob
 ]);
 
 function compareFindings(left: Finding, right: Finding): number {
-  return left.checkId.localeCompare(right.checkId) || left.id.localeCompare(right.id);
+  return compareOrdinal(left.checkId, right.checkId) || compareOrdinal(left.id, right.id);
 }
 
 function unavailableFinding(
@@ -124,7 +125,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
   const checkExecutions: CheckExecution[] = [];
   const coverageGaps: CoverageGap[] = [];
 
-  for (const item of [...plan].sort((left, right) => left.checkId.localeCompare(right.checkId))) {
+  for (const item of [...plan].sort((left, right) => compareOrdinal(left.checkId, right.checkId))) {
     const skill = skillsById.get(item.skillId);
     if (!skill) throw new Error(`Routed skill not found for check ${item.checkId}`);
 
@@ -166,7 +167,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
         skillVersion: item.skillVersion,
         domains: skill.domains,
         status,
-        findingIds: checkFindings.map(({ id }) => id).sort(),
+        findingIds: checkFindings.map(({ id }) => id).sort(compareOrdinal),
       });
       if (status === 'unverified') {
         const reasons = unverifiedFindings.flatMap(({ unverifiedBoundaries }) => unverifiedBoundaries ?? []);
@@ -177,7 +178,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
           status,
           domains: skill.domains,
           reason: reasons.length > 0
-            ? [...new Set(reasons)].sort().join(' ')
+            ? [...new Set(reasons)].sort(compareOrdinal).join(' ')
             : 'The check completed without enough evidence to verify this area.',
         });
       }
@@ -206,7 +207,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
 
   findings.sort(compareFindings);
   coverageGaps.push(...domainCoverageGaps(checkExecutions));
-  coverageGaps.sort((left, right) => left.id.localeCompare(right.id));
+  coverageGaps.sort((left, right) => compareOrdinal(left.id, right.id));
 
   const report: ReadinessReport = {
     schemaVersion: '0.1',

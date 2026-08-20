@@ -5,6 +5,7 @@ import {
   ArtifactFileCollisionError,
   acquireOwnedFileExclusively,
   artifactTemporaryPath,
+  publishOwnedArtifactSetExclusively,
   releaseOwnedFile,
   writeArtifactExclusively,
 } from '../cli/artifact-output.js';
@@ -16,6 +17,7 @@ import type {
   VerificationExecution,
   VerificationPlan,
 } from '../model/verification.js';
+import { compareOrdinal } from '../ordinal.js';
 import { runReview } from '../orchestrator/run-review.js';
 import { buildVerifiedReport } from '../report/build-verified-report.js';
 import { containsMarkdownLineOrControl } from '../report/markdown-safety.js';
@@ -28,8 +30,19 @@ import {
 import { validateVerificationPlan } from '../validation/verification-plan-schema.js';
 import { LocalCommandExecutor } from './local-command-executor.js';
 import type { CommandExecutor } from './local-command-executor.js';
+import {
+  commandLauncherMatchesApproval,
+  commandSourceMatchesApproval,
+} from './command-source-state.js';
 import { canonicalJson } from './plan-fingerprint.js';
+import {
+  assertProjectRootIdentity,
+  buildObservationBoundary,
+  captureProjectRootIdentity,
+} from './project-observation.js';
 import { validatePlanState } from './validate-plan-state.js';
+import { recordCommandExecution } from './command-result-contract.js';
+import { ORCHESTRATION_COVERAGE_GAP } from './contract-constants.js';
 
 export interface RunApprovedVerificationOptions {
   plan: VerificationPlan;
@@ -49,6 +62,18 @@ export interface ApprovedVerificationResult {
   reportPath: string;
 }
 
+export class VerificationPostProcessingError extends Error {
+  readonly execution: VerificationExecution;
+  readonly executionPath: string;
+
+  constructor(execution: VerificationExecution, executionPath: string) {
+    super(`Mandatory post-command processing did not complete. Partial execution evidence was published at: ${executionPath}`);
+    this.name = 'VerificationPostProcessingError';
+    this.execution = execution;
+    this.executionPath = executionPath;
+  }
+}
+
 const approvalError = 'Approval fingerprint does not match the verification plan.';
 const invalidPlanError = 'Verification plan failed versioned runtime validation.';
 const invalidExecutionError = 'Verification execution failed versioned runtime validation.';
@@ -57,6 +82,10 @@ const currentExecutorFailureReason = 'Command outcome is unavailable because the
 const remainingExecutorFailureReason = 'Command was not run because verification stopped after an unexpected executor failure.';
 const currentInterruptedReason = 'Command outcome is unavailable because verification was interrupted after the command may have started; the command may have run.';
 const mismatchedResultReason = 'Command outcome is unavailable because the executor returned evidence for a different command; the command may have run.';
+const changedSourceReason = 'Command was not run because its approved source declaration changed after planning.';
+const changedLauncherReason = 'Command was not run because its approved launcher evidence changed after planning.';
+const invalidExecutorResultReason = 'Command outcome is unavailable because the executor returned contradictory evidence after the command may have started; the command may have run.';
+const postProcessingResultReason = 'Command was not run because mandatory post-command processing could not complete.';
 
 function constantTimeTextEqual(left: unknown, right: unknown): boolean {
   const leftIsString = typeof left === 'string';
@@ -120,6 +149,24 @@ async function requireMatchingPlanArtifact(plan: VerificationPlan, path: string)
   throw new Error('Verification plan artifact does not match the supplied verification plan.');
 }
 
+async function stageOwnedArtifact(file: OwnedFile, contents: string): Promise<void> {
+  await file.handle.truncate(0);
+  await file.handle.writeFile(contents, 'utf8');
+  await file.handle.sync();
+}
+
+async function validateExecutionArtifact(
+  execution: VerificationExecution,
+  plan: VerificationPlan,
+): Promise<void> {
+  const executionValidation = await validateVerificationExecution(execution);
+  if (!executionValidation.ok) throw invalidArtifact(invalidExecutionError, executionValidation.errors);
+  const linkageErrors = validateExecutionAgainstPlan(execution, plan);
+  if (linkageErrors.length > 0) {
+    throw invalidArtifact('Verification execution linkage is invalid', linkageErrors);
+  }
+}
+
 export async function runApprovedVerification(
   options: RunApprovedVerificationOptions,
 ): Promise<ApprovedVerificationResult> {
@@ -148,6 +195,8 @@ export async function runApprovedVerification(
     throw new Error('Artifact paths must not contain line or control characters.');
   }
   let lockFile: OwnedFile | undefined;
+  let executionStagingFile: OwnedFile | undefined;
+  let reportStagingFile: OwnedFile | undefined;
 
   await mkdir(outputDirectory, { recursive: true });
   for (const path of [executionPath, reportPath, lockPath, ...temporaryPaths]) {
@@ -167,9 +216,6 @@ export async function runApprovedVerification(
       throw error;
     }
 
-    const executor = options.executor ?? new LocalCommandExecutor();
-    const results: VerificationCommandResult[] = [];
-    const removedEnvironmentVariables = new Set<string>();
     const excludedArtifactPaths = [
       planArtifactPath,
       executionPath,
@@ -177,107 +223,189 @@ export async function runApprovedVerification(
       lockPath,
       ...temporaryPaths,
     ];
+    const rootIdentity = await captureProjectRootIdentity(options.plan.projectRoot);
+    const observationBoundary = buildObservationBoundary(rootIdentity, excludedArtifactPaths);
+    executionStagingFile = await acquireOwnedFileExclusively(temporaryPaths[0]!);
+    reportStagingFile = await acquireOwnedFileExclusively(temporaryPaths[1]!);
+    const executor = options.executor ?? new LocalCommandExecutor();
+    const results: VerificationCommandResult[] = [];
+    const removedEnvironmentVariables = new Set<string>();
     let partial = false;
-
-    for (let index = 0; index < options.plan.commands.length; index += 1) {
-      const command = options.plan.commands[index]!;
-      if (options.signal.aborted) {
-        partial = true;
-        results.push(...options.plan.commands.slice(index).map((remaining) => (
-          unverifiedResult(remaining, interruptedReason)
-        )));
-        break;
-      }
-
-      try {
-        const commandExecution = await executor.execute(command, {
-          root: options.plan.projectRoot,
-          signal: options.signal,
-          inheritedEnvironment: process.env,
-          excludedArtifactPaths,
-          now,
-        });
-        if (commandExecution.result.commandId !== command.id) {
+    try {
+      for (let index = 0; index < options.plan.commands.length; index += 1) {
+        const command = options.plan.commands[index]!;
+        try {
+          await assertProjectRootIdentity(options.plan.projectRoot, rootIdentity);
+        } catch {
           partial = true;
-          results.push(unverifiedResult(command, mismatchedResultReason));
-          results.push(...options.plan.commands.slice(index + 1).map((remaining) => (
-            unverifiedResult(remaining, remainingExecutorFailureReason)
+          results.push(...options.plan.commands.slice(index).map((remaining) => (
+            unverifiedResult(remaining, 'Command was not run because the approved project root identity changed.')
           )));
           break;
         }
-        results.push(commandExecution.result);
-        for (const name of commandExecution.removedEnvironmentVariables) {
-          removedEnvironmentVariables.add(name);
-        }
-        if (commandExecution.result.status === 'unverified') partial = true;
-        if (commandExecution.result.status === 'interrupted') {
+        if (options.signal.aborted) {
           partial = true;
-          results.push(...options.plan.commands.slice(index + 1).map((remaining) => (
+          results.push(...options.plan.commands.slice(index).map((remaining) => (
             unverifiedResult(remaining, interruptedReason)
           )));
           break;
         }
-      } catch {
-        partial = true;
-        results.push(unverifiedResult(
-          command,
-          options.signal.aborted ? currentInterruptedReason : currentExecutorFailureReason,
-        ));
-        results.push(...options.plan.commands.slice(index + 1).map((remaining) => (
-          unverifiedResult(remaining, options.signal.aborted ? interruptedReason : remainingExecutorFailureReason)
-        )));
-        break;
+
+        if (!await commandSourceMatchesApproval(options.plan.projectRoot, command)) {
+          partial = true;
+          results.push(unverifiedResult(command, changedSourceReason));
+          continue;
+        }
+        if (!await commandLauncherMatchesApproval(options.plan.projectRoot, command)) {
+          partial = true;
+          results.push(unverifiedResult(command, changedLauncherReason));
+          continue;
+        }
+
+        try {
+          const commandExecution = await executor.execute(command, {
+            root: options.plan.projectRoot,
+            signal: options.signal,
+            inheritedEnvironment: process.env,
+            excludedArtifactPaths,
+            rootIdentity,
+            now,
+          });
+          if (commandExecution.result.commandId !== command.id) {
+            partial = true;
+            results.push(unverifiedResult(command, mismatchedResultReason));
+            results.push(...options.plan.commands.slice(index + 1).map((remaining) => (
+              unverifiedResult(remaining, remainingExecutorFailureReason)
+            )));
+            break;
+          }
+          const recorded = recordCommandExecution(command, commandExecution);
+          if (recorded === undefined) {
+            partial = true;
+            results.push(unverifiedResult(command, invalidExecutorResultReason));
+            results.push(...options.plan.commands.slice(index + 1).map((remaining) => (
+              unverifiedResult(remaining, remainingExecutorFailureReason)
+            )));
+            break;
+          }
+          results.push(recorded.result);
+          for (const name of recorded.removedEnvironmentVariables) {
+            removedEnvironmentVariables.add(name);
+          }
+          if (recorded.result.status === 'unverified') partial = true;
+          if (recorded.result.status === 'interrupted') {
+            partial = true;
+            results.push(...options.plan.commands.slice(index + 1).map((remaining) => (
+              unverifiedResult(remaining, interruptedReason)
+            )));
+            break;
+          }
+        } catch {
+          partial = true;
+          results.push(unverifiedResult(
+            command,
+            options.signal.aborted ? currentInterruptedReason : currentExecutorFailureReason,
+          ));
+          results.push(...options.plan.commands.slice(index + 1).map((remaining) => (
+            unverifiedResult(remaining, options.signal.aborted ? interruptedReason : remainingExecutorFailureReason)
+          )));
+          break;
+        }
+      }
+
+      const execution: VerificationExecution = {
+        schemaId: 'postvibe-verification-execution/0.1',
+        schemaVersion: '0.1',
+        executionId,
+        status: partial ? 'partial' : 'completed',
+        planId: options.plan.planId,
+        planFingerprint: options.plan.fingerprint,
+        toolkitVersion: options.plan.toolkitVersion,
+        projectRoot: options.plan.projectRoot,
+        startedAt,
+        completedAt: now(),
+        removedEnvironmentVariables: [...removedEnvironmentVariables].sort(compareOrdinal),
+        results,
+        coverageGaps: structuredClone(options.plan.coverageGaps),
+        observationBoundary,
+        containmentWarning: options.plan.containmentWarning,
+        disclaimer: options.plan.disclaimer,
+      };
+      await validateExecutionArtifact(execution, options.plan);
+      await stageOwnedArtifact(executionStagingFile, `${JSON.stringify(execution, null, 2)}\n`);
+
+      await assertProjectRootIdentity(options.plan.projectRoot, rootIdentity);
+      const freshReview = await runReview({
+        root: options.plan.projectRoot,
+        skillsRoot: options.plan.skillsRoot,
+        now,
+        excludedArtifactPaths,
+      });
+      const report = await buildVerifiedReport(freshReview, options.plan, execution, executionPath);
+      const reportValidation = await validateVerifiedReadinessReport(
+        report,
+        options.plan,
+        execution,
+        executionPath,
+      );
+      if (!reportValidation.ok) {
+        throw invalidArtifact('Verified readiness report failed versioned runtime validation', reportValidation.errors);
+      }
+      const renderedReport = options.format === 'markdown'
+        ? renderVerifiedMarkdown(report)
+        : renderJson(report);
+      await stageOwnedArtifact(reportStagingFile, renderedReport);
+      await publishOwnedArtifactSetExclusively([
+        { file: executionStagingFile, path: executionPath },
+        { file: reportStagingFile, path: reportPath },
+      ]);
+      executionStagingFile = undefined;
+      reportStagingFile = undefined;
+
+      return { execution, report, executionPath, reportPath };
+    } catch {
+      results.push(...options.plan.commands.slice(results.length).map((command) => (
+        unverifiedResult(command, postProcessingResultReason)
+      )));
+      const partialExecution: VerificationExecution = {
+        schemaId: 'postvibe-verification-execution/0.1',
+        schemaVersion: '0.1',
+        executionId,
+        status: 'partial',
+        planId: options.plan.planId,
+        planFingerprint: options.plan.fingerprint,
+        toolkitVersion: options.plan.toolkitVersion,
+        projectRoot: options.plan.projectRoot,
+        startedAt,
+        completedAt: now(),
+        removedEnvironmentVariables: [...removedEnvironmentVariables].sort(compareOrdinal),
+        results,
+        coverageGaps: [...structuredClone(options.plan.coverageGaps), structuredClone(ORCHESTRATION_COVERAGE_GAP)],
+        observationBoundary,
+        containmentWarning: options.plan.containmentWarning,
+        disclaimer: options.plan.disclaimer,
+      };
+      await validateExecutionArtifact(partialExecution, options.plan);
+      if (executionStagingFile !== undefined) await releaseOwnedFile(executionStagingFile);
+      executionStagingFile = undefined;
+      if (reportStagingFile !== undefined) await releaseOwnedFile(reportStagingFile);
+      reportStagingFile = undefined;
+      await writeArtifactExclusively(
+        executionPath,
+        `${JSON.stringify(partialExecution, null, 2)}\n`,
+      );
+      throw new VerificationPostProcessingError(partialExecution, executionPath);
+    }
+  } finally {
+    try {
+      if (executionStagingFile !== undefined) await releaseOwnedFile(executionStagingFile);
+    } finally {
+      try {
+        if (reportStagingFile !== undefined) await releaseOwnedFile(reportStagingFile);
+      } finally {
+        if (lockFile !== undefined) await releaseOwnedFile(lockFile);
       }
     }
-
-    const execution: VerificationExecution = {
-      schemaId: 'postvibe-verification-execution/0.1',
-      schemaVersion: '0.1',
-      executionId,
-      status: partial ? 'partial' : 'completed',
-      planId: options.plan.planId,
-      planFingerprint: options.plan.fingerprint,
-      toolkitVersion: options.plan.toolkitVersion,
-      projectRoot: options.plan.projectRoot,
-      startedAt,
-      completedAt: now(),
-      removedEnvironmentVariables: [...removedEnvironmentVariables].sort((left, right) => left.localeCompare(right)),
-      results,
-      coverageGaps: structuredClone(options.plan.coverageGaps),
-      containmentWarning: options.plan.containmentWarning,
-      disclaimer: options.plan.disclaimer,
-    };
-    const executionValidation = await validateVerificationExecution(execution);
-    if (!executionValidation.ok) throw invalidArtifact(invalidExecutionError, executionValidation.errors);
-    const linkageErrors = validateExecutionAgainstPlan(execution, options.plan);
-    if (linkageErrors.length > 0) throw invalidArtifact('Verification execution linkage is invalid', linkageErrors);
-
-    await writeArtifactExclusively(executionPath, `${JSON.stringify(execution, null, 2)}\n`);
-
-    const freshReview = await runReview({
-      root: options.plan.projectRoot,
-      skillsRoot: options.plan.skillsRoot,
-      now,
-      excludedArtifactPaths,
-    });
-    const report = await buildVerifiedReport(freshReview, options.plan, execution, executionPath);
-    const reportValidation = await validateVerifiedReadinessReport(
-      report,
-      options.plan,
-      execution,
-      executionPath,
-    );
-    if (!reportValidation.ok) {
-      throw invalidArtifact('Verified readiness report failed versioned runtime validation', reportValidation.errors);
-    }
-    const renderedReport = options.format === 'markdown'
-      ? renderVerifiedMarkdown(report)
-      : renderJson(report);
-    await writeArtifactExclusively(reportPath, renderedReport);
-
-    return { execution, report, executionPath, reportPath };
-  } finally {
-    if (lockFile !== undefined) await releaseOwnedFile(lockFile);
   }
 }
 

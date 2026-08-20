@@ -23,6 +23,7 @@ describe('buildVerifiedReport', () => {
       planFingerprint: sampleVerificationPlan.fingerprint,
       executionId: sampleVerificationExecution.executionId,
       executionRecordPath,
+      observationBoundary: sampleVerificationExecution.observationBoundary,
     });
     expect(report.findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'secret-exposure.fixture-secret' }),
@@ -141,7 +142,7 @@ describe('buildVerifiedReport', () => {
       plan,
       execution,
       executionRecordPath,
-    )).rejects.toThrow(/must preserve plan coverage gap workspace\.packages-api/i);
+    )).rejects.toThrow(/coverageGaps must exactly match plan coverage gaps/i);
   });
 
   it('does not produce a report containing an unredacted controlled credential', async () => {

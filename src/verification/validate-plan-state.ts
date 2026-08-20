@@ -2,7 +2,7 @@ import { realpath, stat } from 'node:fs/promises';
 import type { VerificationPlan } from '../model/verification.js';
 import { validateVerificationPlan } from '../validation/verification-plan-schema.js';
 import { TOOLKIT_VERSION } from '../version.js';
-import { selectedSkillInputLocations } from './build-verification-plan.js';
+import { catalogSkillInputLocations } from './build-verification-plan.js';
 import { discoverVerificationCommands } from './discover-commands.js';
 import { collectProjectInputDigests, digestInputLocations } from './input-digests.js';
 import { canonicalJson, fingerprintPlan } from './plan-fingerprint.js';
@@ -54,7 +54,7 @@ export async function validatePlanState(
     }
     requireEqual(await collectProjectInputDigests(projectRoot, context.planArtifactPath), plan.inputDigests);
 
-    const skillLocations = await selectedSkillInputLocations(skillsRoot, plan.planningReport.manifest);
+    const skillLocations = await catalogSkillInputLocations(skillsRoot);
     requireEqual(skillLocations, plan.skillDigests.map(({ location }) => location));
     requireEqual(await digestInputLocations(skillsRoot, skillLocations), plan.skillDigests);
   } catch {

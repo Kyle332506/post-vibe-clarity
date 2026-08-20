@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { VerificationPlan } from '../model/verification.js';
+import { compareOrdinal } from '../ordinal.js';
 
 export interface FingerprintPlanInput {
   schemaId: VerificationPlan['schemaId'];
@@ -28,7 +29,7 @@ function encodeCanonical(value: unknown, inArray = false): string | undefined {
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>;
     const properties = Object.keys(record)
-      .sort((left, right) => left.localeCompare(right))
+      .sort(compareOrdinal)
       .flatMap((key) => {
         const encoded = encodeCanonical(record[key]);
         return encoded === undefined ? [] : [`${JSON.stringify(key)}:${encoded}`];

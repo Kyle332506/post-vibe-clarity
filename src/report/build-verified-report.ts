@@ -81,6 +81,7 @@ export async function buildVerifiedReport(
       planFingerprint: plan.fingerprint,
       executionId: execution.executionId,
       executionRecordPath,
+      observationBoundary: structuredClone(execution.observationBoundary),
     },
   };
   const reportValidation = await validateVerifiedReadinessReport(

@@ -26,6 +26,16 @@ describe('renderVerifiedMarkdown', () => {
     expect(markdown).toContain('package-script:lint');
     expect(markdown).toContain('excluded');
     expect(markdown).toContain('not a security sandbox');
+    expect(markdown).toContain('### Observation boundary');
+    expect(markdown).toContain('project-observation/0.1');
+    expect(markdown).toContain('Excluded directories:');
+    for (const directory of ['.git', '.postvibe', 'coverage', 'dist', 'node_modules']) {
+      expect(markdown).toContain(`\` ${directory} \``);
+    }
+    expect(markdown).toContain('/example/project/.postvibe/execution.json');
+    expect(markdown).toContain('Symlinks and non-regular files are not observed');
+    expect(markdown).toContain('Inaccessible paths fail observation');
+    expect(markdown).toContain('Only content SHA-256 metadata is recorded');
   });
 
   it('ends with the exact disclaimer and never adds secrets, a score, verdict, emoji, or authorship', async () => {

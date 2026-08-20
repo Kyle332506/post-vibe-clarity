@@ -20,10 +20,35 @@ async function fixture(): Promise<{ root: string; skillsRoot: string }> {
   const skillsRoot = await mkdtemp(join(tmpdir(), 'postvibe-plan-skills-'));
   temporaryDirectories.push(root, skillsRoot);
   await writeFiles(root, {
-    'package.json': `${JSON.stringify({ packageManager: 'npm@11.5.1', scripts: { build: 'compile', test: 'check' } }, null, 2)}\n`,
+    'package.json': `${JSON.stringify({
+      packageManager: 'npm@11.5.1',
+      scripts: { build: 'node build.mjs', test: 'node test.mjs' },
+    }, null, 2)}\n`,
     'src/index.ts': 'export const answer = 42;\n',
   });
   await writeFiles(skillsRoot, {
+    'dormant-audit/SKILL.md': [
+      '---',
+      'name: dormant-audit',
+      'description: Test dormant audit skill.',
+      'license: Apache-2.0',
+      '---',
+      '',
+      '# Dormant audit',
+      '',
+    ].join('\n'),
+    'dormant-audit/readiness.yaml': [
+      'schemaVersion: "0.1"',
+      'id: dormant-audit',
+      'skillVersion: "0.1.0"',
+      'domains: [reliability-recovery]',
+      'appliesTo:',
+      '  anyArtifacts: [mobile]',
+      'modes: [audit]',
+      'maxActionLevel: 0',
+      'checks: [dormant-audit.check]',
+      '',
+    ].join('\n'),
     'universal-verification/SKILL.md': [
       '---',
       'name: universal-verification',
@@ -81,8 +106,10 @@ describe('buildVerificationPlan', () => {
     });
     expect(await validateVerificationPlan(first)).toEqual({ ok: true });
     expect(first.skillDigests.map(({ location }) => location)).toEqual([
-      'universal-verification/readiness.yaml',
+      'dormant-audit/SKILL.md',
+      'dormant-audit/readiness.yaml',
       'universal-verification/SKILL.md',
+      'universal-verification/readiness.yaml',
     ]);
   });
 

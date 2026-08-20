@@ -17,6 +17,7 @@
     "removedEnvironmentVariables",
     "results",
     "coverageGaps",
+    "observationBoundary",
     "containmentWarning",
     "disclaimer"
   ],
@@ -44,7 +45,8 @@
       "type": "array",
       "items": { "$ref": "#/$defs/coverageGap" }
     },
-    "containmentWarning": { "type": "string", "minLength": 1 },
+    "observationBoundary": { "$ref": "#/$defs/observationBoundary" },
+    "containmentWarning": { "const": "Commands run as local processes with the current user privileges; this is not a security sandbox and does not block network or out-of-project filesystem access." },
     "disclaimer": { "const": "This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects." }
   },
   "$defs": {
@@ -81,6 +83,51 @@
       "properties": {
         "path": { "type": "string", "minLength": 1 },
         "kind": { "enum": ["added", "modified", "removed"] }
+      }
+    },
+    "observationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyVersion",
+        "rootIdentity",
+        "versionControlDirectories",
+        "artifactDirectories",
+        "coverageDirectories",
+        "distributionDirectories",
+        "dependencyDirectories",
+        "exactArtifactExclusions",
+        "symlinks",
+        "nonRegularFiles",
+        "inaccessiblePaths",
+        "metadata"
+      ],
+      "properties": {
+        "policyVersion": { "const": "project-observation/0.1" },
+        "rootIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["realPath", "device", "inode"],
+          "properties": {
+            "realPath": { "type": "string", "minLength": 1 },
+            "device": { "type": "string", "pattern": "^[0-9]+$" },
+            "inode": { "type": "string", "pattern": "^[0-9]+$" }
+          }
+        },
+        "versionControlDirectories": { "type": "array", "prefixItems": [{ "const": ".git" }], "minItems": 1, "maxItems": 1 },
+        "artifactDirectories": { "type": "array", "prefixItems": [{ "const": ".postvibe" }], "minItems": 1, "maxItems": 1 },
+        "coverageDirectories": { "type": "array", "prefixItems": [{ "const": "coverage" }], "minItems": 1, "maxItems": 1 },
+        "distributionDirectories": { "type": "array", "prefixItems": [{ "const": "dist" }], "minItems": 1, "maxItems": 1 },
+        "dependencyDirectories": { "type": "array", "prefixItems": [{ "const": "node_modules" }], "minItems": 1, "maxItems": 1 },
+        "exactArtifactExclusions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "symlinks": { "const": "not-followed" },
+        "nonRegularFiles": { "const": "not-observed" },
+        "inaccessiblePaths": { "const": "observation-fails" },
+        "metadata": { "const": "content-sha256-only" }
       }
     },
     "result": {

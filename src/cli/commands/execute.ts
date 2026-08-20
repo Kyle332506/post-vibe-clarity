@@ -4,7 +4,10 @@ import { parseArgs } from 'node:util';
 import type { VerificationPlan } from '../../model/verification.js';
 import { containsMarkdownLineOrControl } from '../../report/markdown-safety.js';
 import { validateVerificationPlan } from '../../validation/verification-plan-schema.js';
-import { runApprovedVerification } from '../../verification/run-approved-verification.js';
+import {
+  runApprovedVerification,
+  VerificationPostProcessingError,
+} from '../../verification/run-approved-verification.js';
 import { STALE_PLAN_ERROR } from '../../verification/validate-plan-state.js';
 import { findRepeatedSingularOption } from '../option-occurrences.js';
 import { CliSafeError, CliUsageError } from './review.js';
@@ -77,6 +80,9 @@ export async function runExecuteCommand(args: string[], signal: AbortSignal): Pr
       signal,
     });
   } catch (error) {
+    if (error instanceof VerificationPostProcessingError) {
+      throw new CliSafeError(error.message);
+    }
     if (error instanceof Error && (error.message === approvalMismatchMessage || error.message === STALE_PLAN_ERROR)) {
       throw new CliSafeError(error.message);
     }

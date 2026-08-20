@@ -9,6 +9,17 @@ import type {
   VerificationExecution,
   VerificationPlan,
 } from '../model/verification.js';
+import { compareOrdinal } from '../ordinal.js';
+import {
+  commandResultEvidenceErrors,
+  exactCommandResultsMatchPlan,
+} from '../verification/command-result-contract.js';
+import {
+  CONTAINMENT_WARNING,
+  ORCHESTRATION_COVERAGE_GAP,
+  VERIFICATION_DISCLAIMER,
+} from '../verification/contract-constants.js';
+import { redactCommandOutput } from '../verification/redact-command-output.js';
 import type { ValidationResult } from './readiness-schema.js';
 
 const require = createRequire(import.meta.url);
@@ -87,27 +98,46 @@ export function validateExecutionAgainstPlan(
   if (execution.projectRoot !== plan.projectRoot) {
     errors.push('/projectRoot must match the verification plan');
   }
+  if (execution.containmentWarning !== plan.containmentWarning
+    || execution.containmentWarning !== CONTAINMENT_WARNING) {
+    errors.push('/containmentWarning must match the exact verification policy and plan');
+  }
+  if (execution.disclaimer !== plan.disclaimer || execution.disclaimer !== VERIFICATION_DISCLAIMER) {
+    errors.push('/disclaimer must match the exact verification policy and plan');
+  }
+  if (execution.observationBoundary.rootIdentity.realPath !== plan.projectRoot) {
+    errors.push('/observationBoundary/rootIdentity/realPath must match the verification plan project root');
+  }
 
-  const selectedIds = new Set(plan.commands.map(({ id }) => id));
-  const resultIds = new Set(execution.results.map(({ commandId }) => commandId));
-  for (const { commandId } of execution.results) {
-    if (!selectedIds.has(commandId)) {
-      errors.push(`/results/${commandId} must reference a selected plan command`);
+  if (!exactCommandResultsMatchPlan(execution.results, plan.commands)) {
+    errors.push('/results must match selected plan commands in exact order');
+    const selectedIds = new Set(plan.commands.map(({ id }) => id));
+    const resultIds = new Set(execution.results.map(({ commandId }) => commandId));
+    for (const { commandId } of execution.results) {
+      if (!selectedIds.has(commandId)) {
+        errors.push(`/results/${commandId} must reference a selected plan command`);
+      }
+    }
+    for (const { id } of plan.commands) {
+      if (!resultIds.has(id)) errors.push(`/results must contain selected command ${id}`);
     }
   }
-  for (const { id } of plan.commands) {
-    if (!resultIds.has(id)) errors.push(`/results must contain selected command ${id}`);
-  }
-  for (const gap of plan.coverageGaps) {
-    if (!execution.coverageGaps.some((candidate) => isDeepStrictEqual(candidate, gap))) {
-      errors.push(`/coverageGaps must preserve plan coverage gap ${gap.id}`);
-    }
+  const exactPlanGaps = isDeepStrictEqual(execution.coverageGaps, plan.coverageGaps);
+  const exactPartialGaps = isDeepStrictEqual(
+    execution.coverageGaps,
+    [...plan.coverageGaps, ORCHESTRATION_COVERAGE_GAP],
+  );
+  if (!exactPlanGaps && !exactPartialGaps) {
+    errors.push('/coverageGaps must exactly match plan coverage gaps or the allowed orchestration gap');
   }
   return errors;
 }
 
 function validateSemantics(execution: VerificationExecution): string[] {
   const errors: string[] = [];
+  if (Date.parse(execution.completedAt) < Date.parse(execution.startedAt)) {
+    errors.push('/completedAt must be at or after /startedAt');
+  }
   const resultIds = new Set<string>();
   for (const result of execution.results) {
     if (resultIds.has(result.commandId)) errors.push(`/results duplicate commandId ${result.commandId}`);
@@ -117,6 +147,20 @@ function validateSemantics(execution: VerificationExecution): string[] {
     }
     if (!isSorted(result.fileChanges.map(({ path }) => path))) {
       errors.push(`/results/${result.commandId}/fileChanges must be sorted by path`);
+    }
+    for (const error of commandResultEvidenceErrors(result)) {
+      errors.push(`/results/${result.commandId} ${error}`);
+    }
+    if (redactCommandOutput(result.output) !== result.output
+      || (result.unverifiedReason !== undefined
+        && redactCommandOutput(result.unverifiedReason) !== result.unverifiedReason)) {
+      errors.push(`/results/${result.commandId} must not contain unredacted credential values`);
+    }
+    if (result.startedAt !== undefined) {
+      const commandStart = Date.parse(result.startedAt);
+      if (commandStart < Date.parse(execution.startedAt) || commandStart > Date.parse(execution.completedAt)) {
+        errors.push(`/results/${result.commandId}/startedAt must fall within the execution interval`);
+      }
     }
   }
 
@@ -129,12 +173,20 @@ function validateSemantics(execution: VerificationExecution): string[] {
         errors.push(`/status completed execution cannot contain ${status} results`);
       }
     }
+    if (isDeepStrictEqual(
+      execution.coverageGaps.at(-1),
+      ORCHESTRATION_COVERAGE_GAP,
+    )) errors.push('/status completed execution cannot contain the orchestration coverage gap');
+  }
+  const exclusions = execution.observationBoundary.exactArtifactExclusions;
+  if (!isSorted(exclusions) || new Set(exclusions).size !== exclusions.length) {
+    errors.push('/observationBoundary/exactArtifactExclusions must be unique and sorted');
   }
   return errors;
 }
 
 function isSorted(values: string[]): boolean {
-  return values.every((value, index) => index === 0 || values[index - 1]!.localeCompare(value) <= 0);
+  return values.every((value, index) => index === 0 || compareOrdinal(values[index - 1]!, value) <= 0);
 }
 
 async function readSchema(): Promise<string> {

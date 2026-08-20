@@ -17,6 +17,15 @@ export interface VerificationCommandSource {
   sha256: string;
 }
 
+export interface PackageScriptLauncher {
+  policyVersion: 'package-script-launcher/0.1';
+  kind: 'node-runtime' | 'node-package-bin' | 'direct-executable';
+  executable: string;
+  sha256: string;
+  entrypoint?: InputDigest;
+  packageManifest?: InputDigest;
+}
+
 export interface VerificationCommand {
   id: string;
   category: CommandCategory;
@@ -25,6 +34,7 @@ export interface VerificationCommand {
   timeoutSeconds: number;
   requiredAccess: ['local-command'];
   source: VerificationCommandSource;
+  launcher?: PackageScriptLauncher;
 }
 
 export interface InputDigest {
@@ -77,6 +87,27 @@ export interface FileChange {
   kind: 'added' | 'modified' | 'removed';
 }
 
+export interface ProjectRootIdentity {
+  realPath: string;
+  device: string;
+  inode: string;
+}
+
+export interface ObservationBoundary {
+  policyVersion: 'project-observation/0.1';
+  rootIdentity: ProjectRootIdentity;
+  versionControlDirectories: ['.git'];
+  artifactDirectories: ['.postvibe'];
+  coverageDirectories: ['coverage'];
+  distributionDirectories: ['dist'];
+  dependencyDirectories: ['node_modules'];
+  exactArtifactExclusions: string[];
+  symlinks: 'not-followed';
+  nonRegularFiles: 'not-observed';
+  inaccessiblePaths: 'observation-fails';
+  metadata: 'content-sha256-only';
+}
+
 export interface VerificationCommandResult {
   commandId: string;
   status: CommandResultStatus;
@@ -104,6 +135,7 @@ export interface VerificationExecution {
   removedEnvironmentVariables: string[];
   results: VerificationCommandResult[];
   coverageGaps: VerificationCoverageGap[];
+  observationBoundary: ObservationBoundary;
   containmentWarning: string;
   disclaimer: string;
 }

@@ -11,6 +11,7 @@ import type {
   VerificationExecution,
   VerificationPlan,
 } from '../model/verification.js';
+import { compareOrdinal } from '../ordinal.js';
 import { validateExecutionAgainstPlan } from '../validation/verification-execution-schema.js';
 import { fingerprintPlan } from './plan-fingerprint.js';
 
@@ -200,7 +201,7 @@ function mergedVerificationGaps(
   for (const gap of [...plan.coverageGaps, ...execution.coverageGaps]) {
     if (!byId.has(gap.id)) byId.set(gap.id, gap);
   }
-  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+  return [...byId.values()].sort((left, right) => compareOrdinal(left.id, right.id));
 }
 
 function mappedCoverageGap(gap: VerificationCoverageGap): CoverageGap {
@@ -276,7 +277,7 @@ export function mapVerificationEvidence(
     occupiedIds.add(id);
   }
 
-  findings.sort((left, right) => left.id.localeCompare(right.id));
+  findings.sort((left, right) => compareOrdinal(left.id, right.id));
   const coverageGaps = incompleteCoverageGaps(findings, plan, execution);
   return {
     findings,

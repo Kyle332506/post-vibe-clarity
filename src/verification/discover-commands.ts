@@ -6,9 +6,11 @@ import type {
   VerificationCommand,
   VerificationCoverageGap,
 } from '../model/verification.js';
+import { compareOrdinal } from '../ordinal.js';
 import { loadVerificationConfig, type PortableVerificationConfig } from './load-verification-config.js';
 import { isContainedRegularFile, resolveExistingFileInsideProject, resolveProjectRoot } from './project-path.js';
 import { discoverWorkspaceRoots } from './discover-workspaces.js';
+import { resolvePackageScript } from './package-script-launcher.js';
 
 export interface CommandDiscoveryResult {
   commands: VerificationCommand[];
@@ -70,16 +72,18 @@ async function packageManagerEvidence(
   return { problem: 'No supported package-manager evidence; use postvibe.verification.yaml.', locations };
 }
 
-function packageCommand(
-  manager: PackageManager,
+async function packageCommand(
+  root: string,
   scriptName: string,
   category: CommandCategory,
   declaration: string,
-): VerificationCommand {
+): Promise<VerificationCommand | undefined> {
+  const resolved = await resolvePackageScript(root, declaration);
+  if (resolved === undefined) return undefined;
   return {
     id: `package-script:${category}`,
     category,
-    argv: [manager, 'run', scriptName],
+    argv: resolved.argv,
     cwd: '.',
     timeoutSeconds: 600,
     requiredAccess: ['local-command'],
@@ -89,6 +93,7 @@ function packageCommand(
       declaration,
       sha256: sha256(declaration),
     },
+    launcher: resolved.launcher,
   };
 }
 
@@ -177,7 +182,13 @@ export async function discoverVerificationCommands(
       } else {
         for (const category of CATEGORY_ORDER) {
           const script = scriptDeclarations.get(category);
-          if (script !== undefined) discovered.push(packageCommand(evidence.manager, script.name, category, script.declaration));
+          if (script === undefined) continue;
+          const command = await packageCommand(resolvedRoot, script.name, category, script.declaration);
+          if (command === undefined) {
+            categoryProblems.set(category, `package.json#scripts.${script.name} cannot be represented by the shell-free package-script launcher; use postvibe.verification.yaml.`);
+          } else {
+            discovered.push(command);
+          }
         }
       }
     } else {
@@ -253,7 +264,7 @@ export async function discoverVerificationCommands(
     excludedCommands,
     categoryAssessments,
     coverageGaps,
-    inputLocations: [...inputLocations].sort(),
+    inputLocations: [...inputLocations].sort(compareOrdinal),
     workspaceRoots: workspaceDiscovery.workspaceRoots,
   };
 }

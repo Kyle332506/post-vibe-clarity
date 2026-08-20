@@ -1,6 +1,7 @@
 import { glob, readFile } from 'node:fs/promises';
 import { dirname, relative, sep } from 'node:path';
 import { parse } from 'yaml';
+import { compareOrdinal } from '../ordinal.js';
 import { resolveExistingFileInsideProject, resolveInsideProject, resolveProjectRoot } from './project-path.js';
 
 export interface WorkspaceDiscoveryResult {
@@ -99,7 +100,7 @@ export async function discoverWorkspaceRoots(root: string): Promise<WorkspaceDis
   }
 
   return {
-    workspaceRoots: [...workspaceRoots].sort(),
-    inputLocations: [...new Set(inputLocations)].sort(),
+    workspaceRoots: [...workspaceRoots].sort(compareOrdinal),
+    inputLocations: [...new Set(inputLocations)].sort(compareOrdinal),
   };
 }

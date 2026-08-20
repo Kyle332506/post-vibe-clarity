@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,7 @@ import type {
   InputDigest,
   VerificationPlan,
 } from '../model/verification.js';
+import { compareOrdinal } from '../ordinal.js';
 import type { ValidationResult } from './readiness-schema.js';
 import { fingerprintPlan } from '../verification/plan-fingerprint.js';
 
@@ -101,6 +103,23 @@ function validateSemantics(plan: VerificationPlan): string[] {
   for (const command of [...plan.commands, ...plan.excludedCommands]) {
     if (commandIds.has(command.id)) errors.push(`/commands duplicate id ${command.id}`);
     commandIds.add(command.id);
+    const sourceDigest = createHash('sha256').update(command.source.declaration, 'utf8').digest('hex');
+    if (command.source.sha256 !== sourceDigest) {
+      errors.push(`/commands/${command.id}/source/sha256 must hash the exact declaration`);
+    }
+    if (command.source.kind === 'package-script') {
+      const launcher = command.launcher;
+      if (launcher !== undefined && command.argv[0] !== launcher.executable) {
+        errors.push(`/commands/${command.id}/argv executable must match the approved launcher`);
+      }
+      if (launcher?.kind === 'node-package-bin') {
+        if (launcher.entrypoint === undefined || launcher.packageManifest === undefined) {
+          errors.push(`/commands/${command.id}/launcher node-package-bin requires entrypoint and package manifest evidence`);
+        }
+      } else if (launcher?.entrypoint !== undefined || launcher?.packageManifest !== undefined) {
+        errors.push(`/commands/${command.id}/launcher evidence is only valid for a node-package-bin`);
+      }
+    }
   }
 
   validateDigestArray('/inputDigests', plan.inputDigests, errors);
@@ -135,7 +154,7 @@ function validateDigestArray(path: string, digests: InputDigest[], errors: strin
 }
 
 function isSorted(values: string[]): boolean {
-  return values.every((value, index) => index === 0 || values[index - 1]!.localeCompare(value) <= 0);
+  return values.every((value, index) => index === 0 || compareOrdinal(values[index - 1]!, value) <= 0);
 }
 
 async function readContainedSchema(schemaPath: string): Promise<string> {

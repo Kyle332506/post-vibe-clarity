@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import type {
   CommandResultStatus,
+  ProjectRootIdentity,
   VerificationCommand,
   VerificationCommandResult,
 } from '../model/verification.js';
@@ -32,6 +33,7 @@ export interface ExecuteCommandContext {
   signal: AbortSignal;
   inheritedEnvironment: NodeJS.ProcessEnv;
   excludedArtifactPaths: string[];
+  rootIdentity: ProjectRootIdentity;
   now: () => string;
 }
 
@@ -132,11 +134,11 @@ export class LocalCommandExecutor implements CommandExecutor {
     const startedAt = context.now();
     const monotonicStart = performance.now();
     const filteredEnvironment = filterExecutionEnvironment(context.inheritedEnvironment);
-    const before = await snapshotWorkingTree(context.root, context.excludedArtifactPaths);
+    const before = await snapshotWorkingTree(context.root, context.excludedArtifactPaths, context.rootIdentity);
     const executable = command.argv[0];
     if (executable === undefined) throw new Error('Approved command argv must contain an executable.');
     const interruptedBeforeStart = async (): Promise<CommandExecutionResult> => {
-      const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths);
+      const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths, context.rootIdentity);
       return {
         removedEnvironmentVariables: filteredEnvironment.removedNames,
         result: {
@@ -175,7 +177,7 @@ export class LocalCommandExecutor implements CommandExecutor {
       });
     } catch (error) {
       const collected = finishCommandOutput(stdoutCollector, stderrCollector);
-      const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths);
+      const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths, context.rootIdentity);
       return {
         removedEnvironmentVariables: filteredEnvironment.removedNames,
         result: {
@@ -267,7 +269,7 @@ export class LocalCommandExecutor implements CommandExecutor {
 
     removeOutputListeners(child, stdoutListener, stderrListener);
     const collected = finishCommandOutput(stdoutCollector, stderrCollector);
-    const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths);
+    const after = await snapshotWorkingTree(context.root, context.excludedArtifactPaths, context.rootIdentity);
     const result = addOptionalReason({
       commandId: command.id,
       status,

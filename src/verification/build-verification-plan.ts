@@ -1,7 +1,7 @@
 import { realpath, stat } from 'node:fs/promises';
 import { loadSkillCatalog } from '../catalog/load-catalog.js';
-import { routeSkills } from '../catalog/route-skills.js';
 import type { VerificationPlan } from '../model/verification.js';
+import { compareOrdinal } from '../ordinal.js';
 import { runReview } from '../orchestrator/run-review.js';
 import { validateVerificationPlan } from '../validation/verification-plan-schema.js';
 import { TOOLKIT_VERSION } from '../version.js';
@@ -9,6 +9,7 @@ import { discoverVerificationCommands } from './discover-commands.js';
 import { collectProjectInputDigests, digestInputLocations } from './input-digests.js';
 import { fingerprintPlan, type FingerprintPlanInput } from './plan-fingerprint.js';
 import { resolveProjectRoot } from './project-path.js';
+import { CONTAINMENT_WARNING, VERIFICATION_DISCLAIMER } from './contract-constants.js';
 
 export interface BuildVerificationPlanOptions {
   root: string;
@@ -18,8 +19,7 @@ export interface BuildVerificationPlanOptions {
   now?: () => string;
 }
 
-export const VERIFICATION_DISCLAIMER = 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.';
-export const CONTAINMENT_WARNING = 'Commands run as local processes with the current user privileges; this is not a security sandbox and does not block network or out-of-project filesystem access.';
+export { CONTAINMENT_WARNING, VERIFICATION_DISCLAIMER } from './contract-constants.js';
 
 async function resolveSkillsRoot(path: string): Promise<string> {
   let resolved: string;
@@ -33,14 +33,13 @@ async function resolveSkillsRoot(path: string): Promise<string> {
   return resolved;
 }
 
-export async function selectedSkillInputLocations(
+export async function catalogSkillInputLocations(
   skillsRoot: string,
-  manifest: VerificationPlan['planningReport']['manifest'],
 ): Promise<string[]> {
   const catalog = await loadSkillCatalog(skillsRoot);
-  return routeSkills(manifest, catalog, 'verify')
+  return catalog
     .flatMap(({ id }) => [`${id}/readiness.yaml`, `${id}/SKILL.md`])
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareOrdinal);
 }
 
 export async function buildVerificationPlan(options: BuildVerificationPlanOptions): Promise<VerificationPlan> {
@@ -54,7 +53,7 @@ export async function buildVerificationPlan(options: BuildVerificationPlanOption
     discoverVerificationCommands(projectRoot, options.excludedCommandIds),
     collectProjectInputDigests(projectRoot, options.outputPath),
   ]);
-  const skillLocations = await selectedSkillInputLocations(skillsRoot, planningReport.manifest);
+  const skillLocations = await catalogSkillInputLocations(skillsRoot);
   const skillDigests = await digestInputLocations(skillsRoot, skillLocations);
 
   const fingerprintInput: FingerprintPlanInput = {

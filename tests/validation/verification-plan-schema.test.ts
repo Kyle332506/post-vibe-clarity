@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as planSchemaModule from '../../src/validation/verification-plan-schema.js';
+import { fingerprintPlan } from '../../src/verification/plan-fingerprint.js';
 import { sampleVerificationPlan } from '../fixtures/sample-verification-plan.js';
 
 const { validateVerificationPlan } = planSchemaModule;
@@ -34,6 +35,26 @@ describe('validateVerificationPlan', () => {
     input.disclaimer = 'This report reduces uncertainty but certifies the application.';
 
     expect((await invalidErrors(input)).join('\n')).toContain('/disclaimer');
+  });
+
+  it('requires the exact policy-versioned containment warning', async () => {
+    const input = structuredClone(sampleVerificationPlan);
+    input.containmentWarning = `${input.containmentWarning} Changed.`;
+    input.fingerprint = fingerprintPlan(input);
+    input.planId = `pvp-${input.fingerprint.slice(0, 16)}`;
+
+    expect((await invalidErrors(input)).join('\n')).toContain('/containmentWarning');
+  });
+
+  it('rejects a source digest that does not hash the exact approved declaration', async () => {
+    const input = structuredClone(sampleVerificationPlan);
+    input.commands[0]!.source.sha256 = 'f'.repeat(64);
+    input.fingerprint = fingerprintPlan(input);
+    input.planId = `pvp-${input.fingerprint.slice(0, 16)}`;
+
+    expect(await invalidErrors(input)).toContain(
+      '/commands/package-script:build/source/sha256 must hash the exact declaration',
+    );
   });
 
   it('rejects duplicate command IDs across selected and excluded commands', async () => {

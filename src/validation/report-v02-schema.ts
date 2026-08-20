@@ -28,6 +28,7 @@ interface SchemaLocation {
   packageRoot: string;
   schemaPath: string;
   reportV01SchemaPath: string;
+  executionSchemaPath: string;
 }
 
 function schemaLocationForModule(moduleUrl: URL): SchemaLocation {
@@ -53,6 +54,7 @@ function schemaLocationForModule(moduleUrl: URL): SchemaLocation {
     packageRoot,
     schemaPath: containedSchemaPath(packageRoot, 'report-0.2.schema.json'),
     reportV01SchemaPath: containedSchemaPath(packageRoot, 'report-0.1.schema.json'),
+    executionSchemaPath: containedSchemaPath(packageRoot, 'verification-execution-0.1.schema.json'),
   };
 }
 
@@ -96,6 +98,9 @@ function linkageErrors(
   }
   if (report.verification.executionRecordPath !== executionRecordPath) {
     errors.push('/verification/executionRecordPath must match the supplied execution-record path');
+  }
+  if (!isDeepStrictEqual(report.verification.observationBoundary, execution.observationBoundary)) {
+    errors.push('/verification/observationBoundary must match the verification execution');
   }
   if (report.verification.executionRecordPath.trim().length === 0) {
     errors.push('/verification/executionRecordPath must not be blank');
@@ -170,13 +175,15 @@ export async function validateVerifiedReadinessReport(
     ...expectedPathErrors(executionRecordPath),
     ...inputPathErrors(input),
   ];
-  const [schemaText, reportV01SchemaText] = await Promise.all([
+  const [schemaText, reportV01SchemaText, executionSchemaText] = await Promise.all([
     readContainedSchema(schemaLocation.schemaPath),
     readContainedSchema(schemaLocation.reportV01SchemaPath),
+    readContainedSchema(schemaLocation.executionSchemaPath),
   ]);
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
   ajv.addSchema(JSON.parse(reportV01SchemaText) as object);
+  ajv.addSchema(JSON.parse(executionSchemaText) as object);
   const validate = ajv.compile(JSON.parse(schemaText) as object);
   if (!validate(input)) {
     const schemaErrors = (validate.errors ?? []).map(

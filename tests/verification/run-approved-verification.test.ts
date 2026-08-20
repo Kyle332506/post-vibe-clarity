@@ -40,8 +40,13 @@ async function fixture(): Promise<{
   await writeFiles(root, {
     'package.json': `${JSON.stringify({
       packageManager: 'npm@11.5.1',
-      scripts: { build: 'compile', test: 'check' },
+      scripts: { build: 'node -e "process.exit(0)"', test: 'fixture-check' },
     }, null, 2)}\n`,
+    'node_modules/fixture-check/package.json': `${JSON.stringify({
+      name: 'fixture-check',
+      bin: { 'fixture-check': 'cli.mjs' },
+    }, null, 2)}\n`,
+    'node_modules/fixture-check/cli.mjs': '#!/usr/bin/env node\nprocess.exit(0);\n',
     'index.html': '<form><input type="email" name="email"></form>\n',
     'src/index.ts': 'export const account = { email: "person@example.test" };\n',
   });
@@ -320,6 +325,7 @@ describe('runApprovedVerification execution and artifacts', () => {
       planFingerprint: planned.plan.fingerprint,
       executionId,
       executionRecordPath: actual.executionPath,
+      observationBoundary: actual.execution.observationBoundary,
     });
     expect(await readFile(actual.executionPath, 'utf8')).toBe(`${JSON.stringify(actual.execution, null, 2)}\n`);
     expect(await readFile(actual.reportPath, 'utf8')).toContain('## Local verification');
@@ -335,6 +341,55 @@ describe('runApprovedVerification execution and artifacts', () => {
         `${actual.reportPath}.tmp`,
       ]);
     }
+  });
+
+  it('never starts a later command after an earlier command rewrites its approved source declaration', async () => {
+    const planned = await fixture();
+    const executor = executorFrom(async (id, _context, index) => {
+      if (index === 0) {
+        const manifest = JSON.parse(await readFile(join(planned.root, 'package.json'), 'utf8')) as {
+          scripts: Record<string, string>;
+        };
+        manifest.scripts.test = 'unapproved replacement';
+        await writeFile(join(planned.root, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+      }
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+
+    const actual = await runApprovedVerification(options(planned, executor));
+
+    expect(executor.calls).toEqual(['package-script:build']);
+    expect(actual.execution.status).toBe('partial');
+    expect(actual.execution.results).toEqual([
+      result('package-script:build'),
+      expect.objectContaining({
+        commandId: 'package-script:test',
+        status: 'unverified',
+        unverifiedReason: expect.stringMatching(/approved source declaration changed/i),
+      }),
+    ]);
+  });
+
+  it('never starts a later command after an earlier command rewrites its fingerprinted launcher entrypoint', async () => {
+    const planned = await fixture();
+    const executor = executorFrom(async (id, _context, index) => {
+      if (index === 0) {
+        await writeFile(
+          join(planned.root, 'node_modules', 'fixture-check', 'cli.mjs'),
+          '#!/usr/bin/env node\nprocess.stdout.write("unapproved launcher");\n',
+        );
+      }
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+
+    const actual = await runApprovedVerification(options(planned, executor));
+
+    expect(executor.calls).toEqual(['package-script:build']);
+    expect(actual.execution.results[1]).toEqual(expect.objectContaining({
+      commandId: 'package-script:test',
+      status: 'unverified',
+      unverifiedReason: expect.stringMatching(/approved launcher evidence changed/i),
+    }));
   });
 
   it('passes the saved plan path only as runtime state context so a new source file still invalidates approval', async () => {
@@ -487,7 +542,55 @@ describe('runApprovedVerification execution and artifacts', () => {
     expect(JSON.stringify(actual.execution)).not.toContain('swapped');
   });
 
-  it('releases its acquired lock when unsafe executor output prevents a valid partial record', async () => {
+  it('re-redacts and re-bounds replacement-executor output at the recorder boundary', async () => {
+    const planned = await fixture();
+    const rawCredential = 'pvc-controlled-recorder-secret';
+    const executor = executorFrom(async (id) => ({
+      result: {
+        ...result(id),
+        output: `API_TOKEN=${rawCredential}\n${'x'.repeat(300_000)}`,
+        outputTruncated: false,
+      },
+      removedEnvironmentVariables: [],
+    }));
+
+    const actual = await runApprovedVerification(options(planned, executor));
+
+    expect(actual.execution.results[0]!.output).not.toContain(rawCredential);
+    expect(Buffer.byteLength(actual.execution.results[0]!.output, 'utf8')).toBeLessThanOrEqual(262_144);
+    expect(actual.execution.results[0]!.outputTruncated).toBe(true);
+    expect(await readFile(actual.executionPath, 'utf8')).not.toContain(rawCredential);
+  });
+
+  it('turns contradictory replacement-executor evidence into sanitized partial evidence', async () => {
+    const planned = await fixture();
+    const executor = executorFrom(async (id) => ({
+      result: {
+        ...result(id),
+        status: 'passed',
+        exitCode: 9,
+        unverifiedReason: 'API_TOKEN=pvc-controlled-contradictory-secret',
+      },
+      removedEnvironmentVariables: [],
+    }));
+
+    const actual = await runApprovedVerification(options(planned, executor));
+
+    expect(executor.calls).toEqual(['package-script:build']);
+    expect(actual.execution.status).toBe('partial');
+    expect(actual.execution.results).toEqual([
+      expect.objectContaining({
+        commandId: 'package-script:build',
+        status: 'unverified',
+        unverifiedReason: expect.stringMatching(/executor returned contradictory evidence/i),
+      }),
+      expect.objectContaining({ commandId: 'package-script:test', status: 'unverified' }),
+    ]);
+    expect(JSON.stringify(actual.execution)).not.toContain('pvc-controlled-contradictory-secret');
+    expect(JSON.parse(await readFile(actual.executionPath, 'utf8'))).toEqual(actual.execution);
+  });
+
+  it('records unsafe replacement-executor structure as partial evidence and releases its lock', async () => {
     const planned = await fixture();
     const executor = executorFrom(async (id) => {
       const unsafe = result(id);
@@ -499,8 +602,13 @@ describe('runApprovedVerification execution and artifacts', () => {
     });
     const lockPath = join(planned.outputDirectory, `${executionId}.lock`);
 
-    await expect(runApprovedVerification(options(planned, executor))).rejects.toThrow(/validation|linkage/i);
+    const actual = await runApprovedVerification(options(planned, executor));
 
+    expect(actual.execution.status).toBe('partial');
+    expect(actual.execution.results[0]).toEqual(expect.objectContaining({
+      status: 'unverified',
+      unverifiedReason: expect.stringMatching(/contradictory evidence/i),
+    }));
     await expect(access(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
@@ -537,9 +645,107 @@ describe('runApprovedVerification execution and artifacts', () => {
     ]));
   });
 
+  it('publishes only validated partial execution evidence when the post-command manifest is corrupt', async () => {
+    const planned = await fixture();
+    const executor = executorFrom(async (id, _context, index) => {
+      if (index === planned.plan.commands.length - 1) {
+        await writeFile(join(planned.root, 'package.json'), '{ invalid manifest');
+      }
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+    let failure: unknown;
+
+    try {
+      await runApprovedVerification(options(planned, executor));
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      name: 'VerificationPostProcessingError',
+      executionPath: join(planned.outputDirectory, `${executionId}.execution.json`),
+    });
+    const persisted = JSON.parse(await readFile(
+      join(planned.outputDirectory, `${executionId}.execution.json`),
+      'utf8',
+    )) as { status: string; coverageGaps: Array<{ id: string }> };
+    expect(persisted.status).toBe('partial');
+    expect(persisted.coverageGaps.at(-1)?.id).toBe('orchestration.post-processing');
+    await expect(access(join(planned.outputDirectory, `${executionId}.report.md`))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(JSON.stringify(failure)).not.toContain('invalid manifest');
+  });
+
+  it('rolls back staged completed evidence and publishes partial execution when the report target is occupied after preflight', async () => {
+    const planned = await fixture();
+    const reportPath = join(planned.outputDirectory, `${executionId}.report.md`);
+    const executor = executorFrom(async (id, _context, index) => {
+      if (index === planned.plan.commands.length - 1) {
+        await writeFile(reportPath, 'foreign report target\n');
+      }
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+    let failure: unknown;
+
+    try {
+      await runApprovedVerification(options(planned, executor));
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      name: 'VerificationPostProcessingError',
+      executionPath: join(planned.outputDirectory, `${executionId}.execution.json`),
+    });
+    const persisted = JSON.parse(await readFile(
+      join(planned.outputDirectory, `${executionId}.execution.json`),
+      'utf8',
+    )) as { status: string; coverageGaps: Array<{ id: string }> };
+    expect(persisted.status).toBe('partial');
+    expect(persisted.coverageGaps.at(-1)?.id).toBe('orchestration.post-processing');
+    expect(await readFile(reportPath, 'utf8')).toBe('foreign report target\n');
+  });
+
+  it('does not scan a replacement root and publishes sanitized partial evidence to an external artifact boundary', async () => {
+    const planned = await fixture();
+    const externalOutput = await mkdtemp(join(tmpdir(), 'postvibe-root-drift-output-'));
+    const movedRoot = `${planned.root}-moved-after-command`;
+    temporaryDirectories.push(externalOutput, movedRoot);
+    const executor = executorFrom(async (id, _context, index) => {
+      if (index === planned.plan.commands.length - 1) {
+        await rename(planned.root, movedRoot);
+        await mkdir(planned.root);
+        await writeFile(join(planned.root, 'replacement-secret.ts'), "export const apiKey = 'must-not-be-scanned';\n");
+      }
+      return { result: result(id), removedEnvironmentVariables: [] };
+    });
+    let failure: unknown;
+
+    try {
+      await runApprovedVerification(options(planned, executor, { outputDirectory: externalOutput }));
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      name: 'VerificationPostProcessingError',
+      executionPath: join(externalOutput, `${executionId}.execution.json`),
+    });
+    const persisted = await readFile(join(externalOutput, `${executionId}.execution.json`), 'utf8');
+    expect(JSON.parse(persisted)).toMatchObject({
+      status: 'partial',
+      coverageGaps: expect.arrayContaining([
+        expect.objectContaining({ id: 'orchestration.post-processing' }),
+      ]),
+    });
+    expect(persisted).not.toContain('must-not-be-scanned');
+    await expect(access(join(externalOutput, `${executionId}.report.md`))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('keeps artifact JSON out of the fresh Level 0 scan in an ordinary output directory', async () => {
     const planned = await fixture();
-    planned.plan.containmentWarning = "apiKey='artifact-only-controlled-value'";
+    planned.plan.planningReport.manifest.artifacts[0]!.evidence[0]!.summary = (
+      "apiKey='artifact-only-controlled-value'"
+    );
     planned.plan.fingerprint = fingerprintPlan(planned.plan);
     planned.plan.planId = `pvp-${planned.plan.fingerprint.slice(0, 16)}`;
     await writeFile(planned.planArtifactPath, `${JSON.stringify(planned.plan, null, 2)}\n`);

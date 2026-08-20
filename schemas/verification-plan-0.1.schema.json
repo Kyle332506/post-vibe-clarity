@@ -58,7 +58,7 @@
       "items": { "$ref": "#/$defs/coverageGap" }
     },
     "executionPolicy": { "$ref": "#/$defs/executionPolicy" },
-    "containmentWarning": { "type": "string", "minLength": 1 },
+    "containmentWarning": { "const": "Commands run as local processes with the current user privileges; this is not a security sandbox and does not block network or out-of-project filesystem access." },
     "disclaimer": { "const": "This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects." }
   },
   "$defs": {
@@ -97,6 +97,19 @@
         "sha256": { "$ref": "#/$defs/sha256" }
       }
     },
+    "packageScriptLauncher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyVersion", "kind", "executable", "sha256"],
+      "properties": {
+        "policyVersion": { "const": "package-script-launcher/0.1" },
+        "kind": { "enum": ["node-runtime", "node-package-bin", "direct-executable"] },
+        "executable": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "entrypoint": { "$ref": "#/$defs/inputDigest" },
+        "packageManifest": { "$ref": "#/$defs/inputDigest" }
+      }
+    },
     "command": {
       "type": "object",
       "additionalProperties": false,
@@ -117,8 +130,26 @@
           "minItems": 1,
           "maxItems": 1
         },
-        "source": { "$ref": "#/$defs/commandSource" }
-      }
+        "source": { "$ref": "#/$defs/commandSource" },
+        "launcher": { "$ref": "#/$defs/packageScriptLauncher" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "type": "object",
+                "properties": { "kind": { "const": "package-script" } }
+              }
+            }
+          },
+          "then": {
+            "properties": { "launcher": { "$ref": "#/$defs/packageScriptLauncher" } },
+            "required": ["launcher"]
+          },
+          "else": { "not": { "required": ["launcher"] } }
+        }
+      ]
     },
     "coverageGap": {
       "type": "object",

@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -43,11 +44,17 @@ function command(argv: string[], overrides: Partial<VerificationCommand> = {}): 
 }
 
 function context(root: string, signal: AbortSignal, environment: NodeJS.ProcessEnv = {}) {
+  const details = statSync(root, { bigint: true });
   return {
     root,
     signal,
     inheritedEnvironment: environment,
     excludedArtifactPaths: [],
+    rootIdentity: {
+      realPath: realpathSync(root),
+      device: details.dev.toString(),
+      inode: details.ino.toString(),
+    },
     now: () => '2026-08-20T12:00:00.000Z',
   };
 }

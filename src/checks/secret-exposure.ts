@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { listProjectFiles } from '../discovery/file-index.js';
 import type { Finding } from '../model/finding.js';
+import { compareOrdinal } from '../ordinal.js';
 import type { CheckImplementation } from '../orchestrator/check-registry.js';
 
 const require = createRequire(import.meta.url);
@@ -188,7 +189,7 @@ function scanJavaScriptOrTypeScript(file: string, content: string): SecretDetect
   }
 
   visit(sourceFile);
-  return [...detections.values()].sort((left, right) => left.line - right.line || left.rule.localeCompare(right.rule));
+  return [...detections.values()].sort((left, right) => left.line - right.line || compareOrdinal(left.rule, right.rule));
 }
 
 function scanGenericText(content: string): SecretDetection[] {

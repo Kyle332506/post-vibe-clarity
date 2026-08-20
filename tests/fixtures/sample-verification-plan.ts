@@ -1,13 +1,16 @@
+import { createHash } from 'node:crypto';
 import type { VerificationPlan } from '../../src/model/verification.js';
+import { fingerprintPlan } from '../../src/verification/plan-fingerprint.js';
 import { sampleReadinessReport } from './sample-readiness-report.js';
 
-const sourceHash = '1'.repeat(64);
+const sha256 = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
+const containmentWarning = 'Commands run as local processes with the current user privileges; this is not a security sandbox and does not block network or out-of-project filesystem access.';
 
-export const sampleVerificationPlan: VerificationPlan = {
+const plan: VerificationPlan = {
   schemaId: 'postvibe-verification-plan/0.1',
   schemaVersion: '0.1',
-  planId: 'pvp-1bdac9c1237a2aad',
-  fingerprint: '1bdac9c1237a2aad29818e6604eabcbc962c6113ed7d398d217ffa82d2804570',
+  planId: 'pvp-0000000000000000',
+  fingerprint: '0'.repeat(64),
   toolkitVersion: '0.2.0',
   generatedAt: '2026-08-18T12:00:00.000Z',
   projectRoot: '/example/project',
@@ -18,36 +21,48 @@ export const sampleVerificationPlan: VerificationPlan = {
     { location: 'src/index.ts', sha256: '3'.repeat(64) },
   ],
   skillDigests: [
-    { location: 'universal-verification/readiness.yaml', sha256: '5'.repeat(64) },
     { location: 'universal-verification/SKILL.md', sha256: '4'.repeat(64) },
+    { location: 'universal-verification/readiness.yaml', sha256: '5'.repeat(64) },
   ],
   commands: [
     {
       id: 'package-script:build',
       category: 'build',
-      argv: ['pnpm', 'run', 'build'],
+      argv: ['/example/node', 'build.mjs'],
       cwd: '.',
       timeoutSeconds: 600,
       requiredAccess: ['local-command'],
       source: {
         kind: 'package-script',
         location: 'package.json#scripts.build',
-        declaration: 'tsc -p tsconfig.json',
-        sha256: sourceHash,
+        declaration: 'node build.mjs',
+        sha256: sha256('node build.mjs'),
+      },
+      launcher: {
+        policyVersion: 'package-script-launcher/0.1',
+        kind: 'node-runtime',
+        executable: '/example/node',
+        sha256: '8'.repeat(64),
       },
     },
     {
       id: 'package-script:test',
       category: 'test',
-      argv: ['pnpm', 'run', 'test'],
+      argv: ['/example/node', 'test.mjs'],
       cwd: '.',
       timeoutSeconds: 600,
       requiredAccess: ['local-command'],
       source: {
         kind: 'package-script',
         location: 'package.json#scripts.test',
-        declaration: 'vitest run',
-        sha256: '6'.repeat(64),
+        declaration: 'node test.mjs',
+        sha256: sha256('node test.mjs'),
+      },
+      launcher: {
+        policyVersion: 'package-script-launcher/0.1',
+        kind: 'node-runtime',
+        executable: '/example/node',
+        sha256: '8'.repeat(64),
       },
     },
   ],
@@ -55,15 +70,21 @@ export const sampleVerificationPlan: VerificationPlan = {
     {
       id: 'package-script:lint',
       category: 'lint',
-      argv: ['pnpm', 'run', 'lint'],
+      argv: ['/example/node', 'lint.mjs'],
       cwd: '.',
       timeoutSeconds: 600,
       requiredAccess: ['local-command'],
       source: {
         kind: 'package-script',
         location: 'package.json#scripts.lint',
-        declaration: 'eslint .',
-        sha256: '7'.repeat(64),
+        declaration: 'node lint.mjs',
+        sha256: sha256('node lint.mjs'),
+      },
+      launcher: {
+        policyVersion: 'package-script-launcher/0.1',
+        kind: 'node-runtime',
+        executable: '/example/node',
+        sha256: '8'.repeat(64),
       },
     },
   ],
@@ -91,6 +112,11 @@ export const sampleVerificationPlan: VerificationPlan = {
     outputLimitBytes: 262144,
     executor: 'local-process/0.1',
   },
-  containmentWarning: 'Commands run as local processes with the current user privileges; this is not a security sandbox.',
+  containmentWarning,
   disclaimer: 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.',
 };
+
+plan.fingerprint = fingerprintPlan(plan);
+plan.planId = `pvp-${plan.fingerprint.slice(0, 16)}`;
+
+export const sampleVerificationPlan = plan;

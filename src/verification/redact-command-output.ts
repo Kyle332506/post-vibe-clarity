@@ -387,7 +387,12 @@ function boundRedactedOutput(
 }
 
 export function redactCommandOutput(input: string): string {
-  return boundRedactedOutput(redactLikelySecrets(input)).output;
+  return redactAndBoundCommandOutput(input).output;
+}
+
+export function redactAndBoundCommandOutput(input: string): CollectedCommandOutput {
+  const bounded = boundRedactedOutput(redactLikelySecrets(input));
+  return { output: bounded.output, truncated: bounded.truncated };
 }
 
 export function createCommandOutputCollector(

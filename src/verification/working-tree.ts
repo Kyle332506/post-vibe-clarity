@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } from 'node:path';
 import { listProjectFiles } from '../discovery/file-index.js';
-import type { FileChange } from '../model/verification.js';
+import type { FileChange, ProjectRootIdentity } from '../model/verification.js';
+import { compareOrdinal } from '../ordinal.js';
+import { assertProjectRootIdentity } from './project-observation.js';
 import { resolveProjectRoot } from './project-path.js';
 
 export type WorkingTreeSnapshot = ReadonlyMap<string, string>;
@@ -51,8 +53,13 @@ function sha256(bytes: Buffer): string {
 export async function snapshotWorkingTree(
   root: string,
   excludedPaths: readonly string[],
+  expectedRootIdentity?: ProjectRootIdentity,
 ): Promise<WorkingTreeSnapshot> {
+  if (expectedRootIdentity !== undefined) await assertProjectRootIdentity(root, expectedRootIdentity);
   const resolvedRoot = await resolveProjectRoot(root);
+  if (expectedRootIdentity !== undefined && resolvedRoot !== expectedRootIdentity.realPath) {
+    await assertProjectRootIdentity(root, expectedRootIdentity);
+  }
   const excluded = await excludedLocations(resolvedRoot, excludedPaths);
   const snapshot = new Map<string, string>();
 
@@ -79,7 +86,7 @@ export function diffWorkingTrees(
   after: WorkingTreeSnapshot,
 ): FileChange[] {
   const paths = [...new Set([...before.keys(), ...after.keys()])]
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareOrdinal);
 
   return paths.flatMap((path): FileChange[] => {
     const beforeHash = before.get(path);

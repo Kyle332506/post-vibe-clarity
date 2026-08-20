@@ -151,6 +151,32 @@ describe('validatePlanState', () => {
     await expect(validatePlanState(fixture.plan)).rejects.toThrow(STALE_ERROR);
   });
 
+  it('rejects a newly added catalog audit skill that can affect the mandatory fresh review', async () => {
+    const fixture = await plannedFixture();
+    await writeFiles(fixture.skillsRoot, {
+      'new-audit/SKILL.md': [
+        '---',
+        'name: new-audit',
+        'description: Newly shipped audit skill.',
+        'license: Apache-2.0',
+        '---',
+        '',
+      ].join('\n'),
+      'new-audit/readiness.yaml': [
+        'schemaVersion: "0.1"',
+        'id: new-audit',
+        'skillVersion: "0.1.0"',
+        'domains: [security-privacy]',
+        'modes: [audit]',
+        'maxActionLevel: 0',
+        'checks: [secret-exposure.scan]',
+        '',
+      ].join('\n'),
+    });
+
+    await expect(validatePlanState(fixture.plan)).rejects.toThrow(STALE_ERROR);
+  });
+
   it('excludes the saved plan artifact only through runtime validation context', async () => {
     const fixture = await plannedFixture();
     const planArtifactPath = join(fixture.root, 'reports', 'approved-plan.json');

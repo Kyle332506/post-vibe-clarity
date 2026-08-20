@@ -15,6 +15,28 @@ async function invalidErrors(input: unknown): Promise<string[]> {
 }
 
 describe('validateVerificationExecution', () => {
+  it('accepts a versioned observation boundary that states every traversal exclusion and root identity', async () => {
+    const input = {
+      ...structuredClone(sampleVerificationExecution),
+      observationBoundary: {
+        policyVersion: 'project-observation/0.1',
+        rootIdentity: { realPath: '/example/project', device: '1', inode: '2' },
+        versionControlDirectories: ['.git'],
+        artifactDirectories: ['.postvibe'],
+        coverageDirectories: ['coverage'],
+        distributionDirectories: ['dist'],
+        dependencyDirectories: ['node_modules'],
+        exactArtifactExclusions: ['/example/project/.postvibe/execution.json'],
+        symlinks: 'not-followed',
+        nonRegularFiles: 'not-observed',
+        inaccessiblePaths: 'observation-fails',
+        metadata: 'content-sha256-only',
+      },
+    };
+
+    expect(await validateVerificationExecution(input)).toEqual({ ok: true });
+  });
+
   it('accepts the canonical verification execution fixture', async () => {
     expect(await validateVerificationExecution(sampleVerificationExecution)).toEqual({ ok: true });
     expect(validateExecutionAgainstPlan(sampleVerificationExecution, sampleVerificationPlan)).toEqual([]);
@@ -36,6 +58,68 @@ describe('validateVerificationExecution', () => {
     input.disclaimer = 'This report reduces uncertainty but certifies the application.';
 
     expect((await invalidErrors(input)).join('\n')).toContain('/disclaimer');
+  });
+
+  it('requires the exact policy-versioned containment warning', async () => {
+    const input = structuredClone(sampleVerificationExecution);
+    input.containmentWarning = `${input.containmentWarning} Changed.`;
+
+    expect((await invalidErrors(input)).join('\n')).toContain('/containmentWarning');
+  });
+
+  it('requires completedAt to be at or after startedAt', async () => {
+    const input = structuredClone(sampleVerificationExecution);
+    input.completedAt = '2026-08-18T12:00:59.999Z';
+
+    expect(await invalidErrors(input)).toContain('/completedAt must be at or after /startedAt');
+  });
+
+  it('enforces the complete command status evidence matrix', async () => {
+    const cases: Array<{
+      label: string;
+      mutate: (result: typeof sampleVerificationExecution.results[number]) => void;
+    }> = [
+      { label: 'passed with nonzero exit', mutate: (result) => { result.exitCode = 1; } },
+      { label: 'failed with zero exit', mutate: (result) => {
+        result.status = 'failed';
+        result.exitCode = 0;
+      } },
+      { label: 'failed with an unverified reason', mutate: (result) => {
+        result.status = 'failed';
+        result.exitCode = 1;
+        result.unverifiedReason = 'Contradictory reason.';
+      } },
+      { label: 'timed out without reason', mutate: (result) => {
+        result.status = 'timed-out';
+        result.exitCode = null;
+      } },
+      { label: 'could not start with an exit', mutate: (result) => {
+        result.status = 'could-not-start';
+        result.exitCode = 1;
+        result.unverifiedReason = 'Could not start.';
+      } },
+      { label: 'interrupted without reason', mutate: (result) => {
+        result.status = 'interrupted';
+        result.exitCode = null;
+      } },
+      { label: 'unverified with process timing', mutate: (result) => {
+        result.status = 'unverified';
+        result.exitCode = null;
+        result.unverifiedReason = 'No evidence.';
+      } },
+    ];
+
+    for (const { label, mutate } of cases) {
+      const input = structuredClone(sampleVerificationExecution);
+      input.status = input.results[0]!.status === 'unverified' ? 'partial' : input.status;
+      mutate(input.results[0]!);
+      if (input.results[0]!.status === 'unverified' || input.results[0]!.status === 'interrupted') {
+        input.status = 'partial';
+      }
+      expect((await invalidErrors(input)).join('\n'), label).toContain(
+        '/results/package-script:build status evidence is contradictory',
+      );
+    }
   });
 
   it('rejects duplicate command result IDs', async () => {
@@ -81,6 +165,20 @@ describe('validateVerificationExecution', () => {
     missing.results = missing.results.filter(({ commandId }) => commandId !== 'package-script:test');
     expect(validateExecutionAgainstPlan(missing, sampleVerificationPlan)).toContain(
       '/results must contain selected command package-script:test',
+    );
+  });
+
+  it('requires exact ordered results and exact plan coverage gaps', () => {
+    const reordered = structuredClone(sampleVerificationExecution);
+    reordered.results.reverse();
+    expect(validateExecutionAgainstPlan(reordered, sampleVerificationPlan)).toContain(
+      '/results must match selected plan commands in exact order',
+    );
+
+    const extraGap = structuredClone(sampleVerificationExecution);
+    extraGap.coverageGaps.push({ id: 'unexpected.gap', reason: 'Unexpected.' });
+    expect(validateExecutionAgainstPlan(extraGap, sampleVerificationPlan)).toContain(
+      '/coverageGaps must exactly match plan coverage gaps or the allowed orchestration gap',
     );
   });
 

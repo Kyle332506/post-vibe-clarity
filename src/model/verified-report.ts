@@ -1,11 +1,13 @@
 import type { Finding } from './finding.js';
 import type { CheckExecution, CoverageGap, ReadinessReport } from './report.js';
+import type { ObservationBoundary } from './verification.js';
 
 export interface VerificationLink {
   planId: string;
   planFingerprint: string;
   executionId: string;
   executionRecordPath: string;
+  observationBoundary: ObservationBoundary;
 }
 
 export interface VerifiedReadinessReport extends Omit<ReadinessReport, 'schemaVersion'> {

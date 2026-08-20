@@ -3,6 +3,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { listProjectFiles } from '../discovery/file-index.js';
 import type { InputDigest } from '../model/verification.js';
+import { compareOrdinal } from '../ordinal.js';
 import { resolveExistingFileInsideProject, resolveProjectRoot } from './project-path.js';
 
 function normalizeLocation(location: string): string {
@@ -32,7 +33,7 @@ async function resolveThroughExistingAncestor(path: string): Promise<string> {
 
 export async function digestInputLocations(root: string, locations: readonly string[]): Promise<InputDigest[]> {
   const resolvedRoot = await realpath(root);
-  const normalizedLocations = [...new Set(locations.map(normalizeLocation))].sort((left, right) => left.localeCompare(right));
+  const normalizedLocations = [...new Set(locations.map(normalizeLocation))].sort(compareOrdinal);
   const digests: InputDigest[] = [];
 
   for (const location of normalizedLocations) {

@@ -11,6 +11,7 @@ import {
   summarizeReport,
   type ReadinessReport,
 } from '../model/report.js';
+import { compareOrdinal } from '../ordinal.js';
 import type { ValidationResult } from './readiness-schema.js';
 
 const require = createRequire(import.meta.url);
@@ -98,7 +99,7 @@ function validateSemantics(report: ReadinessReport): string[] {
       .filter(({ checkId }) => checkId === execution.checkId);
     const expectedFindingIds = executionFindings
       .map(({ id }) => id)
-      .sort();
+      .sort(compareOrdinal);
     if (!isDeepStrictEqual(execution.findingIds, expectedFindingIds)) {
       errors.push(`/checkExecutions/${execution.checkId}/findingIds must match report findings`);
     }

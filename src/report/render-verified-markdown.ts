@@ -3,9 +3,9 @@ import { checkExecutionStatuses, readinessDomains, type ReadinessReport } from '
 import type { VerifiedReadinessReport } from '../model/verified-report.js';
 import { renderSafeMarkdownCode } from './markdown-safety.js';
 import { renderMarkdown } from './render-markdown.js';
+import { CONTAINMENT_WARNING } from '../verification/contract-constants.js';
 
 const verificationCheckId = 'universal-verification.commands';
-const containmentWarning = 'Commands run as local processes with the current user privileges; this is not a security sandbox and does not block network or out-of-project filesystem access.';
 const findingOutcomes = new Set([
   'passed',
   'failed',
@@ -118,7 +118,30 @@ function renderLocalVerification(report: VerifiedReadinessReport): string[] {
       lines.push(`- ${renderSafeMarkdownCode(commandId(finding))}: ${boundaries}`);
     }
   }
-  lines.push('', '### Containment warning', '', containmentWarning);
+  const observation = report.verification.observationBoundary;
+  const excludedDirectories = [
+    ...observation.versionControlDirectories,
+    ...observation.artifactDirectories,
+    ...observation.coverageDirectories,
+    ...observation.distributionDirectories,
+    ...observation.dependencyDirectories,
+  ];
+  lines.push('', '### Observation boundary', '');
+  lines.push(`- Policy: ${renderSafeMarkdownCode(observation.policyVersion)}`);
+  lines.push(`- Pinned root: ${renderSafeMarkdownCode(observation.rootIdentity.realPath)} (device ${renderSafeMarkdownCode(observation.rootIdentity.device)}; inode ${renderSafeMarkdownCode(observation.rootIdentity.inode)})`);
+  lines.push(`- Excluded directories: ${excludedDirectories.map(renderSafeMarkdownCode).join(', ')}`);
+  lines.push('- Symlinks and non-regular files are not observed.');
+  lines.push('- Inaccessible paths fail observation.');
+  lines.push('- Only content SHA-256 metadata is recorded; filesystem metadata is not recorded.');
+  lines.push('- Exact artifact exclusions:');
+  if (observation.exactArtifactExclusions.length === 0) {
+    lines.push('  - None.');
+  } else {
+    for (const path of observation.exactArtifactExclusions) {
+      lines.push(`  - ${renderSafeMarkdownCode(path)}`);
+    }
+  }
+  lines.push('', '### Containment warning', '', CONTAINMENT_WARNING);
   return lines;
 }
 

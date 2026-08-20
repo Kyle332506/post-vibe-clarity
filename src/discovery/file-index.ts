@@ -1,5 +1,6 @@
 import { readdir, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } from 'node:path';
+import { compareOrdinal } from '../ordinal.js';
 
 const ignoredDirectories = new Set(['.git', '.postvibe', 'coverage', 'dist', 'node_modules']);
 
@@ -64,5 +65,5 @@ export async function listProjectFiles(root: string, excludedPaths: readonly str
   }
 
   await walk(root);
-  return files.sort();
+  return files.sort(compareOrdinal);
 }

@@ -63,6 +63,11 @@ export interface ArtifactPublicationHooks {
   beforeSourceCleanup?: () => Promise<void>;
 }
 
+export interface OwnedArtifactPublication {
+  file: OwnedFile;
+  path: string;
+}
+
 const closedFiles = new WeakSet<OwnedFile>();
 const releasedFiles = new WeakSet<OwnedFile>();
 
@@ -335,6 +340,36 @@ export async function publishOwnedFileExclusively(
     await assertOwnedPath(file, path);
   } catch (error) {
     await cleanupPublicationFailure(file, path, sourceQuarantine, linked, error, hooks);
+  }
+}
+
+export async function publishOwnedArtifactSetExclusively(
+  publications: readonly OwnedArtifactPublication[],
+): Promise<void> {
+  const published: OwnedArtifactPublication[] = [];
+  let currentPath: string | undefined;
+  try {
+    for (const publication of publications) {
+      currentPath = publication.path;
+      await publishOwnedFileExclusively(publication.file, publication.path);
+      published.push(publication);
+    }
+  } catch (error) {
+    let failure: unknown = isAlreadyExistsError(error) && currentPath !== undefined
+      ? new ArtifactFileCollisionError(`Artifact file already exists; no file was overwritten: ${currentPath}`)
+      : error;
+    for (const publication of published.reverse()) {
+      try {
+        await rollbackPublishedPath(publication.file, publication.path);
+      } catch (rollbackError) {
+        failure = combineFailures(
+          failure,
+          rollbackError,
+          'Artifact-set publication and completed-file rollback both failed.',
+        );
+      }
+    }
+    throw failure;
   }
 }
 

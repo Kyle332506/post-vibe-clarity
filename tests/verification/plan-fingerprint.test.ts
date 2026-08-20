@@ -8,6 +8,10 @@ describe('canonicalJson', () => {
     expect(canonicalJson({ values: ['first', 'second'] }))
       .not.toBe(canonicalJson({ values: ['second', 'first'] }));
   });
+
+  it('orders accented and canonically composed names by code units without locale collation', () => {
+    expect(canonicalJson({ 'é': 1, 'e\u0301': 2, z: 3 })).toBe('{"é":2,"z":3,"é":1}');
+  });
 });
 
 describe('fingerprintPlan', () => {
