@@ -11,17 +11,6 @@ const boundedTailCapacity = retainedBytes - boundedHeadCapacity;
 const rawHeadCapacity = Math.floor(COMMAND_OUTPUT_LIMIT_BYTES / 2);
 const rawTailCapacity = COMMAND_OUTPUT_LIMIT_BYTES - rawHeadCapacity;
 const utf8Decoder = new TextDecoder('utf-8');
-const sensitiveAssignmentParts = [
-  'TOKEN',
-  'SECRET',
-  'PASSWORD',
-  'PASSWD',
-  'PRIVATE_KEY',
-  'CREDENTIAL',
-  'API_KEY',
-  'COOKIE',
-  'SESSION',
-];
 
 export interface CollectedCommandOutput {
   output: string;
@@ -97,33 +86,8 @@ function redactPrivateKeyTail(input: string): string {
     .replace(/^[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/iu, '[REDACTED]');
 }
 
-function hasOpenSensitiveLine(input: string): boolean {
-  const line = input.slice(Math.max(input.lastIndexOf('\n'), input.lastIndexOf('\r')) + 1);
-  return /\bAuthorization\s*:\s*Bearer\s+[^\s\r\n]*$/iu.test(line)
-    || /\bAuthorization\s*[:=]/iu.test(line)
-    || /\b(?:Set-Cookie|Cookie)\s*:/iu.test(line)
-    || /(?<![A-Z0-9_.-])["']?(?=[A-Z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|CREDENTIAL|API_KEY|COOKIE|SESSION))[A-Z_][A-Z0-9_.-]*["']?\s*[:=]/iu.test(line);
-}
-
 function redactBoundaryTail(input: string): string {
   return input.replace(/^[^\r\n]*/u, '[REDACTED]');
-}
-
-function hasCrossGapSensitiveAssignment(head: string, tail: string, gapBytes: number): boolean {
-  const headIdentifier = /[A-Z0-9_.-]+$/iu.exec(head)?.[0]?.toUpperCase();
-  const tailIdentifier = /^([A-Z0-9_.-]*)\s*[:=]/iu.exec(tail)?.[1]?.toUpperCase();
-  if (headIdentifier === undefined || tailIdentifier === undefined) return false;
-
-  return sensitiveAssignmentParts.some((part) => {
-    for (let retainedHeadLength = 1; retainedHeadLength < part.length; retainedHeadLength += 1) {
-      if (!headIdentifier.endsWith(part.slice(0, retainedHeadLength))) continue;
-      const maximumOmittedLength = Math.min(gapBytes, part.length - retainedHeadLength - 1);
-      for (let omittedLength = 0; omittedLength <= maximumOmittedLength; omittedLength += 1) {
-        if (tailIdentifier.startsWith(part.slice(retainedHeadLength + omittedLength))) return true;
-      }
-    }
-    return false;
-  });
 }
 
 function redactLikelySecrets(input: string): string {
@@ -200,13 +164,10 @@ export function createCommandOutputCollector(): CommandOutputCollector {
       try {
         const rawTruncated = totalBytes > COMMAND_OUTPUT_LIMIT_BYTES;
         if (rawTruncated) {
-          const gapBytes = totalBytes - headLength - tailLength;
           const rawHead = decodeCompletePrefix(head.subarray(0, headLength));
           const rawTail = decodeCompleteSuffix(tail.subarray(0, tailLength));
-          const boundarySensitive = hasOpenSensitiveLine(rawHead)
-            || hasCrossGapSensitiveAssignment(rawHead, rawTail, gapBytes);
           raw = `${redactPrivateKeys(rawHead)}${truncationMarker}${redactPrivateKeyTail(
-            boundarySensitive ? redactBoundaryTail(rawTail) : rawTail,
+            redactBoundaryTail(rawTail),
           )}`;
         } else {
           const decoder = new TextDecoder('utf-8');

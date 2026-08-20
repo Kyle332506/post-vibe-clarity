@@ -6,6 +6,21 @@ import {
   redactCommandOutput,
 } from '../../src/verification/redact-command-output.js';
 
+function collectAcrossRetentionGap(
+  headSuffix: string,
+  omitted: string,
+  firstTailLine: string,
+): ReturnType<ReturnType<typeof createCommandOutputCollector>['finish']> {
+  const firstEvidence = 'first evidence\n';
+  const lastEvidence = '\nlater tail evidence';
+  const halfLimit = COMMAND_OUTPUT_LIMIT_BYTES / 2;
+  const head = `${firstEvidence}${'h'.repeat(halfLimit - firstEvidence.length - headSuffix.length)}${headSuffix}`;
+  const tail = `${firstTailLine}${'t'.repeat(halfLimit - firstTailLine.length - lastEvidence.length)}${lastEvidence}`;
+  const collector = createCommandOutputCollector();
+  collector.append(`${head}${omitted}${tail}`);
+  return collector.finish();
+}
+
 describe('command output redaction', () => {
   it.each([
     ['APP_TOKEN=token-value', 'APP_TOKEN=[REDACTED]'],
@@ -69,6 +84,42 @@ describe('command output redaction', () => {
     expect(result.output.endsWith(lastEvidence)).toBe(true);
   });
 
+  it('redacts a tail value when its sensitive name and delimiter end inside the gap', () => {
+    const result = collectAcrossRetentionGap(
+      'APP_TO',
+      'KEN=',
+      'secret-prefix-0123456789abcdef-app-token-gap-secret',
+    );
+
+    expect(result.truncated).toBe(true);
+    expect(result.output.includes('app-token-gap-secret')).toBe(false);
+    expect(result.output.endsWith('\nlater tail evidence')).toBe(true);
+  });
+
+  it('redacts an authorization value whose name straddles the retention gap', () => {
+    const result = collectAcrossRetentionGap(
+      'AUTHORI',
+      'Z',
+      'ATION=0123456789abcdef-authorization-gap-secret',
+    );
+
+    expect(result.truncated).toBe(true);
+    expect(result.output.includes('authorization-gap-secret')).toBe(false);
+    expect(result.output.endsWith('\nlater tail evidence')).toBe(true);
+  });
+
+  it('redacts the first tail value when the entire sensitive assignment is omitted', () => {
+    const result = collectAcrossRetentionGap(
+      'ordinary-head',
+      'APP_TOKEN=',
+      '0123456789abcdef-entirely-omitted-assignment-secret',
+    );
+
+    expect(result.truncated).toBe(true);
+    expect(result.output.includes('entirely-omitted-assignment-secret')).toBe(false);
+    expect(result.output.endsWith('\nlater tail evidence')).toBe(true);
+  });
+
   it('redacts an interrupted private-key block below the output limit', () => {
     const output = redactCommandOutput('before key\n-----BEGIN PRIVATE KEY-----\ninterrupted-private-key-body');
 
@@ -97,7 +148,8 @@ describe('command output redaction', () => {
       Buffer.alloc((COMMAND_OUTPUT_LIMIT_BYTES / 2) - firstEvidence.byteLength, 0x68),
     ]);
     const tail = Buffer.concat([
-      Buffer.alloc((COMMAND_OUTPUT_LIMIT_BYTES / 2) - lastEvidence.byteLength, 0x74),
+      Buffer.alloc((COMMAND_OUTPUT_LIMIT_BYTES / 2) - lastEvidence.byteLength - 1, 0x74),
+      Buffer.from('\n', 'utf8'),
       lastEvidence,
     ]);
     const collector = createCommandOutputCollector();
@@ -136,14 +188,14 @@ describe('command output redaction', () => {
 
   it('retains valid UTF-8 evidence from both ends within the byte limit', () => {
     const collector = createCommandOutputCollector();
-    collector.append(`first-🙂-${'x'.repeat(COMMAND_OUTPUT_LIMIT_BYTES)}-last-🙃`);
+    collector.append(`first-🙂-${'x'.repeat(COMMAND_OUTPUT_LIMIT_BYTES)}\nlast-🙃`);
 
     const result = collector.finish();
 
     expect(result.truncated).toBe(true);
     expect(result.output).toContain('[... output truncated ...]');
     expect(result.output.startsWith('first-🙂-')).toBe(true);
-    expect(result.output.endsWith('-last-🙃')).toBe(true);
+    expect(result.output.endsWith('\nlast-🙃')).toBe(true);
     expect(result.output).not.toContain('\uFFFD');
     expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(COMMAND_OUTPUT_LIMIT_BYTES);
   });
@@ -164,15 +216,17 @@ describe('command output redaction', () => {
   });
 
   it('preserves unrelated tail evidence around a complete private-key block', () => {
+    const boundary = 'unsafe-boundary-fragment\n';
     const prefix = 'tail-before-key\n';
     const key = '-----BEGIN PRIVATE KEY-----\ntail-private-key\n-----END PRIVATE KEY-----\n';
     const suffix = 'tail-after-key';
-    const tail = `${prefix}${key}${'t'.repeat((COMMAND_OUTPUT_LIMIT_BYTES / 2) - prefix.length - key.length - suffix.length)}${suffix}`;
+    const tail = `${boundary}${prefix}${key}${'t'.repeat((COMMAND_OUTPUT_LIMIT_BYTES / 2) - boundary.length - prefix.length - key.length - suffix.length)}${suffix}`;
     const collector = createCommandOutputCollector();
     collector.append(`${'h'.repeat(COMMAND_OUTPUT_LIMIT_BYTES / 2)}omitted${tail}`);
 
     const result = collector.finish();
 
+    expect(result.output.includes('unsafe-boundary-fragment')).toBe(false);
     expect(result.output.includes('tail-before-key\n[REDACTED]\n')).toBe(true);
     expect(result.output.includes('tail-after-key')).toBe(true);
     expect(result.output.includes('tail-private-key')).toBe(false);
