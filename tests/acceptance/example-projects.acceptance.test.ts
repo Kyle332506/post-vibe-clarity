@@ -36,8 +36,11 @@ describe('launch candidate example projects', () => {
   it('shows the credential and missing privacy notice in the before project', async () => {
     const report = await runReview({ root: example('before'), skillsRoot, now });
 
-    expect(report.manifest.artifacts.map(({ value }) => value)).toEqual(['web']);
-    expect(report.manifest.capabilities.map(({ value }) => value)).toEqual(['collects-personal-data']);
+    expect(report.manifest.artifacts.map(({ value }) => value)).toEqual(['web', 'backend']);
+    expect(report.manifest.capabilities.map(({ value }) => value)).toEqual([
+      'network-service',
+      'collects-personal-data',
+    ]);
     expect(report.findings.map(({ checkId, outcome, actionLevel }) => ({
       checkId,
       outcome,
@@ -61,8 +64,11 @@ describe('launch candidate example projects', () => {
   it('resolves the two example findings without hiding remaining coverage gaps', async () => {
     const report = await runReview({ root: example('after'), skillsRoot, now });
 
-    expect(report.manifest.artifacts.map(({ value }) => value)).toEqual(['web']);
-    expect(report.manifest.capabilities.map(({ value }) => value)).toEqual(['collects-personal-data']);
+    expect(report.manifest.artifacts.map(({ value }) => value)).toEqual(['web', 'backend']);
+    expect(report.manifest.capabilities.map(({ value }) => value)).toEqual([
+      'network-service',
+      'collects-personal-data',
+    ]);
     expect(report.findings.map(({ checkId, outcome, actionLevel }) => ({
       checkId,
       outcome,
