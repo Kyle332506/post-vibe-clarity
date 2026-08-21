@@ -29,3 +29,23 @@ The parent supplied the completed with-skill run. The committed fixture normaliz
 The acceptance test recomputes SHA-256 over the current `SKILL.md`, backup template, and their ordered combined bytes. It verifies the ten one-question interview turns, both `I don't know` answers, sensitive-input refusal, exact preview and separate approval identity, one bounded Markdown write, artifact and diff equivalence, safety exclusions, and the honest `unverified` recheck with its live-evidence boundary.
 
 Focused result: `tests/skills/launch-operations-behavior.test.ts` passed 1/1 after the supplied evidence was materialized.
+
+## Fix round 2 mutation-backed RED
+
+The behavioral validator was first refactored without strengthening its acceptance rules. Fourteen malicious variants were then added across the nine required bypass classes: a secret-request question; sensitive content in each of the user-turn, assistant-turn, action-payload, preview, artifact, and diff surfaces; an early write; a preview/artifact contradiction; an appended binary deletion; a dishonest exit-127 recheck; appended push and external-call actions; a stale capture timestamp; and a provider-specific identifier.
+
+RED command:
+
+```text
+pnpm vitest run tests/skills/launch-operations-behavior.test.ts
+```
+
+Observed result: `14 failed | 1 passed`. The unmodified bound trace remained GREEN, while every malicious variant failed its expectation because the prior validator incorrectly accepted the mutation. This demonstrated each bypass before hardening.
+
+## Fix round 2 mutation-backed GREEN
+
+The validator now derives acceptance from the complete trace rather than trusting summary fields. It enforces the exact ten question texts, independently scans every required evidence surface for sensitive content, orders actions through referenced turns, allows only phase-appropriate action types, binds preview and approval to the artifact SHA-256 and path, compares the exact canonical one-file unified diff, enforces honest unavailable-command semantics, and validates a same-session bounded timeline. Its documented provider-neutral boundary requires generic data-location, backup-mechanism, and durable-role descriptions while rejecting provider and environment identifiers.
+
+The fixture retains the supplied live trace and remains bound to the unchanged `SKILL.md` and backup-template bytes. No live behavioral output was fabricated or rerun.
+
+Focused result: `tests/skills/launch-operations-behavior.test.ts` passed 15/15, including all fourteen mutation regressions and the bound baseline trace.

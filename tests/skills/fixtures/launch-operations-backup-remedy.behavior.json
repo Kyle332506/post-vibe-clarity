@@ -500,18 +500,22 @@
       "Evidence boundary"
     ],
     "confirmedFacts": [
-      "Signup metrics are stored in encrypted object storage.",
-      "Account preferences are stored in a managed relational database.",
+      "The project stores signup metrics in encrypted object storage.",
+      "The project stores account preferences in a managed relational database.",
       "Scheduled encrypted snapshots and transaction logs are intended to create backups.",
       "Backups are intended to be retained for 30 days.",
-      "The Data Recovery Maintainer role owns backup and recovery work.",
-      "Restoration selects an approved snapshot, uses an isolated recovery environment, validates record counts and checksums, records the result, and escalates mismatches.",
+      "The Data Recovery Maintainer owns backup and recovery work.",
+      "The Data Recovery Maintainer selects an approved snapshot.",
+      "The Data Recovery Maintainer restores it in an isolated recovery environment.",
+      "The Data Recovery Maintainer validates record counts and checksums.",
+      "The Data Recovery Maintainer records the result and escalates mismatches.",
       "Restoration is intended to be tested quarterly in an isolated staging environment.",
-      "Backup-job failures are reviewed in the monitoring dashboard and notify the on-call operations role, which opens an incident and records the response."
+      "A scheduled backup-job failure signal is reviewed in the monitoring dashboard and notifies the on-call operations role.",
+      "The on-call operations role opens an incident and records the response."
     ],
     "unresolvedDecisions": [
-      "The acceptable amount of recent data loss is unknown.",
-      "The recovery time is unknown."
+      "Unresolved decision: Define the acceptable amount of recent data loss.",
+      "Unresolved decision: Define how quickly recovery should happen."
     ],
     "expectedRepositoryEffect": "The document may satisfy the repository backup-and-restore evidence profile if all required content is present; live behavior remains unverified.",
     "remainingLiveGaps": [
@@ -522,8 +526,10 @@
     ],
     "recheck": {
       "findingId": "launch-operations.backup-restore",
+      "target": "docs/operations/backup-and-restore.md",
       "method": "postvibe review [project-path] --skills [skills-path] --format markdown"
-    }
+    },
+    "proposedContentSha256": "de9f12745f30b8ed169ce94d1f588fa05119e9f883cde7a092f36eedbf9c78d7"
   },
   "approval": {
     "id": "approval-01",
@@ -532,7 +538,8 @@
     "target": "docs/operations/backup-and-restore.md",
     "operation": "create",
     "actionLevel": 2,
-    "approvedBy": "user"
+    "approvedBy": "user",
+    "contentSha256": "de9f12745f30b8ed169ce94d1f588fa05119e9f883cde7a092f36eedbf9c78d7"
   },
   "artifact": {
     "path": "docs/operations/backup-and-restore.md",
@@ -557,12 +564,33 @@
     "turnId": "turn-25",
     "findingId": "launch-operations.backup-restore",
     "attempted": true,
-    "freshObservation": true,
     "outcome": "unverified",
     "method": "postvibe review [project-path] --skills [skills-path] --format markdown",
+    "target": "docs/operations/backup-and-restore.md",
     "exitCode": 127,
+    "fixed": false,
+    "provesLive": false,
+    "sessionId": "task9-green-session-01",
     "evidence": "The postvibe command was unavailable and exited 127; the repository finding was not reported as fixed.",
     "doesNotProve": "This repository document does not prove that a backup exists or can be restored, or that recovery works live."
+  },
+  "timeline": {
+    "sessionId": "task9-green-session-01",
+    "capturedAt": "2026-08-21T12:02:45-05:00",
+    "startOffset": 0,
+    "turnOffsets": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240, 250],
+    "actionOffsets": [11, 12, 13, 21, 31, 41, 51, 61, 71, 81, 91, 101, 111, 121, 131, 141, 151, 161, 171, 181, 191, 201, 211, 221, 231, 241, 251],
+    "recheckOffset": 251,
+    "captureOffset": 260,
+    "maxDurationOffset": 300
+  },
+  "providerNeutrality": {
+    "boundary": "Provider-neutral evidence is bounded to generic data-location, backup-mechanism, and durable-role descriptions; provider, product, or service identifiers, URLs or domains, account, project, subscription, or resource identifiers, ARN-like values, private endpoints, and region identifiers are excluded.",
+    "requiredGenericClasses": [
+      "data-location",
+      "backup-mechanism",
+      "durable-role"
+    ]
   },
   "safety": {
     "writesBeforeApproval": 0,
