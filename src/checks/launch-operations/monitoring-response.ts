@@ -33,26 +33,43 @@ function valuesForTopLevelStructuredFields(value: unknown, fields: ReadonlySet<s
 function stripTomlComment(value: string): string | undefined {
   let quote: '"' | "'" | undefined;
   let escaped = false;
+  let comment = false;
+  let result = '';
 
   for (let index = 0; index < value.length; index += 1) {
     const character = value[index];
+    if (comment) {
+      if (character === '\n') {
+        comment = false;
+        result += character;
+      }
+      continue;
+    }
     if (quote === '"' && character === '\\' && !escaped) {
       escaped = true;
+      result += character;
       continue;
     }
     if (character === quote && !escaped) {
       quote = undefined;
+      result += character;
       continue;
     }
     if (!quote && (character === '"' || character === "'")) {
       quote = character;
+      result += character;
       continue;
     }
-    if (!quote && character === '#') return value.slice(0, index);
+    if (!quote && character === '#') {
+      comment = true;
+      continue;
+    }
+    if (quote && character === '\n') return undefined;
+    result += character;
     escaped = false;
   }
 
-  return quote ? undefined : value;
+  return quote ? undefined : result;
 }
 
 function parseTomlString(value: string): string[] | undefined {
@@ -81,6 +98,7 @@ function parseTomlArray(value: string): string[] | undefined {
   let elementStart = 1;
   let quote: '"' | "'" | undefined;
   let escaped = false;
+  let depth = 1;
 
   for (let index = 1; index < value.length; index += 1) {
     const character = value[index];
@@ -96,14 +114,18 @@ function parseTomlArray(value: string): string[] | undefined {
       quote = character;
       continue;
     }
-    if (!quote && character === ',') {
-      const parsed = parseTomlValue(value.slice(elementStart, index));
-      if (!parsed) return undefined;
-      elements.push(...parsed);
-      elementStart = index + 1;
+    if (!quote && character === '[') {
+      depth += 1;
+      escaped = false;
       continue;
     }
     if (!quote && character === ']') {
+      depth -= 1;
+      if (depth < 0) return undefined;
+      if (depth > 0) {
+        escaped = false;
+        continue;
+      }
       if (value.slice(index + 1).trim() !== '') return undefined;
       const last = value.slice(elementStart, index).trim();
       if (last) {
@@ -112,6 +134,13 @@ function parseTomlArray(value: string): string[] | undefined {
         elements.push(...parsed);
       }
       return elements;
+    }
+    if (!quote && depth === 1 && character === ',') {
+      const parsed = parseTomlValue(value.slice(elementStart, index));
+      if (!parsed || parsed.length === 0) return undefined;
+      elements.push(...parsed);
+      elementStart = index + 1;
+      continue;
     }
     escaped = false;
   }
@@ -129,16 +158,95 @@ function parseTomlValue(rawValue: string): string[] | undefined {
   return /^[A-Za-z0-9_.+-]+$/u.test(value) ? [value] : undefined;
 }
 
+type TomlArrayState = 'complete' | 'incomplete' | 'invalid';
+
+function tomlArrayState(value: string): TomlArrayState {
+  if (!value.trimStart().startsWith('[')) return 'invalid';
+  let quote: '"' | "'" | undefined;
+  let escaped = false;
+  let comment = false;
+  let depth = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (comment) {
+      if (character === '\n') comment = false;
+      continue;
+    }
+    if (quote === '"' && character === '\\' && !escaped) {
+      escaped = true;
+      continue;
+    }
+    if (character === quote && !escaped) {
+      quote = undefined;
+      continue;
+    }
+    if (!quote && (character === '"' || character === "'")) {
+      quote = character;
+      continue;
+    }
+    if (!quote && character === '#') {
+      comment = true;
+      continue;
+    }
+    if (quote && character === '\n') return 'invalid';
+    if (!quote && character === '[') depth += 1;
+    if (!quote && character === ']') {
+      depth -= 1;
+      if (depth < 0) return 'invalid';
+    }
+    escaped = false;
+  }
+
+  if (quote) return 'invalid';
+  return depth === 0 ? 'complete' : 'incomplete';
+}
+
+function isTomlTableHeader(value: string): boolean {
+  return /^\[\[?[^\]]+\]\]?$/u.test(value);
+}
+
+function isTomlAssignment(value: string): boolean {
+  return /^[A-Za-z0-9_-]+[\t ]*=/u.test(value);
+}
+
+function readTomlTopLevelValue(
+  initialValue: string,
+  lines: readonly string[],
+  initialIndex: number,
+): { values: string[] | undefined; nextIndex: number } {
+  if (!initialValue.trimStart().startsWith('[')) {
+    return { values: parseTomlValue(initialValue), nextIndex: initialIndex };
+  }
+
+  let value = initialValue;
+  let index = initialIndex;
+  let state = tomlArrayState(value);
+  while (state === 'incomplete' && index + 1 < lines.length) {
+    const next = stripTomlComment(lines[index + 1] ?? '');
+    if (next === undefined || isTomlTableHeader(next.trim()) || isTomlAssignment(next.trim())) break;
+    index += 1;
+    value += `\n${next}`;
+    state = tomlArrayState(value);
+  }
+
+  return {
+    values: state === 'complete' ? parseTomlValue(value) : undefined,
+    nextIndex: index,
+  };
+}
+
 function tomlFieldValues(content: string, fields: ReadonlySet<string>): string[] {
   let insideTable = false;
-  const values: string[] = [];
+  const assignments: Array<string[] | undefined> = [];
+  const lines = content.split(/\r?\n/u);
 
-  for (const line of content.split(/\r?\n/u)) {
-    const withoutComment = stripTomlComment(line);
+  for (let index = 0; index < lines.length; index += 1) {
+    const withoutComment = stripTomlComment(lines[index] ?? '');
     if (withoutComment === undefined) continue;
     const trimmed = withoutComment.trim();
     if (!trimmed) continue;
-    if (/^\[\[?[^\]]+\]\]?$/u.test(trimmed)) {
+    if (isTomlTableHeader(trimmed)) {
       insideTable = true;
       continue;
     }
@@ -146,11 +254,12 @@ function tomlFieldValues(content: string, fields: ReadonlySet<string>): string[]
 
     const field = trimmed.match(/^([A-Za-z0-9_-]+)[\t ]*=[\t ]*(.*)$/u);
     if (!field || !fields.has(fieldAlias(field[1]!))) continue;
-    const parsed = parseTomlValue(field[2] ?? '');
-    if (parsed) values.push(...parsed);
+    const parsed = readTomlTopLevelValue(field[2] ?? '', lines, index);
+    assignments.push(parsed.values);
+    index = parsed.nextIndex;
   }
 
-  return values;
+  return assignments.length === 1 ? assignments[0] ?? [] : [];
 }
 
 function structuredFieldValues(content: string, location: string, fieldNames: readonly string[]): string[] {

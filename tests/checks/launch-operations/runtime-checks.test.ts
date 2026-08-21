@@ -65,6 +65,16 @@ first_response = "triage the alert and investigate failures"
 owner = "SRE team"
 `;
 
+const multilineTomlMonitoringEvidence = `observed_signals = [
+  "application errors # primary, [edge]",
+  "failed requests",
+]
+review_location = "Grafana monitoring dashboard"
+notification_expectation = "SRE reviews alerts within 10 minutes"
+first_response = "triage the alert and investigate failures"
+owner = "SRE team"
+`;
+
 const compactJsonAdjacentMonitoringEvidence = JSON.stringify({
   observedSignals: [],
   reviewLocation: '',
@@ -366,6 +376,7 @@ describe('monitoringResponseCheck', () => {
     ['populated JSON fields', 'docs/operations/monitoring.json', jsonMonitoringEvidence],
     ['populated YAML fields', 'docs/operations/monitoring.yaml', yamlMonitoringEvidence],
     ['populated TOML fields', 'docs/operations/monitoring.toml', tomlMonitoringEvidence],
+    ['a populated multiline TOML array', 'docs/operations/monitoring.toml', multilineTomlMonitoringEvidence],
   ])('accepts %s monitoring evidence without relying on Markdown labels or lists', async (_description, location, evidence) => {
     const root = await createRepository({ [location]: evidence });
 
@@ -405,6 +416,27 @@ describe('monitoringResponseCheck', () => {
     ['a look-alike TOML owner alias', 'docs/operations/monitoring.toml', tomlLookalikeOwnerMonitoringEvidence],
   ])('keeps hostile structured monitoring evidence unverified for %s', async (_description, location, evidence) => {
     const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['backend']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.monitoring-response.unverified',
+      outcome: 'unverified',
+      actionLevel: 'resolve-before-launch',
+      evidenceConfidence: 'insufficient',
+    });
+  });
+
+  it.each([
+    ['a leading empty TOML array element', tomlMonitoringEvidence.replace('["application errors", "failed requests"]', '[, "application errors"]')],
+    ['a double empty TOML array element', tomlMonitoringEvidence.replace('["application errors", "failed requests"]', '["application errors",,]')],
+    ['an unclosed TOML array', tomlMonitoringEvidence.replace('["application errors", "failed requests"]', '["application errors",')],
+    ['an unclosed TOML string', tomlMonitoringEvidence.replace('owner = "SRE team"', 'owner = "SRE team')],
+    ['a duplicate exact TOML key', `${tomlMonitoringEvidence}owner = "SRE team"\n`],
+    ['a duplicate case-folded TOML key', `${tomlMonitoringEvidence}OWNER = "SRE team"\n`],
+    ['a duplicate approved TOML alias', `${tomlMonitoringEvidence}observedSignals = ["application errors"]\n`],
+  ])('keeps malformed or duplicate top-level TOML evidence unverified for %s', async (_description, evidence) => {
+    const root = await createRepository({ 'docs/operations/monitoring.toml': evidence });
 
     const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['backend']) });
 
