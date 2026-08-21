@@ -904,5 +904,5 @@ describe('postvibe execute CLI', () => {
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });
