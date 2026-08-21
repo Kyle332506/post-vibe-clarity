@@ -1,27 +1,28 @@
 > **Presentation-only sanitization:** This sample comes from a real approved run of the `examples/launch-candidate/before` acceptance fixture.
 > Absolute local paths, run timestamps and IDs, command durations, and the machine-dependent fingerprint were replaced with `[generated for this run]` only after the original plan, execution, and report passed validation.
 > Findings, outcomes, command results, and coverage gaps are from that run. The placeholder was not approved and is not a reusable fingerprint.
+> The six launch-operations findings inspect repository evidence only; no live provider, deployment, alert delivery, health endpoint response, backup creation, restore result, or rollback execution was checked.
 
 # PostVibeClarity launch review
 
 ## Summary
 
 - Stop before launch: 2
-- Resolve before launch: 0
-- Plan soon: 0
+- Resolve before launch: 5
+- Plan soon: 1
 - Improve when appropriate: 3
 - Human review needed: 1
 - Passed: 3
 - Failed: 2
 - Likely issue: 1
-- Unverified: 0
+- Unverified: 6
 - Not applicable: 0
 - Risk accepted: 0
 - Resolved and rechecked: 0
 - Checks completed: 3
 - Checks unavailable: 0
 - Checks failed: 0
-- Checks unverified: 0
+- Checks unverified: 6
 
 ## Findings
 
@@ -39,6 +40,42 @@
   - Recommendation: ` Resolve the reported test failure before relying on this verification. `
   - Verification: ` Run package-script:test again under an approved plan and record its result. `
   - Evidence locations: ` package.json#scripts.test `
+
+### Resolve before launch
+
+- **` Backup and restore evidence could not be verified `** (unverified)
+  - Check: ` launch-operations.backup-restore ` (check version ` 0.1.0 `; skill version ` 0.1.0 `)
+  - Impact: ` The available repository evidence is not sufficient to verify this operations practice. `
+  - Recommendation: ` Document protected data, backup and restoration expectations, ownership, testing, notification, and evidence boundaries. `
+  - Verification: ` Review the versioned backup and restore evidence with the owner and test restoration separately in an approved environment. `
+- **` Health check evidence could not be verified `** (unverified)
+  - Check: ` launch-operations.health-check ` (check version ` 0.1.0 `; skill version ` 0.1.0 `)
+  - Impact: ` The available repository evidence is not sufficient to verify this operations practice. `
+  - Recommendation: ` Document the health probe, expected healthy result, coverage boundary, failure surfacing, and owner. `
+  - Verification: ` Review the versioned health-check evidence with the owner and execute the endpoint or probe separately. `
+- **` Monitoring and incident response evidence could not be verified `** (unverified)
+  - Check: ` launch-operations.monitoring-response ` (check version ` 0.1.0 `; skill version ` 0.1.0 `)
+  - Impact: ` The available repository evidence is not sufficient to verify this operations practice. `
+  - Recommendation: ` Document observed signals, the review location, notification expectations, first response steps, and ownership. `
+  - Verification: ` Review the documented monitoring and incident response procedure with the responsible maintainer and test live behavior separately. `
+- **` Release and deployment evidence could not be verified `** (unverified)
+  - Check: ` launch-operations.release-process ` (check version ` 0.1.0 `; skill version ` 0.1.0 `)
+  - Impact: ` The available repository evidence is not sufficient to verify this operations practice. `
+  - Recommendation: ` Document the release, deployment, publishing, or distribution procedure, including prerequisites, verification, and ownership. `
+  - Verification: ` Review the versioned procedure with the responsible maintainer and confirm the live target separately. `
+- **` Rollback and recovery evidence could not be verified `** (unverified)
+  - Check: ` launch-operations.rollback-process ` (check version ` 0.1.0 `; skill version ` 0.1.0 `)
+  - Impact: ` The available repository evidence is not sufficient to verify this operations practice. `
+  - Recommendation: ` Document the recovery trigger, shape-appropriate rollback mechanism, decision owner, ordered steps, and verification. `
+  - Verification: ` Review the documented recovery procedure with the authorized owner and verify the live recovery path separately. `
+
+### Plan soon
+
+- **` Maintenance ownership evidence could not be verified `** (unverified)
+  - Check: ` launch-operations.maintenance-ownership ` (check version ` 0.1.0 `; skill version ` 0.1.0 `)
+  - Impact: ` The available repository evidence is not sufficient to verify this operations practice. `
+  - Recommendation: ` Document maintenance ownership, the support route, review expectations, and handoff responsibilities. `
+  - Verification: ` Review the documented ownership, support, review, and handoff expectations with the maintainers. `
 
 ### Improve when appropriate
 
@@ -77,6 +114,36 @@
   - Check version: ` 0.1.0 `
   - Domains: Policy and business essentials, Security and privacy
   - Findings recorded: 1
+- ` launch-operations.backup-restore `: unverified
+  - Skill: ` launch-operations ` (version ` 0.1.0 `)
+  - Check version: ` 0.1.0 `
+  - Domains: Data and correctness, Reliability and recovery
+  - Findings recorded: 1
+- ` launch-operations.health-check `: unverified
+  - Skill: ` launch-operations ` (version ` 0.1.0 `)
+  - Check version: ` 0.1.0 `
+  - Domains: Reliability and recovery, Operations and observability
+  - Findings recorded: 1
+- ` launch-operations.maintenance-ownership `: unverified
+  - Skill: ` launch-operations ` (version ` 0.1.0 `)
+  - Check version: ` 0.1.0 `
+  - Domains: Maintainability and change safety
+  - Findings recorded: 1
+- ` launch-operations.monitoring-response `: unverified
+  - Skill: ` launch-operations ` (version ` 0.1.0 `)
+  - Check version: ` 0.1.0 `
+  - Domains: Operations and observability
+  - Findings recorded: 1
+- ` launch-operations.release-process `: unverified
+  - Skill: ` launch-operations ` (version ` 0.1.0 `)
+  - Check version: ` 0.1.0 `
+  - Domains: Release and delivery
+  - Findings recorded: 1
+- ` launch-operations.rollback-process `: unverified
+  - Skill: ` launch-operations ` (version ` 0.1.0 `)
+  - Check version: ` 0.1.0 `
+  - Domains: Reliability and recovery, Release and delivery
+  - Findings recorded: 1
 - ` secret-exposure.scan `: completed
   - Skill: ` secret-exposure ` (version ` 0.1.0 `)
   - Check version: ` 0.1.0 `
@@ -90,21 +157,36 @@
 
 ## Coverage gaps
 
-- Operations and observability: ` No routed check covers this domain in the current review. `
+- Check ` launch-operations.backup-restore ` (unverified): ` No matching versioned operations evidence was available. `
+- Check ` launch-operations.health-check ` (unverified): ` No matching versioned operations evidence was available. `
+- Check ` launch-operations.maintenance-ownership ` (unverified): ` No matching versioned operations evidence was available. `
+- Check ` launch-operations.monitoring-response ` (unverified): ` No matching versioned operations evidence was available. `
+- Check ` launch-operations.release-process ` (unverified): ` No matching versioned operations evidence was available. `
+- Check ` launch-operations.rollback-process ` (unverified): ` No matching versioned operations evidence was available. `
 - Performance and cost: ` No routed check covers this domain in the current review. `
 - Product and user experience: ` No routed check covers this domain in the current review. `
-- Reliability and recovery: ` No routed check covers this domain in the current review. `
 
 ## Unverified areas
 
-- None reported.
+- ` Backup and restore evidence could not be verified `
+  - ` No matching versioned operations evidence was available. `
+- ` Health check evidence could not be verified `
+  - ` No matching versioned operations evidence was available. `
+- ` Maintenance ownership evidence could not be verified `
+  - ` No matching versioned operations evidence was available. `
+- ` Monitoring and incident response evidence could not be verified `
+  - ` No matching versioned operations evidence was available. `
+- ` Release and deployment evidence could not be verified `
+  - ` No matching versioned operations evidence was available. `
+- ` Rollback and recovery evidence could not be verified `
+  - ` No matching versioned operations evidence was available. `
 
 ## Scope
 
 - Project root: ` [generated for this run] `
-- Artifact types: ` web `.
+- Artifact types: ` web `, ` backend `.
 - Generated at: ` [generated for this run] `
-- Toolkit version: ` 0.2.0 `
+- Toolkit version: ` 0.3.0 `
 - Partial review: yes
 
 ## Local verification

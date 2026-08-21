@@ -10,6 +10,8 @@ PostVibeClarity reviews a project's visible launch risks and can optionally run 
 
 PostVibeClarity reduces uncertainty. It does not guarantee production readiness or complete security, and it does not certify that a project is compliant or free of defects.
 
+Every report retains this boundary: This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.
+
 ## Install with your coding agent
 
 Paste this into your coding agent:
@@ -125,6 +127,7 @@ The [foundation coverage map](docs/foundation-coverage.md) is the source of trut
 | Project discovery | Automated for documented Node and static-project signals | Other or ambiguous shapes require guided classification |
 | Secret exposure checks | Automated, redacted scanning with a manual fallback | Not a complete security audit or proof of hardening |
 | Privacy-notice check | Automated when personal-data signals are detected | Not legal advice or a legal-sufficiency determination |
+| Repository operations basics | Six deterministic repository-only operations checks cover release, rollback, monitoring response, applicable health and backup evidence, and maintenance ownership | Documentation is content-checked; missing or vague evidence is unverified, and live/provider behavior is not checked |
 | Local command evidence | Optional Level 1 plan and execution for declared commands | Local processes are not strongly sandboxed |
 | Evidence reports | Markdown and JSON reports with explicit unknowns | No overall numeric readiness score or launch verdict |
 | Agent compatibility | Evidence labels distinguish documentation from acceptance | No blanket cross-agent runtime claim |
@@ -135,9 +138,9 @@ The model can represent web, native mobile, desktop, CLI, backend, worker, libra
 
 ## Foundation scope
 
-The v0.3 foundation provides read-only discovery and two Level 0 checks, validated evidence reports, six portable skills, and optional Level 1 verification of declared commands. The executor records the approved fingerprint, results, output boundaries, visible file changes, exclusions, and remaining gaps.
+The v0.3 foundation provides read-only discovery and eight Level 0 checks, validated evidence reports, six portable skills, and optional Level 1 verification of declared commands. The six operations checks inspect deterministic repository evidence only. The executor records the approved fingerprint, results, output boundaries, visible file changes, exclusions, and remaining gaps.
 
-It does not provide deployment or production access, operational validation, performance testing, legal-sufficiency review, deep shape packs, automatic remediation, or strong sandboxing.
+Provider and production verification are not implemented. The foundation does not inspect live deployment state or provider accounts, run recovery exercises, perform performance testing, provide legal-sufficiency review or deep shape packs, apply code or configuration remedies, or provide strong sandboxing.
 
 ## Requirements
 
@@ -166,7 +169,8 @@ postvibe execute <plan-file> --approve <fingerprint> --output <directory> [--for
 Near-term directions include:
 
 - Broader production-readiness checks.
-- Deployment, operations, performance, and provider verification.
+- Full live and provider operations verification, recovery exercises, and performance evidence.
+- Code and configuration remedies with separately designed authorization boundaries.
 - Stronger containment options and deeper shape-specific evidence packs.
 - Additional agent-runtime acceptance.
 
