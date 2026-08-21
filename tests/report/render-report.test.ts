@@ -47,4 +47,45 @@ describe('report renderers', () => {
     expect(containsReadinessScore).toBe(false);
     expect(containsCertificationClaim).toBe(false);
   });
+
+  it('renders each explicit passed boundary once without adding not-applicable boundary noise', () => {
+    const report = structuredClone(sampleReadinessReport);
+    const sourceFinding = report.findings[1];
+    if (!sourceFinding) throw new Error('Expected the sample unverified finding.');
+    const passedBoundary = 'No endpoint or probe was executed.';
+    const notApplicableBoundary = 'A not-applicable check must not add boundary noise.';
+    report.findings.push(
+      {
+        ...sourceFinding,
+        id: 'launch-operations.health-check.passed',
+        checkId: 'launch-operations.health-check',
+        outcome: 'passed',
+        title: 'Health check evidence found',
+        unverifiedBoundaries: [passedBoundary],
+      },
+      {
+        ...sourceFinding,
+        id: 'launch-operations.backup-restore.not-applicable',
+        checkId: 'launch-operations.backup-restore',
+        outcome: 'not-applicable',
+        title: 'Backup and restore review not applicable',
+        unverifiedBoundaries: [notApplicableBoundary],
+      },
+      {
+        ...sourceFinding,
+        id: 'launch-operations.release-process.passed',
+        checkId: 'launch-operations.release-process',
+        outcome: 'passed',
+        title: 'Release and deployment evidence found',
+        unverifiedBoundaries: [],
+      },
+    );
+
+    const markdown = renderMarkdown(report);
+
+    expect(markdown.split(passedBoundary)).toHaveLength(2);
+    expect(markdown).not.toContain(notApplicableBoundary);
+    expect(markdown).not.toContain('Unverified boundary: undefined');
+    expect(markdown.endsWith(`${sampleReadinessReport.disclaimer}\n`)).toBe(true);
+  });
 });

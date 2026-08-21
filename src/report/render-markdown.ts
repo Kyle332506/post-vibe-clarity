@@ -44,6 +44,12 @@ function renderFinding(finding: Finding): string[] {
   if (locations.length > 0) {
     lines.push(`  - Evidence locations: ${locations.join(', ')}`);
   }
+  if (finding.outcome === 'passed') {
+    const boundaries = [...new Set(
+      (finding.unverifiedBoundaries ?? []).filter((boundary) => boundary.trim().length > 0),
+    )];
+    for (const boundary of boundaries) lines.push(`  - Unverified boundary: ${boundary}`);
+  }
 
   return lines;
 }

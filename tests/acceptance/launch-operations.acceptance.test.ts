@@ -16,6 +16,13 @@ const fixture = (name: string) => fileURLToPath(new URL(`../../fixtures/${name}`
 const skillsRoot = fileURLToPath(new URL('../../skills', import.meta.url));
 const fixedTimestamp = '2026-08-20T12:00:00.000Z';
 const disclaimer = 'This report reduces uncertainty by recording checks and evidence. It does not certify that the application is production ready, secure, compliant, or free of defects.';
+const passedLiveBoundaries = [
+  'No backup or restoration was observed or tested.',
+  'No endpoint or probe was executed.',
+  'No provider was queried and no alert delivery or response was tested.',
+  'No deployment, registry, or store was queried.',
+  'No release was changed and no recovery procedure was run.',
+] as const;
 
 const launchCheckIds = [
   'launch-operations.backup-restore',
@@ -173,7 +180,7 @@ describe('launch operations acceptance', () => {
     expect(oneUnverifiedReport.partial).toBe(true);
   });
 
-  it('renders repository-only evidence boundaries and the exact disclaimer in Markdown and JSON', () => {
+  it('renders passed live boundaries and repository-only evidence boundaries in Markdown and JSON', () => {
     const markdown = renderMarkdown(oneUnverifiedReport);
     const json = renderJson(oneUnverifiedReport);
     const parsed = JSON.parse(json) as ReadinessReport;
@@ -181,6 +188,10 @@ describe('launch operations acceptance', () => {
 
     expect(markdown).toContain(repositoryBoundary);
     expect(json).toContain(repositoryBoundary);
+    for (const boundary of passedLiveBoundaries) {
+      expect(markdown.split(boundary)).toHaveLength(2);
+      expect(json.split(boundary)).toHaveLength(2);
+    }
     expect(parsed.disclaimer).toBe(disclaimer);
     expect(markdown.endsWith(`${disclaimer}\n`)).toBe(true);
   });
