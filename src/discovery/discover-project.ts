@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ArtifactType, CapabilityManifest, Detection } from '../model/capability.js';
 import { listProjectFiles } from './file-index.js';
+import { discoverOperationalSignals } from './operational-signals.js';
 
 interface PackageJson {
   bin?: unknown;
@@ -18,6 +19,16 @@ function detection<T extends string>(
   confidence: 'confirmed' | 'likely' = 'confirmed',
 ): Detection<T> {
   return { value, confidence, evidence: [{ kind: 'file', location, summary }] };
+}
+
+function appendUnique<T extends string>(target: Detection<T>[], additions: readonly Detection<T>[]): void {
+  const values = new Set(target.map(({ value }) => value));
+  for (const item of additions) {
+    if (!values.has(item.value)) {
+      target.push(item);
+      values.add(item.value);
+    }
+  }
 }
 
 export async function discoverProject(
@@ -44,6 +55,7 @@ export async function discoverProject(
   const hasExpo = dependencies.has('expo');
   const hasReactNative = dependencies.has('react-native');
   const hasMobileFramework = hasExpo || hasReactNative;
+  const operationalSignals = discoverOperationalSignals(files, dependencies);
 
   if (hasNext) {
     artifacts.push(detection('web', 'package.json', 'Next.js dependency identifies a web application'));
@@ -59,6 +71,7 @@ export async function discoverProject(
     artifacts.push(detection('library', 'package.json', 'Package exports a public library entry point'));
   }
   if (packageJson.bin !== undefined) artifacts.push(detection('cli', 'package.json', 'Package exposes a command-line binary'));
+  appendUnique(artifacts, operationalSignals.artifacts);
 
   if (hasExpo) frameworks.push(detection('expo', 'package.json', 'Expo dependency detected'));
   if (hasNext) frameworks.push(detection('next', 'package.json', 'Next.js dependency detected'));
@@ -66,6 +79,7 @@ export async function discoverProject(
   if (hasReactNative) frameworks.push(detection('react-native', 'package.json', 'React Native dependency detected'));
 
   const sourceFiles = files.filter((file) => /\.(?:js|jsx|ts|tsx|py|rb|go|rs|java|kt|swift)$/.test(file));
+  appendUnique(capabilities, operationalSignals.capabilities);
   for (const file of sourceFiles) {
     const content = await readFile(join(root, file), 'utf8');
     if (/\bemail\b/i.test(content) && /\b(?:register|signup|user|account)\b/i.test(content)) {
