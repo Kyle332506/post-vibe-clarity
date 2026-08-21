@@ -1,5 +1,6 @@
 import { createOperationsCheck } from './create-check.js';
 import {
+  hasConcreteOwnerEvidence,
   hasEvidenceSubstance,
   hasNegatedEvidenceIntent,
   labeledTextValueMatcher,
@@ -12,16 +13,11 @@ import type { EvidenceRequirement } from './types.js';
 
 type ValuePredicate = (value: string) => boolean;
 
-const ownerTerms = /\b(?:assign\w*|owner|responsible|maintainers?|team)\b/iu;
 const supportRouteTerms = /\b(?:issues?|issue tracker|support portal|help desk|ticket|discussions?|contact|email)\b/iu;
 const reviewTerms = /\b(?:dependency|dependencies|platform|operational|maintenance|runtime|review\w*|weekly|monthly|quarterly|annually|yearly)\b/iu;
 const handoffTerms = /\b(?:update|transfer|reassign|document|replace|owner|ownership|maintainer|team|responsible|codeowners|change|transition)\b/iu;
 
-const ownerValue: ValuePredicate = (value) => !hasNegatedEvidenceIntent(value, ownerTerms)
-  && hasEvidenceSubstance(value, {
-    fieldLabels: ['owner', 'responsible', 'responsible role', 'maintainer', 'team'],
-    minimumWords: 2,
-  });
+const ownerValue: ValuePredicate = (value) => hasConcreteOwnerEvidence(value);
 
 const supportRouteValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);

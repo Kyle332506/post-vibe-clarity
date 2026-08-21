@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   MAX_OPERATIONS_EVIDENCE_BYTES,
   evaluateDocumentEvidence,
+  hasConcreteOwnerEvidence,
   hasNegatedEvidenceIntent,
   supportedOperationsEvidenceExtensions,
 } from '../../../src/checks/launch-operations/document-evidence.js';
@@ -57,6 +58,27 @@ describe('hasNegatedEvidenceIntent', () => {
     'Avoid prolonged impact by restoring the previously approved version.',
   ])('does not treat the affirmative converse as negative: %s', (value) => {
     expect(hasNegatedEvidenceIntent(value, recoveryTerms)).toBe(false);
+  });
+});
+
+describe('hasConcreteOwnerEvidence', () => {
+  it.each([
+    'Some Person',
+    'some engineering team',
+    'future engineering team',
+    'assigned to some engineering team',
+    'owner is any support team',
+    'contact a release maintainer',
+  ])('rejects an indefinite person or future role: %s', (value) => {
+    expect(hasConcreteOwnerEvidence(value)).toBe(false);
+  });
+
+  it.each([
+    'Alex Rivera',
+    'operations@example.com',
+    'CODEOWNERS',
+  ])('accepts a concrete person, contact, or maintained reference: %s', (value) => {
+    expect(hasConcreteOwnerEvidence(value)).toBe(true);
   });
 });
 

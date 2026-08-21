@@ -837,6 +837,28 @@ export function hasEvidenceSubstance(value: string, options: EvidenceSubstanceOp
   return !isFieldLabelEcho(normalized, options.fieldLabels, options.minimumWords ?? 1);
 }
 
+const ownerEvidenceTerms = /\b(?:assign\w*|owner|responsible|maintainers?|administrators?|engineers?|leads?|teams?|operators?|responders?|managers?|stewards?|sre|dba)\b/iu;
+const indefiniteOwnerPattern = /\b(?:some|any|a|an)[\t ]+(?:[\p{L}\p{N}][\p{L}\p{N}-]*[\t ]+){0,3}(?:person|individual|owners?|maintainers?|administrators?|engineers?|leads?|teams?|operators?|responders?|managers?|stewards?|sre|dba|dri)\b|\b(?:someone|somebody|anyone|anybody|whoever|later|future|to[\t ]+be[\t ]+(?:named|chosen|assigned))\b/iu;
+const ownerContactPattern = /(?:\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|(?:^|[\t (])@[A-Za-z0-9](?:[A-Za-z0-9_-]{0,38})\b|\b(?:CODEOWNERS|OWNERS|MAINTAINERS)(?:\.md)?\b)/iu;
+const durableOwnerRolePattern = /\b(?:(?:sre|dba|dri)|(?:on-call|sre|site[\t -]+reliability|incident|release|deployment|publishing|project|platform|operations?|engineering|support|service|mobile|desktop|package|library|data|database|recovery|security|infrastructure|payments?|quality|qa)(?:[\t -]+[\p{L}\p{N}][\p{L}\p{N}-]*){0,2}[\t -]+(?:maintainers?|administrators?|engineers?|leads?|teams?|operators?|responders?|managers?|stewards?))\b/iu;
+const ownerRelationshipPattern = /\bowner[\t ]+(?:for|in|at)[\t ]+(?:the[\t ]+)?(?:[\p{L}\p{N}][\p{L}\p{N}-]*[\t ]+){1,3}(?:operations?|engineering|support|platform|infrastructure|security|payments?)\b/iu;
+const namedPersonPattern = /\b[\p{Lu}][\p{Ll}]+(?:[-'][\p{Lu}]?[\p{Ll}]+)?[\t ]+(?!(?:Maintainers?|Administrators?|Engineers?|Leads?|Teams?|Operators?|Responders?|Managers?|Stewards?|Owners?)\b)[\p{Lu}][\p{Ll}]+(?:[-'][\p{Lu}]?[\p{Ll}]+)?\b/u;
+
+export function hasConcreteOwnerEvidence(value: string, fieldLabels: readonly string[] = []): boolean {
+  const normalized = normalizeEvidenceValue(value);
+  const labels = ['owner', 'responsible', 'responsible role', 'maintainer', 'team', ...fieldLabels];
+  if (hasIncompleteEvidenceState(normalized)
+    || hasNegatedEvidenceIntent(normalized, ownerEvidenceTerms)
+    || indefiniteOwnerPattern.test(normalized)
+    || labels.some((label) => normalized === normalizeEvidenceValue(label))) return false;
+
+  if (ownerContactPattern.test(value)) return true;
+  if (durableOwnerRolePattern.test(normalized)) return true;
+  if (namedPersonPattern.test(value)) return true;
+  return hasEvidenceSubstance(normalized, { fieldLabels: labels, minimumWords: 2 })
+    && ownerRelationshipPattern.test(normalized);
+}
+
 type ContentMatcher = (content: string, location: string) => boolean;
 type ValuePredicate = (value: string) => boolean;
 

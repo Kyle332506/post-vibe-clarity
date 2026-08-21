@@ -1,6 +1,7 @@
 import { selectOperationsApplicability } from './applicability.js';
 import { createOperationsCheck } from './create-check.js';
 import {
+  hasConcreteOwnerEvidence,
   hasEvidenceSubstance,
   hasNegatedEvidenceIntent,
   labeledTextValueMatcher,
@@ -15,7 +16,6 @@ import type { EvidenceRequirement } from './types.js';
 type ValuePredicate = (value: string) => boolean;
 
 const triggerTerms = /\b(?:recovery|rollback|roll back|release|health|verification|fail\w*|degrad\w*|unhealthy|incident|error)\b/iu;
-const decisionOwnerTerms = /\b(?:assign\w*|decision|authorized|owner|role|lead|maintainer|team)\b/iu;
 const procedureTerms = /\b(?:stop\w*|restor\w*|redeploy\w*|deprecat\w*|unpublish\w*|publish\w*|disabl\w*|rout\w*|revert\w*|roll back|rollback|withdraw\w*)\b/iu;
 const verificationTerms = /\b(?:verify|verification|confirm|repeat|check|expected|version|health|result|replacement|available|recovery|release)\b/iu;
 
@@ -30,11 +30,11 @@ const triggerValue: ValuePredicate = (value) => {
     && /\b(?:fail\w*|degrad\w*|unhealthy|incident|error|verification|health)\b/iu.test(normalized);
 };
 
-const decisionOwnerValue: ValuePredicate = (value) => !hasNegatedEvidenceIntent(value, decisionOwnerTerms)
-  && hasEvidenceSubstance(value, {
-    fieldLabels: ['decision owner', 'authorized owner', 'authorized role', 'owner'],
-    minimumWords: 2,
-  });
+const decisionOwnerValue: ValuePredicate = (value) => hasConcreteOwnerEvidence(value, [
+  'decision owner',
+  'authorized owner',
+  'authorized role',
+]);
 
 const procedureValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);

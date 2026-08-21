@@ -1,6 +1,7 @@
 import { extname } from 'node:path';
 import { createOperationsCheck } from './create-check.js';
 import {
+  hasConcreteOwnerEvidence,
   hasEvidenceSubstance,
   normalizeEvidenceValue,
   structuredFieldValueMatcher,
@@ -90,14 +91,8 @@ const restoreValue: ValuePredicate = (value) => {
     && !/^(?:run|follow|execute)[\t ]+(?:the[\t ]+)?(?:restore|recovery)[\t ]+procedure$/iu.test(normalized)
     && hasActionableProcedureStructure(normalized);
 };
-const ownerValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
-  fieldLabels: ['owner', 'responsible', 'responsible role'],
-  minimumWords: 2,
-});
-const maintainerValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
-  fieldLabels: ['maintainer'],
-  minimumWords: 2,
-});
+const ownerValue: ValuePredicate = (value) => hasConcreteOwnerEvidence(value);
+const maintainerValue: ValuePredicate = (value) => hasConcreteOwnerEvidence(value, ['maintainer']);
 const notificationValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
   return hasEvidenceSubstance(normalized, {

@@ -1,7 +1,7 @@
 import { createOperationsCheck } from './create-check.js';
 import {
+  hasConcreteOwnerEvidence,
   hasEvidenceSubstance,
-  hasIncompleteEvidenceState,
   hasNegatedEvidenceIntent,
   labeledTextValueMatcher,
   matchesAnyEvidence,
@@ -19,7 +19,6 @@ const targetTerms = /\b(?:production|staging|registry|app store|play store|distr
 const prerequisiteTerms = /\b(?:obtain|confirm|ensure|require\w*|use|select|access|approved|revision|credential|permission|sign-off|environment)\b/iu;
 const procedureTerms = /\b(?:build|publish|deploy|release|upload|distribute|submit|promote)\b/iu;
 const verificationTerms = /\b(?:verify|verification|smoke test|confirm|check|expected|version|response|result|health|release|deployment)\b/iu;
-const releaseOwnerTerms = /\b(?:assign\w*|owner|responsible|maintainers?|team|lead|engineer|operator|responder)\b/iu;
 
 const artifactValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
@@ -78,16 +77,7 @@ const verificationValue: ValuePredicate = (value) => {
     && /\b(?:expected|version|response|result|health|release|deployment)\b/iu.test(normalized);
 };
 
-const ownerValue: ValuePredicate = (value) => {
-  const normalized = normalizeEvidenceValue(value);
-  if (hasNegatedEvidenceIntent(normalized, releaseOwnerTerms)) return false;
-  return hasEvidenceSubstance(normalized, {
-    fieldLabels: ['owner', 'responsible', 'responsible role', 'maintainer', 'team', 'release team'],
-    minimumWords: 2,
-  }) || (!hasIncompleteEvidenceState(normalized)
-    && normalized !== 'release team'
-    && /\b(?:release|deployment|publishing|project|platform|operations?|on-call|incident|sre|mobile|desktop|service)[\t ]+(?:maintainers?|team|lead|engineer|operator|responder)\b/iu.test(normalized));
-};
+const ownerValue: ValuePredicate = (value) => hasConcreteOwnerEvidence(value, ['release team']);
 
 const releaseRequirements: readonly EvidenceRequirement[] = [
   {

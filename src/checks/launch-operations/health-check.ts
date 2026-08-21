@@ -3,6 +3,7 @@ import { createOperationsCheck } from './create-check.js';
 import {
   descriptiveSourceEvidence,
   executableSourceEvidence,
+  hasConcreteOwnerEvidence,
   hasEvidenceSubstance,
   normalizeEvidenceValue,
   structuredFieldValueMatcher,
@@ -62,17 +63,8 @@ const failureSurfacingValue: ValuePredicate = (value) => {
     && /\b(?:alerts?|notifies?|notifications?|pages?|reports?|routes?|sends?|surfaces?)\b/iu.test(normalized);
 };
 
-const ownerValue: ValuePredicate = (value) => {
-  const normalized = normalizeEvidenceValue(value);
-  return hasEvidenceSubstance(normalized, {
-    fieldLabels: ['owner', 'responsible', 'responsible role'],
-    minimumWords: 2,
-  });
-};
-const maintainerValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
-  fieldLabels: ['maintainer'],
-  minimumWords: 2,
-});
+const ownerValue: ValuePredicate = (value) => hasConcreteOwnerEvidence(value);
+const maintainerValue: ValuePredicate = (value) => hasConcreteOwnerEvidence(value, ['maintainer']);
 
 function testPattern(pattern: RegExp, value: string): boolean {
   return new RegExp(pattern.source, pattern.flags).test(value);

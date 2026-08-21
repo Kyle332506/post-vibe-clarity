@@ -1,7 +1,7 @@
 import { createOperationsCheck } from './create-check.js';
 import {
+  hasConcreteOwnerEvidence,
   hasEvidenceSubstance,
-  hasIncompleteEvidenceState,
   hasNegatedEvidenceIntent,
   labeledTextValueMatcher,
   matchesAnyEvidence,
@@ -20,7 +20,6 @@ const notificationAction = /\b(?:review\w*|notif(?:y|ies|ied|ication\w*)|page\w*
 const responseTiming = /\b(?:within[\t ]+\d+[\t ]+(?:minutes?|hours?)|promptly|immediately)\b/iu;
 const notificationTerms = /\b(?:alerts?|review\w*|notif(?:y|ies|ied|ication\w*)|page\w*|acknowledge\w*)\b/iu;
 const firstResponseTerms = /\b(?:triag\w*|investigat\w*|assess\w*|captur\w*|escalat\w*|mitigat\w*|follow\w*|disabl\w*|rollback|roll back|notif\w*|pag\w*|alerts?|failures?|incidents?|affected release|failure time)\b/iu;
-const ownerTerms = /\b(?:assign\w*|owner|responsible|maintainers?|team|lead|engineer|operator|responder|support|on-call|sre)\b/iu;
 
 const signalsValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
@@ -63,15 +62,7 @@ const firstResponseValue: ValuePredicate = (value) => {
     && /\b(?:alerts?|failures?|incidents?|affected release|failure time)\b/iu.test(normalized);
 };
 
-const ownerValue: ValuePredicate = (value) => {
-  const normalized = normalizeEvidenceValue(value);
-  if (hasNegatedEvidenceIntent(normalized, ownerTerms)) return false;
-  return hasEvidenceSubstance(normalized, {
-    fieldLabels: ['owner', 'responsible role', 'incident owner', 'maintainer', 'team', 'responder'],
-    minimumWords: 2,
-  }) || (!hasIncompleteEvidenceState(normalized)
-    && /\b(?:on-call|sre|incident|mobile(?:[\t ]+incident)?|platform|operations?|service|support|reliability|release|project|engineering)[\t ]+(?:maintainers?|team|lead|engineer|operator|responder)\b/iu.test(normalized));
-};
+const ownerValue: ValuePredicate = (value) => hasConcreteOwnerEvidence(value, ['incident owner', 'responder']);
 
 const monitoringRequirements: readonly EvidenceRequirement[] = [
   {

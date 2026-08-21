@@ -34,17 +34,22 @@ function isApplicableForProfile(
   profile: OperationsApplicability['profile'],
   manifest: CapabilityManifest,
 ): boolean {
+  const hasCapability = (value: string, confirmedOnly = false): boolean => manifest.capabilities.some(
+    (capability) => capability.value === value && (!confirmedOnly || capability.confidence === 'confirmed'),
+  );
   if (checkId === 'launch-operations.monitoring-response') {
-    return profile === 'service'
+    return profile !== 'ambiguous' && (profile === 'service'
       || profile === 'worker'
       || profile === 'mobile-desktop'
-      || manifest.capabilities.some(({ value }) => value === 'network-service');
+      || hasCapability('network-service'));
   }
   if (checkId === 'launch-operations.health-check') {
-    return manifest.capabilities.some(({ value }) => value === 'network-service');
+    return profile !== 'cli'
+      && profile !== 'library'
+      && hasCapability('network-service', profile === 'ambiguous');
   }
   return checkId === 'launch-operations.backup-restore'
-    && manifest.capabilities.some(({ value }) => value === 'persistent-data');
+    && hasCapability('persistent-data', profile === 'ambiguous');
 }
 
 function profileDescription(profile: OperationsApplicability['profile']): string {
@@ -84,7 +89,7 @@ export function selectOperationsApplicability(
       reason: 'Release, rollback, and maintenance ownership evidence is relevant to every project shape.',
     };
   }
-  if (profile === 'ambiguous') {
+  if (profile === 'ambiguous' && !isApplicableForProfile(checkId, profile, manifest)) {
     return {
       status: 'unverified',
       profile,

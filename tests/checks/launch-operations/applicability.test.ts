@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { selectOperationsApplicability } from '../../../src/checks/launch-operations/applicability.js';
-import type { ArtifactType, CapabilityManifest, Detection } from '../../../src/model/capability.js';
+import type { ArtifactType, CapabilityManifest, Detection, DetectionConfidence } from '../../../src/model/capability.js';
 
 function manifest(
   artifacts: ArtifactType[] = [],
   capabilities: string[] = [],
+  confidence: DetectionConfidence = 'confirmed',
 ): CapabilityManifest {
   const detection = <T extends string>(value: T): Detection<T> => ({
     value,
-    confidence: 'confirmed',
+    confidence,
     evidence: [{ kind: 'file', location: 'package.json', summary: 'Fixture detection.' }],
   });
 
@@ -124,22 +125,73 @@ describe('selectOperationsApplicability', () => {
   });
 
   it.each([
-    ['web', ['web'] as ArtifactType[]],
-    ['backend', ['backend'] as ArtifactType[]],
-    ['worker', ['worker'] as ArtifactType[]],
-    ['mobile', ['mobile'] as ArtifactType[]],
-    ['desktop', ['desktop'] as ArtifactType[]],
-    ['cli', ['cli'] as ArtifactType[]],
-    ['library', ['library'] as ArtifactType[]],
-  ])('applies capability-gated checks consistently for a %s', (_description, artifacts) => {
+    ['web', ['web'] as ArtifactType[], 'applicable'],
+    ['backend', ['backend'] as ArtifactType[], 'applicable'],
+    ['worker', ['worker'] as ArtifactType[], 'applicable'],
+    ['mobile', ['mobile'] as ArtifactType[], 'applicable'],
+    ['desktop', ['desktop'] as ArtifactType[], 'applicable'],
+    ['cli', ['cli'] as ArtifactType[], 'not-applicable'],
+    ['library', ['library'] as ArtifactType[], 'not-applicable'],
+  ] as const)('applies capability-gated checks consistently for a %s', (_description, artifacts, healthStatus) => {
     const networkOnly = manifest(artifacts, ['network-service']);
     const dataOnly = manifest(artifacts, ['persistent-data']);
     const both = manifest(artifacts, ['network-service', 'persistent-data']);
 
-    expect(selectOperationsApplicability('launch-operations.health-check', networkOnly).status).toBe('applicable');
+    expect(selectOperationsApplicability('launch-operations.health-check', networkOnly).status).toBe(healthStatus);
     expect(selectOperationsApplicability('launch-operations.backup-restore', dataOnly).status).toBe('applicable');
-    expect(selectOperationsApplicability('launch-operations.health-check', both).status).toBe('applicable');
+    expect(selectOperationsApplicability('launch-operations.health-check', both).status).toBe(healthStatus);
     expect(selectOperationsApplicability('launch-operations.backup-restore', both).status).toBe('applicable');
+  });
+
+  it.each([
+    ['mixed mobile and CLI', ['mobile', 'cli'] as ArtifactType[]],
+    ['unsupported extension', ['extension'] as ArtifactType[]],
+    ['unknown artifact shape', [] as ArtifactType[]],
+  ])('uses explicit capabilities for an otherwise ambiguous %s', (_description, artifacts) => {
+    const networkOnly = manifest(artifacts, ['network-service']);
+    const dataOnly = manifest(artifacts, ['persistent-data']);
+
+    expect(selectOperationsApplicability('launch-operations.health-check', networkOnly)).toMatchObject({
+      status: 'applicable',
+      profile: 'ambiguous',
+    });
+    expect(selectOperationsApplicability('launch-operations.backup-restore', dataOnly)).toMatchObject({
+      status: 'applicable',
+      profile: 'ambiguous',
+    });
+  });
+
+  it.each([
+    ['mixed mobile and CLI', ['mobile', 'cli'] as ArtifactType[]],
+    ['unsupported extension', ['extension'] as ArtifactType[]],
+    ['unknown artifact shape', [] as ArtifactType[]],
+  ])('keeps ambiguous %s health unverified when network evidence is only likely', (_description, artifacts) => {
+    expect(selectOperationsApplicability(
+      'launch-operations.health-check',
+      manifest(artifacts, ['network-service'], 'likely'),
+    )).toMatchObject({ status: 'unverified', profile: 'ambiguous' });
+  });
+
+  it.each([
+    ['mixed mobile and CLI', ['mobile', 'cli'] as ArtifactType[]],
+    ['unsupported extension', ['extension'] as ArtifactType[]],
+    ['unknown artifact shape', [] as ArtifactType[]],
+  ])('keeps ambiguous %s backup unverified when data evidence is only likely', (_description, artifacts) => {
+    expect(selectOperationsApplicability(
+      'launch-operations.backup-restore',
+      manifest(artifacts, ['persistent-data'], 'likely'),
+    )).toMatchObject({ status: 'unverified', profile: 'ambiguous' });
+  });
+
+  it.each([
+    ['mixed mobile and CLI', ['mobile', 'cli'] as ArtifactType[]],
+    ['unsupported extension', ['extension'] as ArtifactType[]],
+    ['unknown artifact shape', [] as ArtifactType[]],
+  ])('preserves unverified monitoring for an ambiguous %s with network evidence', (_description, artifacts) => {
+    expect(selectOperationsApplicability(
+      'launch-operations.monitoring-response',
+      manifest(artifacts, ['network-service']),
+    )).toMatchObject({ status: 'unverified', profile: 'ambiguous' });
   });
 
   it.each([
