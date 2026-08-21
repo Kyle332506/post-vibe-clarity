@@ -137,6 +137,24 @@ describe('evaluateDocumentEvidence', () => {
     ]);
   });
 
+  it('rejects invalid UTF-8 content even when its valid bytes match every requirement', async () => {
+    const root = await createRepository({
+      'deployment.md': new Uint8Array([
+        0x70, 0x72, 0x6f, 0x64, 0x75, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x0a,
+        0x31, 0x2e, 0x20, 0x64, 0x65, 0x70, 0x6c, 0x6f, 0x79, 0x0a,
+        0x76, 0x65, 0x72, 0x69, 0x66, 0x79, 0x0a, 0xff,
+      ]),
+    });
+
+    const result = await evaluateDocumentEvidence(root, [], profile);
+
+    expect(result.status).toBe('insufficient');
+    expect(result.evidence).toEqual([]);
+    expect(result.unverifiedBoundaries).toEqual([
+      'deployment.md contains unsupported binary content.',
+    ]);
+  });
+
   it('excludes requested artifacts and generated or dependency directories', async () => {
     const root = await createRepository({
       'deployment.md': 'Project overview.\n',

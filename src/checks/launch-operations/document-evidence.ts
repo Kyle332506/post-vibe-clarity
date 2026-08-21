@@ -21,6 +21,8 @@ export const supportedOperationsEvidenceExtensions = new Set([
   '.toml',
 ]);
 
+const strictUtf8Decoder = new TextDecoder('utf-8', { fatal: true });
+
 type BoundedCandidate =
   | { ok: true; value: string }
   | { ok: false; boundary: string };
@@ -48,11 +50,15 @@ async function readBoundedCandidate(root: string, location: string): Promise<Bou
       };
     }
 
-    const content = await readFile(path, 'utf8');
-    if (content.includes('\0')) {
+    const bytes = await readFile(path);
+    if (bytes.includes(0)) {
       return { ok: false, boundary: `${location} contains unsupported binary content.` };
     }
-    return { ok: true, value: content };
+    try {
+      return { ok: true, value: strictUtf8Decoder.decode(bytes) };
+    } catch {
+      return { ok: false, boundary: `${location} contains unsupported binary content.` };
+    }
   } catch {
     return { ok: false, boundary: `${location} could not be safely read as operations evidence.` };
   }
