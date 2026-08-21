@@ -123,6 +123,12 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     expect(foundationCheckImplementations.map(({ id, actionLevel }) => ({ id, actionLevel }))).toEqual([
       { id: 'launch-essentials.privacy-notice', actionLevel: 0 },
       { id: 'secret-exposure.scan', actionLevel: 0 },
+      { id: 'launch-operations.backup-restore', actionLevel: 0 },
+      { id: 'launch-operations.health-check', actionLevel: 0 },
+      { id: 'launch-operations.maintenance-ownership', actionLevel: 0 },
+      { id: 'launch-operations.monitoring-response', actionLevel: 0 },
+      { id: 'launch-operations.release-process', actionLevel: 0 },
+      { id: 'launch-operations.rollback-process', actionLevel: 0 },
     ]);
   });
 
@@ -132,9 +138,14 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
   });
 
   it('keeps the runtime registration boundary deeply immutable', () => {
-    const firstRegistration = foundationCheckImplementations[0];
-    const secondRegistration = foundationCheckImplementations[1];
-    if (!firstRegistration || !secondRegistration) throw new Error('Expected two foundation registrations.');
+    const firstRegistration = foundationCheckImplementations.find(
+      ({ id }) => id === 'launch-essentials.privacy-notice',
+    );
+    const secondRegistration = foundationCheckImplementations.find(
+      ({ id }) => id === 'secret-exposure.scan',
+    );
+    if (!firstRegistration || !secondRegistration) throw new Error('Expected the named foundation registrations.');
+    const firstRegistrationIndex = foundationCheckImplementations.indexOf(firstRegistration);
 
     const originalRun = firstRegistration.run;
     const originalActionLevel = firstRegistration.actionLevel;
@@ -148,8 +159,8 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     let domainMutationApplied = false;
 
     try {
-      arrayMutationApplied = Reflect.set(foundationCheckImplementations, '0', secondRegistration)
-        && foundationCheckImplementations[0] === secondRegistration;
+      arrayMutationApplied = Reflect.set(foundationCheckImplementations, String(firstRegistrationIndex), secondRegistration)
+        && foundationCheckImplementations[firstRegistrationIndex] === secondRegistration;
       actionLevelMutationApplied = Reflect.set(firstRegistration, 'actionLevel', 4)
         && firstRegistration.actionLevel === 4;
       runMutationApplied = Reflect.set(firstRegistration, 'run', replacementRun)
@@ -159,7 +170,9 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
       domainMutationApplied = Reflect.set(firstRegistration.domains, '0', 'release-delivery')
         && firstRegistration.domains[0] === 'release-delivery';
     } finally {
-      if (arrayMutationApplied) Reflect.set(foundationCheckImplementations, '0', firstRegistration);
+      if (arrayMutationApplied) {
+        Reflect.set(foundationCheckImplementations, String(firstRegistrationIndex), firstRegistration);
+      }
       if (actionLevelMutationApplied) Reflect.set(firstRegistration, 'actionLevel', originalActionLevel);
       if (runMutationApplied) Reflect.set(firstRegistration, 'run', originalRun);
       if (accessMutationApplied) Reflect.set(firstRegistration.requiredAccess, '0', originalAccess);
@@ -206,14 +219,18 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     }
   });
 
-  it('routes real web and CLI fixtures to deterministic artifact-specific checks', () => {
+  it('preserves the deterministic foundation findings for real web and CLI fixtures', () => {
     expect(webReport.manifest.artifacts.map(({ value }) => value)).toEqual(['web']);
-    expect(webReport.findings.map(({ checkId }) => checkId)).toEqual([
+    expect(webReport.findings
+      .filter(({ checkId }) => checkId === 'launch-essentials.privacy-notice' || checkId === 'secret-exposure.scan')
+      .map(({ checkId }) => checkId)).toEqual([
       'launch-essentials.privacy-notice',
       'secret-exposure.scan',
     ]);
     expect(cliReport.manifest.artifacts.map(({ value }) => value)).toEqual(['cli']);
-    expect(cliReport.findings).toEqual([]);
+    expect(cliReport.findings
+      .filter(({ checkId }) => checkId === 'launch-essentials.privacy-notice' || checkId === 'secret-exposure.scan'))
+      .toEqual([]);
   });
 
   it('routes the privacy check only when its capability is detected', () => {
@@ -272,7 +289,9 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
 
     expect(parsed.generatedAt).toBe(fixedTimestamp);
     expect(parsed.toolkitVersion).toBe('0.2.0');
-    expect(parsed.findings.map(({ checkId, checkVersion, skillVersion }) => ({ checkId, checkVersion, skillVersion }))).toEqual([
+    expect(parsed.findings
+      .filter(({ checkId }) => checkId === 'launch-essentials.privacy-notice' || checkId === 'secret-exposure.scan')
+      .map(({ checkId, checkVersion, skillVersion }) => ({ checkId, checkVersion, skillVersion }))).toEqual([
       { checkId: 'launch-essentials.privacy-notice', checkVersion: '0.1.0', skillVersion: '0.1.0' },
       { checkId: 'secret-exposure.scan', checkVersion: '0.1.0', skillVersion: '0.1.0' },
     ]);

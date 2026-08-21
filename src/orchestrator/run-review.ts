@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { loadSkillCatalog, type SkillDescriptor } from '../catalog/load-catalog.js';
 import { routeSkills } from '../catalog/route-skills.js';
 import { privacyNoticeCheck } from '../checks/launch-essentials.js';
+import { launchOperationsChecks } from '../checks/launch-operations/index.js';
 import { secretExposureCheck } from '../checks/secret-exposure.js';
 import { discoverProject } from '../discovery/discover-project.js';
 import type { Finding } from '../model/finding.js';
@@ -45,6 +46,7 @@ function freezeRegistration(implementation: CheckImplementation): CheckImplement
 export const foundationCheckImplementations: readonly CheckImplementation[] = Object.freeze([
   freezeRegistration(privacyNoticeCheck),
   freezeRegistration(secretExposureCheck),
+  ...launchOperationsChecks.map(freezeRegistration),
 ]);
 
 function compareFindings(left: Finding, right: Finding): number {

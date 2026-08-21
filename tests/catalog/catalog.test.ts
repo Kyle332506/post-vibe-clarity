@@ -8,6 +8,7 @@ import { routeSkills } from '../../src/catalog/route-skills.js';
 import type { CapabilityManifest } from '../../src/model/capability.js';
 
 const root = fileURLToPath(new URL('../fixtures/skills', import.meta.url));
+const packagedSkillsRoot = fileURLToPath(new URL('../../skills', import.meta.url));
 const base: CapabilityManifest = {
   schemaVersion: '0.1',
   projectRoot: '/fixture',
@@ -66,6 +67,36 @@ async function writeCatalogSkill(
 }
 
 describe('skill catalog', () => {
+  it('loads the exact launch operations package without an applicability restriction', async () => {
+    const catalog = await loadSkillCatalog(packagedSkillsRoot);
+    const launchOperations = catalog.find(({ id }) => id === 'launch-operations');
+
+    expect(launchOperations).toEqual({
+      schemaVersion: '0.1',
+      id: 'launch-operations',
+      skillVersion: '0.1.0',
+      domains: [
+        'data-correctness',
+        'reliability-recovery',
+        'operations-observability',
+        'maintainability-change-safety',
+        'release-delivery',
+      ],
+      modes: ['audit', 'propose', 'remediate', 'verify'],
+      maxActionLevel: 2,
+      checks: [
+        'launch-operations.release-process',
+        'launch-operations.rollback-process',
+        'launch-operations.monitoring-response',
+        'launch-operations.health-check',
+        'launch-operations.backup-restore',
+        'launch-operations.maintenance-ownership',
+      ],
+      directory: join(packagedSkillsRoot, 'launch-operations'),
+    });
+    expect(launchOperations).not.toHaveProperty('appliesTo');
+  });
+
   it('loads valid sidecars next to Agent Skills', async () => {
     const catalog = await loadSkillCatalog(root);
     expect(catalog.map((skill) => skill.id)).toEqual(['launch-essentials', 'secret-exposure']);
