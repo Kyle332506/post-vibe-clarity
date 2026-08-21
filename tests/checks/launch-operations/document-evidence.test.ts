@@ -248,4 +248,17 @@ describe('evaluateDocumentEvidence', () => {
       summary: 'Repository text explicitly describes the check-specific risky condition.',
     }]);
   });
+
+  it('does not report rollback risk quoted across Markdown lines after introductory prose', async () => {
+    const root = await createRepository({
+      'deployment.md': 'The guide says, “\nno rollback path\n”\n',
+    });
+
+    const result = await evaluateDocumentEvidence(root, [], {
+      ...profile,
+      riskPatterns: [/^[\t ]*no rollback path[.!;,]*[\t ]*$/imu],
+    });
+
+    expect(result.riskEvidence).toEqual([]);
+  });
 });

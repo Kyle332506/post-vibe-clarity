@@ -16,7 +16,7 @@ const quantity = String.raw`(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|e
 const duration = String.raw`${quantity}[\t ]+(?:minutes?|hours?|days?|weeks?|months?|years?)`;
 
 const durationPattern = new RegExp(String.raw`\b${duration}\b`, 'iu');
-const explicitCadencePattern = new RegExp(String.raw`\b(?:once[\t ]+per[\t ]+(?:hour|day|week|month|year)|hourly|daily|weekly|monthly|quarterly|annually|yearly|every[\t ]+${duration})\b`, 'iu');
+const explicitCadencePattern = new RegExp(String.raw`\b(?:(?:once|twice|${quantity}[\t ]+times?)[\t ]+per[\t ]+(?:hour|day|week|month|year)|hourly|daily|weekly|monthly|quarterly|annually|yearly|every[\t ]+${duration})\b`, 'iu');
 
 const concreteValue = (value: string, generic: RegExp, minimumWords = 2): boolean => {
   const normalized = normalizeEvidenceValue(value);
@@ -40,8 +40,8 @@ const restoreValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
   return !hasNegativeEvidenceAssertion(normalized)
     && evidenceWordCount(normalized) >= 4
-    && /^(?:select|restore|recover|download|follow|invoke|run|apply)\b/iu.test(normalized)
-    && !/^(?:run|follow)[\t ]+(?:the[\t ]+)?(?:restore|recovery)[\t ]+procedure$/iu.test(normalized);
+    && !/^(?:run|follow|execute)[\t ]+(?:the[\t ]+)?(?:restore|recovery)[\t ]+procedure$/iu.test(normalized)
+    && /\b(?:approved|maintained|documented|referenced|provider|private|snapshot|runbook|operations[\t ]+system|recovery[\t ]+environment)\b/iu.test(normalized);
 };
 const ownerValue: ValuePredicate = (value) => concreteValue(value, /^(?:owner|team|maintainer|support|operator)$/iu);
 const notificationValue: ValuePredicate = (value) => {

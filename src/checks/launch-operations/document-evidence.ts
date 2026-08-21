@@ -66,16 +66,40 @@ function isSourceEvidenceLocation(location: string): boolean {
   return sourceEvidenceExtensions.has(extname(location).toLowerCase());
 }
 
-export function executableSourceEvidence(content: string, location: string): string | undefined {
+type SourceEvidence = {
+  executable: string;
+  descriptions: string;
+};
+
+function scanSourceEvidence(content: string, location: string): SourceEvidence | undefined {
   if (!isSourceEvidenceLocation(location)) return undefined;
 
-  const hashComments = new Set(['.py', '.rb']).has(extname(location).toLowerCase());
+  const extension = extname(location).toLowerCase();
+  const hashComments = new Set(['.py', '.rb']).has(extension);
+  const templateLiterals = new Set(['.js', '.jsx', '.ts', '.tsx']).has(extension);
   const executableLines: string[] = [];
+  const descriptionLines: string[] = [];
   let blockComment = false;
   let docstring: '"""' | "'''" | undefined;
+  let rubyDocumentation = false;
+  let templateLiteral = false;
 
   for (const sourceLine of content.replace(/\r\n?/gu, '\n').split('\n')) {
     let line = sourceLine;
+
+    if (rubyDocumentation) {
+      if (/^[\t ]*=end\b/u.test(line)) rubyDocumentation = false;
+      continue;
+    }
+    if (extension === '.rb' && /^[\t ]*=begin\b/u.test(line)) {
+      rubyDocumentation = true;
+      continue;
+    }
+
+    if (templateLiteral) {
+      if (/(?<!\\)`/u.test(line)) templateLiteral = false;
+      continue;
+    }
 
     if (docstring) {
       const close = line.indexOf(docstring);
@@ -86,7 +110,11 @@ export function executableSourceEvidence(content: string, location: string): str
 
     if (blockComment) {
       const close = line.indexOf('*/');
-      if (close === -1) continue;
+      if (close === -1) {
+        descriptionLines.push(line);
+        continue;
+      }
+      descriptionLines.push(line.slice(0, close));
       line = line.slice(close + 2);
       blockComment = false;
     }
@@ -95,10 +123,12 @@ export function executableSourceEvidence(content: string, location: string): str
     while (commentStart !== -1) {
       const commentEnd = line.indexOf('*/', commentStart + 2);
       if (commentEnd === -1) {
+        descriptionLines.push(line.slice(commentStart + 2));
         line = line.slice(0, commentStart);
         blockComment = true;
         break;
       }
+      descriptionLines.push(line.slice(commentStart + 2, commentEnd));
       line = `${line.slice(0, commentStart)} ${line.slice(commentEnd + 2)}`;
       commentStart = line.indexOf('/*');
     }
@@ -113,18 +143,39 @@ export function executableSourceEvidence(content: string, location: string): str
       line = close === -1 ? '' : remainder.slice(close + marker.length);
     }
 
-    if (/^[\t ]*(?:\/\/|#)/u.test(line)) continue;
     const slashComment = line.indexOf('//');
     const hashComment = hashComments ? line.indexOf('#') : -1;
     const lineComment = [slashComment, hashComment]
       .filter((index) => index >= 0)
       .sort((left, right) => left - right)[0];
-    if (lineComment !== undefined) line = line.slice(0, lineComment);
+    if (lineComment !== undefined) {
+      const markerLength = line.startsWith('//', lineComment) ? 2 : 1;
+      descriptionLines.push(line.slice(lineComment + markerLength));
+      line = line.slice(0, lineComment);
+    }
+    if (templateLiterals) {
+      const backticks = [...line.matchAll(/(?<!\\)`/gu)];
+      if (backticks.length % 2 === 1) {
+        line = line.slice(0, backticks[0]?.index ?? 0);
+        templateLiteral = true;
+      }
+    }
     if (line.trim() !== '') executableLines.push(line);
   }
 
-  if (blockComment || docstring) return undefined;
-  return executableLines.join('\n');
+  if (blockComment || docstring || rubyDocumentation || templateLiteral) return undefined;
+  return {
+    executable: executableLines.join('\n'),
+    descriptions: descriptionLines.join('\n'),
+  };
+}
+
+export function executableSourceEvidence(content: string, location: string): string | undefined {
+  return scanSourceEvidence(content, location)?.executable;
+}
+
+export function descriptiveSourceEvidence(content: string, location: string): string | undefined {
+  return scanSourceEvidence(content, location)?.descriptions;
 }
 
 function visualIndentation(line: string): number {
@@ -191,11 +242,12 @@ function sanitizeProseRiskContent(content: string, location: string): string {
       sanitized.push('');
       continue;
     }
-    const quotationMatch = /^[\t ]{0,3}(["'“‘])/u.exec(line);
+    const quotationMatch = /(["“‘])|^[\t ]{0,3}(')/u.exec(line);
     if (quotationMatch) {
-      const opening = quotationMatch[1] as '"' | "'" | '“' | '‘';
+      const opening = (quotationMatch[1] ?? quotationMatch[2]) as '"' | "'" | '“' | '‘';
       const closing = opening === '“' ? '”' : opening === '‘' ? '’' : opening;
-      const afterOpening = line.slice(quotationMatch.index + quotationMatch[0].length);
+      const openingIndex = line.indexOf(opening, quotationMatch.index);
+      const afterOpening = line.slice(openingIndex + opening.length);
       if (!afterOpening.includes(closing)) quotation = opening;
       sanitized.push('');
       continue;
@@ -269,7 +321,7 @@ export function normalizeEvidenceValue(value: string): string {
 export function hasNegativeEvidenceAssertion(value: string, allowed: readonly RegExp[] = []): boolean {
   let normalized = normalizeEvidenceValue(value);
   for (const pattern of allowed) normalized = normalized.replace(new RegExp(pattern.source, pattern.flags), ' ');
-  return /\b(?:no|not|none|never|disabled|unknown|n\/a|tbd|todo)\b/iu.test(normalized);
+  return /\b(?:no|not|none|never|disabled|unknown|unavailable|missing|pending|n\/a|tbd|todo)\b/iu.test(normalized);
 }
 
 export function evidenceWordCount(value: string): number {

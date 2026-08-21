@@ -1,6 +1,7 @@
 import { extname } from 'node:path';
 import { createOperationsCheck } from './create-check.js';
 import {
+  descriptiveSourceEvidence,
   evidenceWordCount,
   executableSourceEvidence,
   hasNegativeEvidenceAssertion,
@@ -22,6 +23,7 @@ const probeExecutablePatterns = [
 const expectedResultExecutablePatterns = [
   /^[\t ]*(?:@?[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\.)?(?:get|head|route|handlefunc|mapget)[\t ]*\([^\r\n]*\.status[\t ]*\([\t ]*2\d\d[\t ]*\)/imu,
   /^[\t ]*(?:(?:return[\t ]+)?(?:response|res|reply|ctx)\b[^\r\n]*\.status[\t ]*\([\t ]*2\d\d[\t ]*\)|return\b[^\r\n]*(?:['"]status['"][\t ]*:[\t ]*['"]ok['"]|,[\t ]*2\d\d\b)|[^\r\n]*\bwriteheader[\t ]*\([\t ]*(?:http\.)?statusok[\t ]*\))/imu,
+  /^[\t ]*status[\t ]+2\d\d\b/imu,
 ] as const;
 
 const probeValue: ValuePredicate = (value) => {
@@ -68,12 +70,13 @@ function matchesAny(...matchers: ContentMatcher[]): ContentMatcher {
 function labeledValueMatcher(labels: string, predicate: ValuePredicate, source: boolean): ContentMatcher {
   return (content, location) => {
     const extension = extname(location).toLowerCase();
-    if (source ? executableSourceEvidence(content, location) === undefined : !plainTextExtensions.has(extension)) {
+    const evidenceContent = source ? descriptiveSourceEvidence(content, location) : content;
+    if (evidenceContent === undefined || (!source && !plainTextExtensions.has(extension))) {
       return false;
     }
     const prefix = source ? String.raw`(?:(?:\/\/|#|\*)[\t ]*)?` : '';
     const fieldPattern = new RegExp(String.raw`^[\t ]*${prefix}(?:${labels})[\t ]*:[\t ]*(.+)$`, 'gimu');
-    return [...content.matchAll(fieldPattern)].some((match) => predicate(match[1] ?? ''));
+    return [...evidenceContent.matchAll(fieldPattern)].some((match) => predicate(match[1] ?? ''));
   };
 }
 
