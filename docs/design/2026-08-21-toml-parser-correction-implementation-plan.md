@@ -132,4 +132,3 @@ Expected: the production audit reports no known vulnerability and the attributio
 git add -- package.json pnpm-lock.yaml src/checks/launch-operations/monitoring-response.ts tests/checks/launch-operations/runtime-checks.test.ts
 git commit -m "fix: use a maintained TOML parser"
 ```
-
