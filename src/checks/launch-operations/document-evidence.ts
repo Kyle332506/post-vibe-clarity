@@ -34,6 +34,20 @@ export const supportedOperationsEvidenceExtensions = new Set([
   '.swift',
 ]);
 
+const sourceEvidenceExtensions = new Set([
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.py',
+  '.rb',
+  '.go',
+  '.rs',
+  '.java',
+  '.kt',
+  '.swift',
+]);
+
 const strictUtf8Decoder = new TextDecoder('utf-8', { fatal: true });
 
 type BoundedCandidate =
@@ -46,6 +60,96 @@ function testPattern(pattern: RegExp, value: string): boolean {
 
 function isStructuredEvidenceLocation(location: string): boolean {
   return new Set(['.json', '.yaml', '.yml', '.toml']).has(extname(location).toLowerCase());
+}
+
+function isSourceEvidenceLocation(location: string): boolean {
+  return sourceEvidenceExtensions.has(extname(location).toLowerCase());
+}
+
+function maskCharacter(value: string): string {
+  return value === '\n' || value === '\r' ? value : ' ';
+}
+
+export function executableSourceEvidence(content: string, location: string): string | undefined {
+  if (!isSourceEvidenceLocation(location)) return undefined;
+
+  const hashComments = new Set(['.py', '.rb']).has(extname(location).toLowerCase());
+  const result = [...content];
+  let quote: "'" | '"' | '`' | undefined;
+  let blockCommentDepth = 0;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const current = content[index]!;
+    const next = content[index + 1];
+
+    if (blockCommentDepth > 0) {
+      result[index] = maskCharacter(current);
+      if (current === '/' && next === '*') {
+        result[index + 1] = ' ';
+        blockCommentDepth += 1;
+        index += 1;
+      } else if (current === '*' && next === '/') {
+        result[index + 1] = ' ';
+        blockCommentDepth -= 1;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (quote !== undefined) {
+      if (current === '\\') {
+        if (next !== undefined) index += 1;
+        continue;
+      }
+      if (current === quote) quote = undefined;
+      else if ((quote === "'" || quote === '"') && (current === '\n' || current === '\r')) return undefined;
+      continue;
+    }
+
+    if (current === "'" || current === '"' || current === '`') {
+      quote = current;
+      continue;
+    }
+    if (current === '/' && next === '*') {
+      result[index] = ' ';
+      result[index + 1] = ' ';
+      blockCommentDepth = 1;
+      index += 1;
+      continue;
+    }
+    if ((current === '/' && next === '/') || (hashComments && current === '#')) {
+      const commentStart = index;
+      for (; index < content.length && content[index] !== '\n'; index += 1) {
+        result[index] = maskCharacter(content[index]!);
+      }
+      if (index < content.length) result[index] = '\n';
+      if (index === commentStart) return undefined;
+    }
+  }
+
+  if (blockCommentDepth > 0 || quote !== undefined) return undefined;
+  return result.join('');
+}
+
+function sanitizeProseRiskContent(content: string): string {
+  let fence: { marker: '`' | '~'; length: number } | undefined;
+
+  return content.split('\n').map((line) => {
+    const fenceMatch = /^[\t ]{0,3}(`{3,}|~{3,})/u.exec(line);
+    if (fenceMatch) {
+      const delimiter = fenceMatch[1]!;
+      const marker = delimiter[0] as '`' | '~';
+      if (!fence) fence = { marker, length: delimiter.length };
+      else if (fence.marker === marker && delimiter.length >= fence.length) fence = undefined;
+      return '';
+    }
+    if (fence) return '';
+    if (/^(?:\t|[\t ]{4})/u.test(line)) return '';
+    if (/^[\t ]{0,3}>/u.test(line)) return '';
+    if (/^[\t ]{0,3}["'“”‘’]/u.test(line)) return '';
+    if (line.includes('?')) return '';
+    return line;
+  }).join('\n');
 }
 
 type StructuredRecord = Record<string, unknown>;
@@ -138,8 +242,10 @@ function matchedRequirements(
   requirements: readonly EvidenceRequirement[],
 ): EvidenceRequirement[] {
   const structured = isStructuredEvidenceLocation(location);
+  const executableContent = executableSourceEvidence(content, location);
+  const patternContent = isSourceEvidenceLocation(location) ? executableContent ?? '' : content;
   return requirements.filter(({ patterns, textOnlyPatterns, matches }) =>
-    ((!textOnlyPatterns || !structured) && patterns.some((pattern) => testPattern(pattern, content)))
+    ((!textOnlyPatterns || !structured) && patterns.some((pattern) => testPattern(pattern, patternContent)))
       || matches?.(content, location) === true);
 }
 
@@ -178,7 +284,10 @@ export async function evaluateDocumentEvidence(
         summary: 'Repository operations evidence matched the versioned content profile.',
       });
     }
-    if (profile.riskPatterns.some((pattern) => testPattern(pattern, content.value))) {
+    const riskContent = isStructuredEvidenceLocation(location)
+      ? undefined
+      : sanitizeProseRiskContent(content.value);
+    if (riskContent !== undefined && profile.riskPatterns.some((pattern) => testPattern(pattern, riskContent))) {
       riskEvidence.push({
         kind: 'file',
         location,
