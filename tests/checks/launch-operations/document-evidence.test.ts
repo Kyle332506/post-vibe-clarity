@@ -230,4 +230,22 @@ describe('evaluateDocumentEvidence', () => {
       'second/deployment.md',
     ]);
   });
+
+  it('keeps a leading-whitespace standalone risk statement active in a plain-text candidate', async () => {
+    const root = await createRepository({
+      'deployment.txt': '    no rollback path\n',
+    });
+
+    const result = await evaluateDocumentEvidence(root, [], {
+      ...profile,
+      candidatePaths: [/(?:^|\/)deployment\.txt$/iu],
+      riskPatterns: [/^[\t ]*no rollback path[.!;,]*[\t ]*$/imu],
+    });
+
+    expect(result.riskEvidence).toEqual([{
+      kind: 'file',
+      location: 'deployment.txt',
+      summary: 'Repository text explicitly describes the check-specific risky condition.',
+    }]);
+  });
 });

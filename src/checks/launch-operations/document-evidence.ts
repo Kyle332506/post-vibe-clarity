@@ -66,90 +66,144 @@ function isSourceEvidenceLocation(location: string): boolean {
   return sourceEvidenceExtensions.has(extname(location).toLowerCase());
 }
 
-function maskCharacter(value: string): string {
-  return value === '\n' || value === '\r' ? value : ' ';
-}
-
 export function executableSourceEvidence(content: string, location: string): string | undefined {
   if (!isSourceEvidenceLocation(location)) return undefined;
 
   const hashComments = new Set(['.py', '.rb']).has(extname(location).toLowerCase());
-  const result = [...content];
-  let quote: "'" | '"' | '`' | undefined;
-  let blockCommentDepth = 0;
+  const executableLines: string[] = [];
+  let blockComment = false;
+  let docstring: '"""' | "'''" | undefined;
 
-  for (let index = 0; index < content.length; index += 1) {
-    const current = content[index]!;
-    const next = content[index + 1];
+  for (const sourceLine of content.replace(/\r\n?/gu, '\n').split('\n')) {
+    let line = sourceLine;
 
-    if (blockCommentDepth > 0) {
-      result[index] = maskCharacter(current);
-      if (current === '/' && next === '*') {
-        result[index + 1] = ' ';
-        blockCommentDepth += 1;
-        index += 1;
-      } else if (current === '*' && next === '/') {
-        result[index + 1] = ' ';
-        blockCommentDepth -= 1;
-        index += 1;
+    if (docstring) {
+      const close = line.indexOf(docstring);
+      if (close === -1) continue;
+      line = line.slice(close + docstring.length);
+      docstring = undefined;
+    }
+
+    if (blockComment) {
+      const close = line.indexOf('*/');
+      if (close === -1) continue;
+      line = line.slice(close + 2);
+      blockComment = false;
+    }
+
+    let commentStart = line.indexOf('/*');
+    while (commentStart !== -1) {
+      const commentEnd = line.indexOf('*/', commentStart + 2);
+      if (commentEnd === -1) {
+        line = line.slice(0, commentStart);
+        blockComment = true;
+        break;
       }
-      continue;
+      line = `${line.slice(0, commentStart)} ${line.slice(commentEnd + 2)}`;
+      commentStart = line.indexOf('/*');
     }
 
-    if (quote !== undefined) {
-      if (current === '\\') {
-        if (next !== undefined) index += 1;
-        continue;
-      }
-      if (current === quote) quote = undefined;
-      else if ((quote === "'" || quote === '"') && (current === '\n' || current === '\r')) return undefined;
-      continue;
+    const trimmed = line.trimStart();
+    const docstringMatch = /^("""|''')/u.exec(trimmed);
+    if (docstringMatch) {
+      const marker = docstringMatch[1] as '"""' | "'''";
+      const remainder = trimmed.slice(marker.length);
+      const close = remainder.indexOf(marker);
+      if (close === -1) docstring = marker;
+      line = close === -1 ? '' : remainder.slice(close + marker.length);
     }
 
-    if (current === "'" || current === '"' || current === '`') {
-      quote = current;
-      continue;
-    }
-    if (current === '/' && next === '*') {
-      result[index] = ' ';
-      result[index + 1] = ' ';
-      blockCommentDepth = 1;
-      index += 1;
-      continue;
-    }
-    if ((current === '/' && next === '/') || (hashComments && current === '#')) {
-      const commentStart = index;
-      for (; index < content.length && content[index] !== '\n'; index += 1) {
-        result[index] = maskCharacter(content[index]!);
-      }
-      if (index < content.length) result[index] = '\n';
-      if (index === commentStart) return undefined;
-    }
+    if (/^[\t ]*(?:\/\/|#)/u.test(line)) continue;
+    const slashComment = line.indexOf('//');
+    const hashComment = hashComments ? line.indexOf('#') : -1;
+    const lineComment = [slashComment, hashComment]
+      .filter((index) => index >= 0)
+      .sort((left, right) => left - right)[0];
+    if (lineComment !== undefined) line = line.slice(0, lineComment);
+    if (line.trim() !== '') executableLines.push(line);
   }
 
-  if (blockCommentDepth > 0 || quote !== undefined) return undefined;
-  return result.join('');
+  if (blockComment || docstring) return undefined;
+  return executableLines.join('\n');
 }
 
-function sanitizeProseRiskContent(content: string): string {
-  let fence: { marker: '`' | '~'; length: number } | undefined;
+function visualIndentation(line: string): number {
+  let columns = 0;
+  for (const character of line) {
+    if (character === ' ') columns += 1;
+    else if (character === '\t') columns += 4 - (columns % 4);
+    else break;
+  }
+  return columns;
+}
 
-  return content.split('\n').map((line) => {
-    const fenceMatch = /^[\t ]{0,3}(`{3,}|~{3,})/u.exec(line);
-    if (fenceMatch) {
-      const delimiter = fenceMatch[1]!;
-      const marker = delimiter[0] as '`' | '~';
-      if (!fence) fence = { marker, length: delimiter.length };
-      else if (fence.marker === marker && delimiter.length >= fence.length) fence = undefined;
-      return '';
+function markdownBoundary(line: string): boolean {
+  return /^[\t ]{0,3}(?:#{1,6}[\t ]|(?:[-+*]|\d+[.)])[\t ]|`{3,}|~{3,}|<pre\b)/iu.test(line);
+}
+
+function sanitizeProseRiskContent(content: string, location: string): string {
+  const markdown = new Set(['.md', '.mdx']).has(extname(location).toLowerCase());
+  let fence: { marker: '`' | '~'; length: number } | undefined;
+  let blockquote = false;
+  let quotation: '"' | "'" | '“' | '‘' | undefined;
+  let preformatted = false;
+  const sanitized: string[] = [];
+
+  for (const line of content.replace(/\r\n?/gu, '\n').split('\n')) {
+    const trimmed = line.trim();
+    if (markdown) {
+      if (preformatted) {
+        if (/<\/pre[\t ]*>/iu.test(line)) preformatted = false;
+        sanitized.push('');
+        continue;
+      }
+      if (/<pre\b/iu.test(line)) {
+        preformatted = !/<\/pre[\t ]*>/iu.test(line);
+        sanitized.push('');
+        continue;
+      }
+
+      const fenceMatch = /^[\t ]{0,3}(`{3,}|~{3,})/u.exec(line);
+      if (fenceMatch) {
+        const delimiter = fenceMatch[1]!;
+        const marker = delimiter[0] as '`' | '~';
+        if (!fence) fence = { marker, length: delimiter.length };
+        else if (fence.marker === marker && delimiter.length >= fence.length) fence = undefined;
+        sanitized.push('');
+        continue;
+      }
+      if (fence) {
+        sanitized.push('');
+        continue;
+      }
+      if (trimmed === '') blockquote = false;
+      else if (/^[\t ]{0,3}>/u.test(line)) blockquote = true;
+      else if (blockquote && markdownBoundary(line)) blockquote = false;
+      if (blockquote || visualIndentation(line) >= 4) {
+        sanitized.push('');
+        continue;
+      }
     }
-    if (fence) return '';
-    if (/^(?:\t|[\t ]{4})/u.test(line)) return '';
-    if (/^[\t ]{0,3}>/u.test(line)) return '';
-    if (/^[\t ]{0,3}["'“”‘’]/u.test(line)) return '';
-    if (line.includes('?')) return '';
-    return line;
-  }).join('\n');
+
+    if (quotation) {
+      const closing = quotation === '“' ? '”' : quotation === '‘' ? '’' : quotation;
+      if (line.includes(closing)) quotation = undefined;
+      sanitized.push('');
+      continue;
+    }
+    const quotationMatch = /^[\t ]{0,3}(["'“‘])/u.exec(line);
+    if (quotationMatch) {
+      const opening = quotationMatch[1] as '"' | "'" | '“' | '‘';
+      const closing = opening === '“' ? '”' : opening === '‘' ? '’' : opening;
+      const afterOpening = line.slice(quotationMatch.index + quotationMatch[0].length);
+      if (!afterOpening.includes(closing)) quotation = opening;
+      sanitized.push('');
+      continue;
+    }
+    sanitized.push(line.includes('?') ? '' : line);
+  }
+
+  return sanitized.join('\n');
 }
 
 type StructuredRecord = Record<string, unknown>;
@@ -197,8 +251,29 @@ export function structuredFieldMatcher(
   fieldNames: readonly string[],
   pattern: RegExp,
 ): (content: string, location: string) => boolean {
+  return structuredFieldValueMatcher(fieldNames, (value) => testPattern(pattern, value));
+}
+
+export function structuredFieldValueMatcher(
+  fieldNames: readonly string[],
+  predicate: (value: string) => boolean,
+): (content: string, location: string) => boolean {
   return (content, location) => structuredFieldValues(content, location, fieldNames)
-    .some((value) => testPattern(pattern, value));
+    .some(predicate);
+}
+
+export function normalizeEvidenceValue(value: string): string {
+  return value.normalize('NFKC').trim().replace(/[\t ]+/gu, ' ').replace(/[.!;,]+$/gu, '').toLowerCase();
+}
+
+export function hasNegativeEvidenceAssertion(value: string, allowed: readonly RegExp[] = []): boolean {
+  let normalized = normalizeEvidenceValue(value);
+  for (const pattern of allowed) normalized = normalized.replace(new RegExp(pattern.source, pattern.flags), ' ');
+  return /\b(?:no|not|none|never|disabled|unknown|n\/a|tbd|todo)\b/iu.test(normalized);
+}
+
+export function evidenceWordCount(value: string): number {
+  return normalizeEvidenceValue(value).match(/[\p{L}\p{N}]+(?:[-'][\p{L}\p{N}]+)*/gu)?.length ?? 0;
 }
 
 function isSupportedEvidenceLocation(location: string, profile: DocumentEvidenceProfile): boolean {
@@ -286,7 +361,7 @@ export async function evaluateDocumentEvidence(
     }
     const riskContent = isStructuredEvidenceLocation(location)
       ? undefined
-      : sanitizeProseRiskContent(content.value);
+      : sanitizeProseRiskContent(content.value, location);
     if (riskContent !== undefined && profile.riskPatterns.some((pattern) => testPattern(pattern, riskContent))) {
       riskEvidence.push({
         kind: 'file',

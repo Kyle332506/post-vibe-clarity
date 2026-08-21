@@ -1,38 +1,87 @@
 import { extname } from 'node:path';
 import { createOperationsCheck } from './create-check.js';
-import { structuredFieldMatcher } from './document-evidence.js';
+import {
+  evidenceWordCount,
+  hasNegativeEvidenceAssertion,
+  normalizeEvidenceValue,
+  structuredFieldValueMatcher,
+} from './document-evidence.js';
 import type { EvidenceRequirement } from './types.js';
 
 type ContentMatcher = (content: string, location: string) => boolean;
+type ValuePredicate = (value: string) => boolean;
 
 const plainTextExtensions = new Set(['.md', '.mdx', '.txt']);
-const negativeEvidence = String.raw`(?:none|unknown|n\/a|tbd|todo|disabled|never|missing|unavailable|not[\t ]+defined|do[\t ]+not|does[\t ]+not|no)`;
 const quantity = String.raw`(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|sixty|ninety)`;
 const duration = String.raw`${quantity}[\t ]+(?:minutes?|hours?|days?|weeks?|months?|years?)`;
 
-const dataValue = new RegExp(String.raw`^(?!.*\b${negativeEvidence}\b)(?=.*\b(?:databases?|tables?|records?|files?|uploads?|objects?|blobs?|volumes?|datasets?|queues?|messages?|customer[\t ]+data|user[\t ]+data)\b).+$`, 'iu');
-const mechanismValue = new RegExp(String.raw`^(?!.*\b${negativeEvidence}\b)(?=.*\b(?:snapshots?|replicas?|exports?|archives?|dumps?|point-in-time[\t -]+recovery|continuous[\t -]+backup)\b).+$`, 'iu');
-const durationValue = new RegExp(String.raw`^(?!.*\b${negativeEvidence}\b)(?=.*\b${duration}\b).+$`, 'iu');
-const restoreValue = new RegExp(String.raw`^(?!.*\b${negativeEvidence}\b)(?=.*\b(?:select|restore|recover|download|follow|invoke|run|apply)\w*\b)(?=.*\b(?:snapshots?|backups?|databases?|data|files?|exports?|archives?|procedure|runbook|operations[\t ]+system)\b).+$`, 'iu');
-const ownerValue = new RegExp(String.raw`^(?!.*\b${negativeEvidence}\b)(?=.*\b(?:maintainer|owner|on-call|team|lead|engineer|operator|responder|support|sre)\b).+$`, 'iu');
-const notificationValue = new RegExp(String.raw`^(?!.*\b${negativeEvidence}\b)(?=.*\b(?:alert\w*|notif(?:y|ies|ied|ication\w*)|pag(?:e|es|ed|ing)|surfac\w*|report\w*)\b)(?=.*\b(?:maintainers?|owners?|on-call|teams?|services?|pager|email|slack|operators?|responders?|support|sre)\b).+$`, 'iu');
-const testingValue = new RegExp(String.raw`^(?!.*\b${negativeEvidence}\b)(?=.*\b(?:daily|weekly|monthly|quarterly|annually|yearly|every[\t ]+${duration})\b)(?=.*\b(?:non-production|recovery|staging|test|isolated)[\t -]+environment\b).+$`, 'iu');
-const substantiveBoundaryValue = /^(?!.*\b(?:none|unknown|n\/a|tbd|todo|disabled|missing|unavailable)\b)(?=.{20,}$)(?=.*\b(?:configuration|credentials|secrets?|scope|provider|environment|system|repository|live)\b)(?=.*\b(?:not[\t ]+stored|excluded|outside|does[\t ]+not[\t ]+include|limited[\t ]+to|only)\b).+$/iu;
+const durationPattern = new RegExp(String.raw`\b${duration}\b`, 'iu');
+const explicitCadencePattern = new RegExp(String.raw`\b(?:once[\t ]+per[\t ]+(?:hour|day|week|month|year)|hourly|daily|weekly|monthly|quarterly|annually|yearly|every[\t ]+${duration})\b`, 'iu');
 
-function testPattern(pattern: RegExp, value: string): boolean {
-  return new RegExp(pattern.source, pattern.flags).test(value);
-}
+const concreteValue = (value: string, generic: RegExp, minimumWords = 2): boolean => {
+  const normalized = normalizeEvidenceValue(value);
+  return !hasNegativeEvidenceAssertion(normalized)
+    && evidenceWordCount(normalized) >= minimumWords
+    && !generic.test(normalized);
+};
+
+const dataValue: ValuePredicate = (value) => concreteValue(value, /^(?:data|database|resource|storage|store)$/iu);
+const mechanismValue: ValuePredicate = (value) => concreteValue(value, /^(?:backup|backup mechanism|mechanism|restore)$/iu);
+const durationValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return !hasNegativeEvidenceAssertion(normalized) && durationPattern.test(normalized);
+};
+const frequencyValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return !hasNegativeEvidenceAssertion(normalized)
+    && (durationPattern.test(normalized) || explicitCadencePattern.test(normalized));
+};
+const restoreValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return !hasNegativeEvidenceAssertion(normalized)
+    && evidenceWordCount(normalized) >= 4
+    && /^(?:select|restore|recover|download|follow|invoke|run|apply)\b/iu.test(normalized)
+    && !/^(?:run|follow)[\t ]+(?:the[\t ]+)?(?:restore|recovery)[\t ]+procedure$/iu.test(normalized);
+};
+const ownerValue: ValuePredicate = (value) => concreteValue(value, /^(?:owner|team|maintainer|support|operator)$/iu);
+const notificationValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return !hasNegativeEvidenceAssertion(normalized)
+    && evidenceWordCount(normalized) >= 5
+    && /\b(?:alerts?|notif(?:y|ies|ied|ication\w*)|pages?|reports?|routes?|sends?|surfaces?)\b/iu.test(normalized);
+};
+const testingValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return !hasNegativeEvidenceAssertion(normalized)
+    && explicitCadencePattern.test(normalized)
+    && /\b(?:in|against|within|using)[\t ]+(?:(?:a|an|the)[\t ]+)?[\p{L}\p{N}][\p{L}\p{N}-]*/iu.test(normalized);
+};
+const substantiveBoundaryValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return !hasNegativeEvidenceAssertion(normalized, [
+    /\bnot[\t ]+stored\b/giu,
+    /\bdoes[\t ]+not[\t ]+include\b/giu,
+  ])
+    && evidenceWordCount(normalized) >= 5
+    && /\b(?:not[\t ]+stored|excluded|outside|does[\t ]+not[\t ]+include|limited[\t ]+to|only)\b/iu.test(normalized);
+};
 
 function matchesAny(...matchers: ContentMatcher[]): ContentMatcher {
   return (content, location) => matchers.some((matcher) => matcher(content, location));
 }
 
-function labeledValueMatcher(labels: string, valuePattern: RegExp): ContentMatcher {
+function labeledValueMatcher(labels: string, predicate: ValuePredicate): ContentMatcher {
   return (content, location) => {
     if (!plainTextExtensions.has(extname(location).toLowerCase())) return false;
     const fieldPattern = new RegExp(String.raw`^[\t ]*(?:${labels})[\t ]*:[\t ]*(.+)$`, 'gimu');
-    return [...content.matchAll(fieldPattern)].some((match) => testPattern(valuePattern, match[1] ?? ''));
+    return [...content.matchAll(fieldPattern)].some((match) => predicate(match[1] ?? ''));
   };
+}
+
+function orderedRestoreMatcher(content: string, location: string): boolean {
+  if (!plainTextExtensions.has(extname(location).toLowerCase())) return false;
+  const stepPattern = /^[\t ]*(?:\d+[.)]|[-*][\t ]+\[[ xX]\])[\t ]+([^\r\n]+)$/gimu;
+  return [...content.matchAll(stepPattern)].some((match) => restoreValue(match[1] ?? ''));
 }
 
 const backupRestoreRequirements: readonly EvidenceRequirement[] = [
@@ -42,7 +91,7 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     patterns: [],
     matches: matchesAny(
       labeledValueMatcher('data|protected data|data source', dataValue),
-      structuredFieldMatcher(['data', 'protectedData', 'protected_data', 'dataSource', 'data_source'], dataValue),
+      structuredFieldValueMatcher(['data', 'protectedData', 'protected_data', 'dataSource', 'data_source'], dataValue),
     ),
   },
   {
@@ -51,7 +100,7 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     patterns: [],
     matches: matchesAny(
       labeledValueMatcher('backup mechanism|mechanism', mechanismValue),
-      structuredFieldMatcher(['backupMechanism', 'backup_mechanism', 'mechanism'], mechanismValue),
+      structuredFieldValueMatcher(['backupMechanism', 'backup_mechanism', 'mechanism'], mechanismValue),
     ),
   },
   {
@@ -59,8 +108,8 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     textOnlyPatterns: true,
     patterns: [],
     matches: matchesAny(
-      labeledValueMatcher('frequency|backup frequency|recovery point(?: expectation| objective)?|rpo', durationValue),
-      structuredFieldMatcher(['frequency', 'backupFrequency', 'backup_frequency', 'recoveryPointExpectation', 'recovery_point_expectation', 'recoveryPointObjective', 'recovery_point_objective', 'rpo'], durationValue),
+      labeledValueMatcher('frequency|backup frequency|recovery point(?: expectation| objective)?|rpo', frequencyValue),
+      structuredFieldValueMatcher(['frequency', 'backupFrequency', 'backup_frequency', 'recoveryPointExpectation', 'recovery_point_expectation', 'recoveryPointObjective', 'recovery_point_objective', 'rpo'], frequencyValue),
     ),
   },
   {
@@ -69,18 +118,17 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     patterns: [],
     matches: matchesAny(
       labeledValueMatcher('retention', durationValue),
-      structuredFieldMatcher(['retention'], durationValue),
+      structuredFieldValueMatcher(['retention'], durationValue),
     ),
   },
   {
     id: 'restore-procedure',
     textOnlyPatterns: true,
-    patterns: [
-      new RegExp(String.raw`^[\t ]*(?:\d+[.)]|[-*][\t ]+\[[ xX]\])[\t ]+(?![^\r\n]*\b${negativeEvidence}\b)(?=[^\r\n]*\b(?:select|restore|recover|download|follow|invoke|run|apply)\w*\b)(?=[^\r\n]*\b(?:snapshots?|backups?|databases?|data|files?|exports?|archives?|procedure|runbook|operations[\t ]+system)\b)[^\r\n]+$`, 'imu'),
-    ],
+    patterns: [],
     matches: matchesAny(
+      orderedRestoreMatcher,
       labeledValueMatcher('restore steps?|restore procedure|recovery procedure', restoreValue),
-      structuredFieldMatcher(['restoreSteps', 'restore_steps', 'restoreProcedure', 'restore_procedure', 'recoveryProcedure', 'recovery_procedure'], restoreValue),
+      structuredFieldValueMatcher(['restoreSteps', 'restore_steps', 'restoreProcedure', 'restore_procedure', 'recoveryProcedure', 'recovery_procedure'], restoreValue),
     ),
   },
   {
@@ -89,7 +137,7 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     patterns: [],
     matches: matchesAny(
       labeledValueMatcher('recovery time(?: expectation| objective)?|rto', durationValue),
-      structuredFieldMatcher(['recoveryTimeExpectation', 'recovery_time_expectation', 'recoveryTimeObjective', 'recovery_time_objective', 'rto'], durationValue),
+      structuredFieldValueMatcher(['recoveryTimeExpectation', 'recovery_time_expectation', 'recoveryTimeObjective', 'recovery_time_objective', 'rto'], durationValue),
     ),
   },
   {
@@ -98,7 +146,7 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     patterns: [],
     matches: matchesAny(
       labeledValueMatcher('owner|responsible(?: role)?|maintainer', ownerValue),
-      structuredFieldMatcher(['owner', 'responsibleRole', 'responsible_role', 'maintainer'], ownerValue),
+      structuredFieldValueMatcher(['owner', 'responsibleRole', 'responsible_role', 'maintainer'], ownerValue),
     ),
   },
   {
@@ -107,7 +155,7 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     patterns: [],
     matches: matchesAny(
       labeledValueMatcher('failure notification|backup failure handling|alerting', notificationValue),
-      structuredFieldMatcher(['failureNotification', 'failure_notification', 'backupFailureHandling', 'backup_failure_handling', 'alerting'], notificationValue),
+      structuredFieldValueMatcher(['failureNotification', 'failure_notification', 'backupFailureHandling', 'backup_failure_handling', 'alerting'], notificationValue),
     ),
   },
   {
@@ -116,7 +164,7 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     patterns: [],
     matches: matchesAny(
       labeledValueMatcher('restore testing|restoration testing|recovery testing', testingValue),
-      structuredFieldMatcher(['restoreTesting', 'restore_testing', 'restorationTesting', 'restoration_testing', 'recoveryTesting', 'recovery_testing'], testingValue),
+      structuredFieldValueMatcher(['restoreTesting', 'restore_testing', 'restorationTesting', 'restoration_testing', 'recoveryTesting', 'recovery_testing'], testingValue),
     ),
   },
   {
@@ -125,7 +173,7 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     patterns: [],
     matches: matchesAny(
       labeledValueMatcher('boundaries|boundary|limitations?', substantiveBoundaryValue),
-      structuredFieldMatcher(['boundaries', 'boundary', 'limitations'], substantiveBoundaryValue),
+      structuredFieldValueMatcher(['boundaries', 'boundary', 'limitations'], substantiveBoundaryValue),
     ),
   },
 ];

@@ -197,10 +197,62 @@ Owner: On-call Maintainer.
   });
 
   it.each([
+    ['an assigned string', 'src/health.ts', `const example = "app.get('/health', () => response.status(200).json({ status: 'ok' }))";
+// Coverage: process availability only; this does not verify every dependency.
+// Failure handling: monitoring notifies the on-call maintainer.
+// Owner: On-call Maintainer.
+`],
+    ['a standalone string', 'src/health.py', `'app.get("/health", lambda: response.status(200))'
+# Coverage: process availability only; this does not verify every dependency.
+# Failure handling: monitoring notifies the on-call maintainer.
+# Owner: On-call Maintainer.
+`],
+    ['a template string', 'src/health.ts', 'const example = `app.get(\'/health\', () => response.status(200))`;\n'
+      + '// Coverage: process availability only; this does not verify every dependency.\n'
+      + '// Failure handling: monitoring notifies the on-call maintainer.\n'
+      + '// Owner: On-call Maintainer.\n'],
+  ])('keeps complete route and result text in %s unverified', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await healthCheck.run({ root, manifest: manifest(['backend'], ['network-service']) });
+
+    expect(finding).toMatchObject({ outcome: 'unverified', evidenceConfidence: 'insufficient' });
+  });
+
+  it.each([
+    ['a Python module docstring', 'src/health.py', `"""Example syntax: app.get('/health') and response.status(200)."""
+@app.get('/health')
+def health():
+    return {"status": "ok"}, 200
+# Coverage: process availability only; this does not verify every dependency.
+# Failure handling: monitoring notifies the on-call maintainer.
+# Owner: On-call Maintainer.
+`],
+    ['a JavaScript regex literal containing quotes', 'src/readiness.js', `const quotePattern = /["']/u;
+app.get('/readiness', (_request, response) => response.status(200).json({ status: 'ok' }));
+// Coverage: process availability only; this does not verify every dependency.
+// Failure handling: monitoring notifies the on-call maintainer.
+// Owner: On-call Maintainer.
+`],
+    ['a Java route line', 'src/liveness.java', `router.get("/liveness", request -> response.status(200));
+// Coverage: process availability only; this does not verify every dependency.
+// Failure handling: monitoring notifies the on-call maintainer.
+// Owner: On-call Maintainer.
+`],
+  ])('accepts a real narrow source route following %s', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await healthCheck.run({ root, manifest: manifest(['backend'], ['network-service']) });
+
+    expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
+  });
+
+  it.each([
+    ['negative probe', 'Probe: GET /health.', 'Probe: no probe is assigned; GET /health.'],
     ['negative healthy result', 'Healthy result: HTTP 200 with status ok.', 'Healthy result: not ok.'],
-    ['vague coverage', 'Coverage: the probe checks process availability but does not verify every dependency.', 'Coverage: only.'],
+    ['negative coverage', 'Coverage: the probe checks process availability but does not verify every dependency.', 'Coverage: no dependency scope is assigned; does not verify every dependency.'],
     ['disabled failure handling', 'Failure handling: the monitoring system notifies the on-call maintainer.', 'Failure handling: alerts disabled.'],
-    ['placeholder owner', 'Owner: On-call Maintainer.', 'Owner: none.'],
+    ['unassigned owner', 'Owner: On-call Maintainer.', 'Owner: not assigned; On-call Maintainer.'],
   ])('rejects Markdown health evidence with %s', async (_description, validLine, invalidLine) => {
     const root = await createRepository({
       'docs/operations/health-check.md': healthEvidence.replace(validLine, invalidLine),
@@ -212,10 +264,11 @@ Owner: On-call Maintainer.
   });
 
   it.each([
+    ['negative probe', { probe: 'no probe is assigned; GET /health' }],
     ['negative healthy result', { healthyResult: 'not ok' }],
-    ['vague coverage', { coverage: 'only' }],
+    ['negative coverage', { coverage: 'no dependency scope is assigned; does not verify every dependency' }],
     ['disabled failure handling', { failureHandling: 'alerts disabled' }],
-    ['placeholder owner', { owner: 'none; owner unknown' }],
+    ['unassigned owner', { owner: 'not assigned; On-call Maintainer' }],
   ])('rejects structured health evidence with %s', async (_description, override) => {
     const root = await createRepository({
       'deploy/health.json': JSON.stringify({ ...structuredHealthEvidence, ...override }),
@@ -355,6 +408,76 @@ describe('backupRestoreCheck', () => {
     expect(finding).toMatchObject({ outcome: 'unverified', evidenceConfidence: 'insufficient' });
   });
 
+  it.each([
+    ['generic data', /^Data:.*$/mu, 'Data: database.'],
+    ['semantic negative data', /^Data:.*$/mu, 'Data: the provider has no database assigned; customer records.'],
+    ['label-echo restore action', /^1\..*\n2\..*$/mu, 'Restore procedure: run the restore procedure.'],
+    ['generic owner role', /^Owner:.*$/mu, 'Owner: owner.'],
+    ['generic team role', /^Owner:.*$/mu, 'Owner: team.'],
+    ['negated frequency', /^Frequency:.*$/mu, 'Frequency: not applicable; 24 hours.'],
+    ['unperformed restoration test', /^Restore testing:.*$/mu, 'Restore testing: not performed quarterly in the recovery environment.'],
+  ])('rejects normalized Markdown backup evidence with %s', async (_description, validPattern, invalidLine) => {
+    const root = await createRepository({
+      'docs/operations/backup-and-restore.md': backupRestoreEvidence.replace(validPattern, invalidLine),
+    });
+
+    const [finding] = await backupRestoreCheck.run({ root, manifest: manifest(['backend'], ['persistent-data']) });
+
+    expect(finding).toMatchObject({ outcome: 'unverified', evidenceConfidence: 'insufficient' });
+  });
+
+  it.each([
+    ['generic data', { data: 'database' }],
+    ['semantic negative data', { data: 'the provider has no database assigned; customer records' }],
+    ['label-echo restore action', { restoreSteps: ['run the restore procedure'] }],
+    ['generic owner role', { owner: 'owner' }],
+    ['generic team role', { owner: 'team' }],
+    ['negated frequency', { frequency: 'not applicable; 24 hours' }],
+    ['unperformed restoration test', { restoreTesting: 'not performed quarterly in the recovery environment' }],
+  ])('rejects normalized structured backup evidence with %s', async (_description, override) => {
+    const root = await createRepository({
+      'docs/operations/backup.json': JSON.stringify({ ...structuredBackupRestoreEvidence, ...override }),
+    });
+
+    const [finding] = await backupRestoreCheck.run({ root, manifest: manifest(['backend'], ['persistent-data']) });
+
+    expect(finding).toMatchObject({ outcome: 'unverified', evidenceConfidence: 'insufficient' });
+  });
+
+  it.each([
+    ['Markdown', 'docs/operations/backup-and-restore.md', `# Backup and restore
+
+Data: the production PostgreSQL cluster.
+Backup mechanism: automated Supabase point-in-time recovery.
+Frequency: once per day; acceptable data loss is one day.
+Retention: 30 days.
+Restore procedure: follow the maintained Supabase recovery runbook.
+Recovery time expectation: four hours.
+Owner: Database Administrator.
+Failure notification: the scheduled job pages Database Operations through PagerDuty.
+Restore testing: test quarterly in staging.
+Boundaries: provider credentials remain outside this repository.
+`],
+    ['structured JSON', 'docs/operations/backup.json', JSON.stringify({
+      data: 'the production PostgreSQL cluster',
+      backupMechanism: 'automated Supabase point-in-time recovery',
+      frequency: 'once per day',
+      retention: '30 days',
+      restoreSteps: ['follow the maintained Supabase recovery runbook'],
+      recoveryTimeExpectation: 'four hours',
+      owner: 'Database Administrator',
+      failureNotification: 'scheduled job pages Database Operations through PagerDuty',
+      restoreTesting: 'test quarterly in staging',
+      boundaries: 'provider credentials remain outside this repository',
+    })],
+  ])('accepts credible alternative backup evidence in %s', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await backupRestoreCheck.run({ root, manifest: manifest(['backend'], ['persistent-data']) });
+
+    expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
+  });
+
   it('keeps unknown capability applicability unverified', async () => {
     const [finding] = await backupRestoreCheck.run({
       root: '/path-that-does-not-exist',
@@ -415,6 +538,11 @@ Backups are disabled.
     ['an explicit quotation', 'docs/operations/backup.md', '“Backups are disabled.”\n'],
     ['a discussion', 'docs/operations/backup.md', 'The guide discusses whether backups are disabled.\n'],
     ['a question', 'docs/operations/backup.md', 'Are backups disabled?\n'],
+    ['a tilde-fenced block', 'docs/operations/backup.md', '~~~text\nBackups are disabled.\n~~~\n'],
+    ['mixed visual indentation', 'docs/operations/backup.md', ' \t Backups are disabled.\n'],
+    ['a lazy blockquote continuation', 'docs/operations/backup.md', '> The runbook quotes an example:\nBackups are disabled.\n'],
+    ['a multiline explicit quotation', 'docs/operations/backup.md', '“The vendor example says:\nBackups are disabled.\n”\n'],
+    ['an HTML preformatted block', 'docs/operations/backup.md', '<pre>\nBackups are disabled.\n</pre>\n'],
   ])('keeps risky language in %s unverified', async (_description, location, evidence) => {
     const root = await createRepository({ [location]: evidence });
 
@@ -424,6 +552,21 @@ Backups are disabled.
       id: 'launch-operations.backup-restore.unverified',
       outcome: 'unverified',
       actionLevel: 'resolve-before-launch',
+    });
+  });
+
+  it.each([
+    ['leading whitespace in text', 'docs/operations/backup.txt', '    Backups are disabled.\n'],
+    ['CRLF Markdown', 'docs/operations/backup.md', 'Backups are disabled.\r\n'],
+  ])('keeps a standalone affirmative risky statement with %s as a likely issue', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await backupRestoreCheck.run({ root, manifest: manifest(['backend'], ['persistent-data']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.backup-restore.likely-issue',
+      outcome: 'likely-issue',
+      actionLevel: 'stop-before-launch',
     });
   });
 
