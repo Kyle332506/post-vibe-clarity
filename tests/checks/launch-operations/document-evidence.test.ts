@@ -94,7 +94,7 @@ describe('evaluateDocumentEvidence', () => {
     });
   });
 
-  it('accepts only the bounded supported text and configuration extensions', async () => {
+  it('accepts only the bounded supported text, configuration, and source extensions', async () => {
     const root = await createRepository({
       'deployment.pdf': 'production\n1. deploy\nverify\n',
     });
@@ -105,7 +105,8 @@ describe('evaluateDocumentEvidence', () => {
     });
 
     expect([...supportedOperationsEvidenceExtensions].sort()).toEqual([
-      '.json', '.md', '.mdx', '.toml', '.txt', '.yaml', '.yml',
+      '.go', '.java', '.js', '.json', '.jsx', '.kt', '.md', '.mdx', '.py', '.rb', '.rs',
+      '.swift', '.toml', '.ts', '.tsx', '.txt', '.yaml', '.yml',
     ]);
     expect(result.status).toBe('missing');
   });

@@ -1,5 +1,7 @@
 import { lstat, readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
+import { parse as parseToml } from 'smol-toml';
+import { parse as parseYaml, parseDocument as parseYamlDocument } from 'yaml';
 import { listProjectFiles } from '../../discovery/file-index.js';
 import { compareOrdinal } from '../../ordinal.js';
 import type { Evidence } from '../../model/finding.js';
@@ -19,6 +21,17 @@ export const supportedOperationsEvidenceExtensions = new Set([
   '.yaml',
   '.yml',
   '.toml',
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.py',
+  '.rb',
+  '.go',
+  '.rs',
+  '.java',
+  '.kt',
+  '.swift',
 ]);
 
 const strictUtf8Decoder = new TextDecoder('utf-8', { fatal: true });
@@ -33,6 +46,55 @@ function testPattern(pattern: RegExp, value: string): boolean {
 
 function isStructuredEvidenceLocation(location: string): boolean {
   return new Set(['.json', '.yaml', '.yml', '.toml']).has(extname(location).toLowerCase());
+}
+
+type StructuredRecord = Record<string, unknown>;
+
+function isStructuredRecord(value: unknown): value is StructuredRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function scalarValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (typeof value === 'number' || typeof value === 'boolean') return [String(value)];
+  if (Array.isArray(value)) return value.flatMap(scalarValues);
+  return [];
+}
+
+function valuesForTopLevelStructuredFields(value: unknown, fields: ReadonlySet<string>): string[] {
+  if (!isStructuredRecord(value)) return [];
+  const matchingFields = Object.entries(value)
+    .filter(([key]) => fields.has(key.toLowerCase()));
+  return matchingFields.length === 1 ? scalarValues(matchingFields[0]![1]) : [];
+}
+
+function structuredFieldValues(content: string, location: string, fieldNames: readonly string[]): string[] {
+  const fields = new Set(fieldNames.map((field) => field.toLowerCase()));
+  const extension = extname(location).toLowerCase();
+
+  try {
+    if (extension === '.json') {
+      const value = JSON.parse(content);
+      const document = parseYamlDocument(content, { schema: 'json', uniqueKeys: true });
+      return document.errors.length === 0 ? valuesForTopLevelStructuredFields(value, fields) : [];
+    }
+    if (extension === '.yaml' || extension === '.yml') {
+      return valuesForTopLevelStructuredFields(parseYaml(content), fields);
+    }
+    if (extension === '.toml') return valuesForTopLevelStructuredFields(parseToml(content), fields);
+  } catch {
+    return [];
+  }
+
+  return [];
+}
+
+export function structuredFieldMatcher(
+  fieldNames: readonly string[],
+  pattern: RegExp,
+): (content: string, location: string) => boolean {
+  return (content, location) => structuredFieldValues(content, location, fieldNames)
+    .some((value) => testPattern(pattern, value));
 }
 
 function isSupportedEvidenceLocation(location: string, profile: DocumentEvidenceProfile): boolean {
