@@ -31,6 +31,10 @@ function testPattern(pattern: RegExp, value: string): boolean {
   return new RegExp(pattern.source, pattern.flags).test(value);
 }
 
+function isStructuredEvidenceLocation(location: string): boolean {
+  return new Set(['.json', '.yaml', '.yml', '.toml']).has(extname(location).toLowerCase());
+}
+
 function isSupportedEvidenceLocation(location: string, profile: DocumentEvidenceProfile): boolean {
   if (supportedOperationsEvidenceExtensions.has(extname(location).toLowerCase())) return true;
   return extname(location) === ''
@@ -66,8 +70,15 @@ async function readBoundedCandidate(root: string, location: string): Promise<Bou
   }
 }
 
-function matchedRequirements(content: string, requirements: readonly EvidenceRequirement[]): EvidenceRequirement[] {
-  return requirements.filter(({ patterns }) => patterns.some((pattern) => testPattern(pattern, content)));
+function matchedRequirements(
+  content: string,
+  location: string,
+  requirements: readonly EvidenceRequirement[],
+): EvidenceRequirement[] {
+  const structured = isStructuredEvidenceLocation(location);
+  return requirements.filter(({ patterns, textOnlyPatterns, matches }) =>
+    ((!textOnlyPatterns || !structured) && patterns.some((pattern) => testPattern(pattern, content)))
+      || matches?.(content, location) === true);
 }
 
 function compareEvidence(left: Evidence, right: Evidence): number {
@@ -96,7 +107,7 @@ export async function evaluateDocumentEvidence(
       continue;
     }
 
-    const requirementMatches = matchedRequirements(content.value, profile.requirements);
+    const requirementMatches = matchedRequirements(content.value, location, profile.requirements);
     for (const requirement of requirementMatches) matched.add(requirement.id);
     if (requirementMatches.length > 0) {
       evidence.push({

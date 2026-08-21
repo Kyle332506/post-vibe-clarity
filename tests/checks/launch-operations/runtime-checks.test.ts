@@ -58,6 +58,55 @@ first_response: triage the alert and investigate failures
 owner: SRE team
 `;
 
+const tomlMonitoringEvidence = `observed_signals = ["application errors", "failed requests"]
+review_location = "Grafana monitoring dashboard"
+notification_expectation = "SRE reviews alerts within 10 minutes"
+first_response = "triage the alert and investigate failures"
+owner = "SRE team"
+`;
+
+const compactJsonAdjacentMonitoringEvidence = JSON.stringify({
+  observedSignals: [],
+  reviewLocation: '',
+  notificationExpectation: 'TBD',
+  firstResponse: 'none',
+  owner: 'none',
+  unrelated: [
+    'application errors',
+    'Grafana monitoring dashboard',
+    'SRE reviews alerts within 10 minutes',
+    'triage the alert and investigate failures',
+    'SRE team',
+  ],
+});
+
+const yamlAdjacentMonitoringEvidence = `observed_signals: []
+review_location:
+notification_expectation: TBD
+first_response: none
+owner: none
+unrelated:
+  - application errors
+  - Grafana monitoring dashboard
+  - SRE reviews alerts within 10 minutes
+  - triage the alert and investigate failures
+  - SRE team
+`;
+
+const tomlAdjacentMonitoringEvidence = `observed_signals = []
+review_location = ""
+notification_expectation = "TBD"
+first_response = "none"
+owner = "none"
+unrelated = [
+  "application errors",
+  "Grafana monitoring dashboard",
+  "SRE reviews alerts within 10 minutes",
+  "triage the alert and investigate failures",
+  "SRE team",
+]
+`;
+
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -243,6 +292,7 @@ describe('monitoringResponseCheck', () => {
     ['concrete prose', 'docs/operations/monitoring-and-incident-response.md', proseMonitoringEvidence],
     ['populated JSON fields', 'docs/operations/monitoring.json', jsonMonitoringEvidence],
     ['populated YAML fields', 'docs/operations/monitoring.yaml', yamlMonitoringEvidence],
+    ['populated TOML fields', 'docs/operations/monitoring.toml', tomlMonitoringEvidence],
   ])('accepts %s monitoring evidence without relying on Markdown labels or lists', async (_description, location, evidence) => {
     const root = await createRepository({ [location]: evidence });
 
@@ -252,6 +302,23 @@ describe('monitoringResponseCheck', () => {
       id: 'launch-operations.monitoring-response.passed',
       outcome: 'passed',
       evidenceConfidence: 'confirmed',
+    });
+  });
+
+  it.each([
+    ['compact JSON', 'docs/operations/monitoring.json', compactJsonAdjacentMonitoringEvidence],
+    ['multiline YAML', 'docs/operations/monitoring.yaml', yamlAdjacentMonitoringEvidence],
+    ['multiline TOML', 'docs/operations/monitoring.toml', tomlAdjacentMonitoringEvidence],
+  ])('does not borrow monitoring evidence from unrelated fields in %s', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['backend']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.monitoring-response.unverified',
+      outcome: 'unverified',
+      actionLevel: 'resolve-before-launch',
+      evidenceConfidence: 'insufficient',
     });
   });
 

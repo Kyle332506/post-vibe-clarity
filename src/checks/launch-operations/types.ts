@@ -11,6 +11,8 @@ export type OperationsCheckId =
 export interface EvidenceRequirement {
   id: string;
   patterns: readonly RegExp[];
+  textOnlyPatterns?: boolean;
+  matches?: (content: string, location: string) => boolean;
 }
 
 export interface DocumentEvidenceProfile {
