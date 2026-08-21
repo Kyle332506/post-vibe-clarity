@@ -14,16 +14,30 @@ const mobileDesktopRecovery = /\b(?:stop (?:the )?rollout|phased release|correct
 const packageRecovery = /\b(?:deprecate|unpublish|previous version|corrective release|version withdrawal)\b/iu;
 
 const rollbackRiskPatterns = [
-  /^\s*(?:there\s+is\s+no\s+rollback\s+path|rollback\s+is\s+impossible|we\s+do\s+not\s+have\s+a\s+recovery\s+path)\s*[.!?,;:]*\s*$/imu,
+  /^\s*(?:there\s+is\s+no\s+rollback\s+path|rollback\s+is\s+impossible|we\s+do\s+not\s+have\s+a\s+recovery\s+path)\s*[.!;,]*\s*$/imu,
 ];
 
+function recoveryMechanismEvidence(pattern: RegExp): RegExp {
+  return new RegExp(
+    String.raw`(?:^[\t ]*(?:\d+[.)]|[-*])[\t ]+[^\r\n]*${pattern.source}|^[\t ]*(?:rollback|recovery)(?:[\t ]+mechanism)?[\t ]*:[\t ]*[^\r\n]*${pattern.source})`,
+    'imu',
+  );
+}
+
 function recoveryRequirementForProfile(profile: ReturnType<typeof selectOperationsApplicability>['profile']): EvidenceRequirement {
-  if (profile === 'mobile-desktop') return { id: 'recovery-mechanism', patterns: [mobileDesktopRecovery] };
-  if (profile === 'cli' || profile === 'library') return { id: 'recovery-mechanism', patterns: [packageRecovery] };
-  if (profile === 'ambiguous') {
-    return { id: 'recovery-mechanism', patterns: [serviceRecovery, mobileDesktopRecovery, packageRecovery] };
+  if (profile === 'mobile-desktop') {
+    return { id: 'recovery-mechanism', patterns: [recoveryMechanismEvidence(mobileDesktopRecovery)] };
   }
-  return { id: 'recovery-mechanism', patterns: [serviceRecovery] };
+  if (profile === 'cli' || profile === 'library') {
+    return { id: 'recovery-mechanism', patterns: [recoveryMechanismEvidence(packageRecovery)] };
+  }
+  if (profile === 'ambiguous') {
+    return {
+      id: 'recovery-mechanism',
+      patterns: [serviceRecovery, mobileDesktopRecovery, packageRecovery].map(recoveryMechanismEvidence),
+    };
+  }
+  return { id: 'recovery-mechanism', patterns: [recoveryMechanismEvidence(serviceRecovery)] };
 }
 
 export const rollbackProcessCheck = createOperationsCheck({

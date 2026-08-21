@@ -140,6 +140,44 @@ Verification: confirm the replacement version is available.
     });
   });
 
+  it.each([
+    'Rollback is impossible?',
+    '"Rollback is impossible."',
+    'The incident guide asks whether rollback is impossible.',
+    'What happens if there is no rollback path?',
+  ])('does not treat a question, quotation, or discussion as affirmative risky evidence: %j', async (statement) => {
+    const root = await createRepository({ 'docs/operations/rollback-and-recovery.md': statement });
+
+    const [finding] = await rollbackProcessCheck.run({ root, manifest: manifest(['web']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.rollback-process.unverified',
+      outcome: 'unverified',
+      actionLevel: 'resolve-before-launch',
+    });
+  });
+
+  it('does not accept a service rollback heading and generic procedure without a recovery mechanism', async () => {
+    const root = await createRepository({
+      'docs/operations/rollback-and-recovery.md': `# Rollback and recovery
+
+Trigger: respond when release health verification fails.
+Decision owner: Incident Lead.
+1. Notify the incident lead.
+Verification: confirm the response was recorded.
+`,
+    });
+
+    const [finding] = await rollbackProcessCheck.run({ root, manifest: manifest(['web']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.rollback-process.unverified',
+      outcome: 'unverified',
+      actionLevel: 'resolve-before-launch',
+      evidenceConfidence: 'insufficient',
+    });
+  });
+
   it('keeps missing rollback evidence unverified instead of inferring a likely issue', async () => {
     const root = await createRepository({ 'README.md': 'Project overview.\n' });
 
@@ -178,6 +216,36 @@ describe('monitoringResponseCheck', () => {
     const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['mobile']) });
 
     expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
+  });
+
+  it.each([
+    `# Monitoring and incident response
+
+Signals:
+Review location:
+Notification expectation:
+1. Respond later.
+Owner:
+`,
+    `# Monitoring and incident response
+
+Signals: TBD.
+Review location: TBD.
+Notification expectation: TBD.
+1. Read the documentation.
+Owner: TBD.
+`,
+  ])('does not accept headings or vague placeholders as usable monitoring evidence', async (evidence) => {
+    const root = await createRepository({ 'docs/operations/monitoring-and-incident-response.md': evidence });
+
+    const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['backend']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.monitoring-response.unverified',
+      outcome: 'unverified',
+      actionLevel: 'resolve-before-launch',
+      evidenceConfidence: 'insufficient',
+    });
   });
 
   it.each([
