@@ -49,3 +49,23 @@ The validator now derives acceptance from the complete trace rather than trustin
 The fixture retains the supplied live trace and remains bound to the unchanged `SKILL.md` and backup-template bytes. No live behavioral output was fabricated or rerun.
 
 Focused result: `tests/skills/launch-operations-behavior.test.ts` passed 15/15, including all fourteen mutation regressions and the bound baseline trace.
+
+## Fix round 3 review RED
+
+Eight named mutations were added before hardening: an affirmative database-password request appended outside the canonical question field; canonical action payloads changed to another path, another preview, and Level 4; both copies of the captured timestamp changed to 2000; a recovery-secret value added only to recheck evidence; a provider account/resource ARN added only to an action payload; and affirmative success, resolution, and live-recovery claims added only to recheck evidence.
+
+Initial RED command:
+
+```text
+pnpm vitest run tests/skills/launch-operations-behavior.test.ts
+```
+
+Observed result: `8 failed | 15 passed`. Each new mutation failed its intended expectation against the prior validator. A follow-up action-only success mutation then produced `1 failed | 23 passed` because it reached payload binding instead of honesty validation. An explicit-refusal characterization also failed in isolation with `1 failed | 24 skipped`, proving that `Do not provide credentials` needed to remain accepted while affirmative requests were rejected. A final mixed-claim mutation failed in isolation with `1 failed | 25 skipped`, proving that a later negation could incorrectly hide an earlier affirmative success claim.
+
+## Fix round 3 review GREEN
+
+The hardened validator examines the complete assistant turn, permits explicit sensitive-input refusals, and rejects additional questions or affirmative sensitive requests. Every permitted action now has an exact canonical payload bound to the structured finding, question, preview, approval, artifact, diff, and recheck objects. The versioned trace records an immutable run ID and historical timestamp, while its existing bounded offsets prove monotonic turns and actions with the recheck after the write in the same session; no wall-clock expiry is used.
+
+Sensitive-value and provider-neutral checks now include all action payloads and the complete serialized recheck evidence. Honesty checks examine the recheck turn, complete recheck object, and every action payload claim, allowing only a directly negated claim or a claim within an explicit does-not-prove scope while rejecting affirmative success, resolution, verification, proof, and live-recovery claims. The obsolete `freshObservation` field remains absent and is rejected by the baseline schema assertion.
+
+Focused result: `tests/skills/launch-operations-behavior.test.ts` passed 26/26. The skill and template bytes remain unchanged.

@@ -3,6 +3,7 @@
   "id": "launch-operations.backup-restore-guided-remedy",
   "source": {
     "kind": "captured-multi-turn-agent-run",
+    "runId": "task9-green-session-01",
     "capturedAt": "2026-08-21T12:02:45-05:00",
     "normalizations": [
       "The absolute temporary project root is normalized to project-relative paths.",
@@ -282,7 +283,8 @@
       "id": "action-01",
       "sequence": 1,
       "turnId": "turn-01",
-      "kind": "select-finding"
+      "kind": "select-finding",
+      "findingId": "launch-operations.backup-restore"
     },
     {
       "id": "action-02",
@@ -445,7 +447,8 @@
       "kind": "preview-write",
       "target": "docs/operations/backup-and-restore.md",
       "previewId": "preview-01",
-      "actionLevel": 2
+      "actionLevel": 2,
+      "contentSha256": "de9f12745f30b8ed169ce94d1f588fa05119e9f883cde7a092f36eedbf9c78d7"
     },
     {
       "id": "action-24",
@@ -455,7 +458,8 @@
       "target": "docs/operations/backup-and-restore.md",
       "previewId": "preview-01",
       "approvalId": "approval-01",
-      "actionLevel": 2
+      "actionLevel": 2,
+      "contentSha256": "de9f12745f30b8ed169ce94d1f588fa05119e9f883cde7a092f36eedbf9c78d7"
     },
     {
       "id": "action-25",
@@ -467,21 +471,32 @@
       "scope": "bounded-file-create",
       "previewId": "preview-01",
       "approvalId": "approval-01",
-      "actionLevel": 2
+      "actionLevel": 2,
+      "contentSha256": "de9f12745f30b8ed169ce94d1f588fa05119e9f883cde7a092f36eedbf9c78d7"
     },
     {
       "id": "action-26",
       "sequence": 26,
       "turnId": "turn-24",
       "kind": "show-diff",
-      "target": "docs/operations/backup-and-restore.md"
+      "target": "docs/operations/backup-and-restore.md",
+      "previewId": "preview-01",
+      "approvalId": "approval-01",
+      "actionLevel": 2,
+      "contentSha256": "de9f12745f30b8ed169ce94d1f588fa05119e9f883cde7a092f36eedbf9c78d7"
     },
     {
       "id": "action-27",
       "sequence": 27,
       "turnId": "turn-25",
       "kind": "run-fresh-recheck",
-      "target": "docs/operations/backup-and-restore.md"
+      "target": "docs/operations/backup-and-restore.md",
+      "previewId": "preview-01",
+      "approvalId": "approval-01",
+      "actionLevel": 2,
+      "contentSha256": "de9f12745f30b8ed169ce94d1f588fa05119e9f883cde7a092f36eedbf9c78d7",
+      "method": "postvibe review [project-path] --skills [skills-path] --format markdown",
+      "findingId": "launch-operations.backup-restore"
     }
   ],
   "preview": {
