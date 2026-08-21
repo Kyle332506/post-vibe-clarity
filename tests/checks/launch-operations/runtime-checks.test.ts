@@ -107,6 +107,79 @@ unrelated = [
 ]
 `;
 
+const jsonNestedMonitoringEvidence = JSON.stringify({
+  observedSignals: [],
+  reviewLocation: '',
+  notificationExpectation: 'TBD',
+  firstResponse: 'none',
+  owner: 'none',
+  unrelated: {
+    observedSignals: ['application errors', 'failed requests'],
+    reviewLocation: 'Grafana monitoring dashboard',
+    notificationExpectation: 'SRE reviews alerts within 10 minutes',
+    firstResponse: 'triage the alert and investigate failures',
+    owner: 'SRE team',
+  },
+});
+
+const yamlNestedMonitoringEvidence = `observed_signals: []
+review_location: ''
+notification_expectation: TBD
+first_response: none
+owner: none
+unrelated:
+  observed_signals: [application errors, failed requests]
+  review_location: Grafana monitoring dashboard
+  notification_expectation: SRE reviews alerts within 10 minutes
+  first_response: triage the alert and investigate failures
+  owner: SRE team
+`;
+
+const jsonLookalikeOwnerMonitoringEvidence = JSON.stringify({
+  observedSignals: ['application errors'],
+  reviewLocation: 'Grafana monitoring dashboard',
+  notificationExpectation: 'SRE reviews alerts within 10 minutes',
+  firstResponse: 'triage the alert and investigate failures',
+  owner: 'none',
+  'o_w n-e_r': 'SRE team',
+});
+
+const tomlCommentBorrowingEvidence = `observed_signals = [] # application errors
+review_location = "" # Grafana monitoring dashboard
+notification_expectation = "" # SRE reviews alerts within 10 minutes
+first_response = "" # triage the alert and investigate failures
+owner = "" # SRE team
+`;
+
+const tomlMalformedMonitoringEvidence = `observed_signals = ["application errors"
+review_location = "Grafana monitoring dashboard"
+notification_expectation = "SRE reviews alerts within 10 minutes
+first_response = "triage the alert and investigate failures"
+owner = "SRE team"
+`;
+
+const tomlUnrelatedTableMonitoringEvidence = `observed_signals = []
+review_location = ""
+notification_expectation = "TBD"
+first_response = "none"
+owner = "none"
+
+[unrelated]
+observed_signals = ["application errors", "failed requests"]
+review_location = "Grafana monitoring dashboard"
+notification_expectation = "SRE reviews alerts within 10 minutes"
+first_response = "triage the alert and investigate failures"
+owner = "SRE team"
+`;
+
+const tomlLookalikeOwnerMonitoringEvidence = `observed_signals = ["application errors"]
+review_location = "Grafana monitoring dashboard"
+notification_expectation = "SRE reviews alerts within 10 minutes"
+first_response = "triage the alert and investigate failures"
+owner = "none"
+o_w n-e_r = "SRE team"
+`;
+
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -310,6 +383,27 @@ describe('monitoringResponseCheck', () => {
     ['multiline YAML', 'docs/operations/monitoring.yaml', yamlAdjacentMonitoringEvidence],
     ['multiline TOML', 'docs/operations/monitoring.toml', tomlAdjacentMonitoringEvidence],
   ])('does not borrow monitoring evidence from unrelated fields in %s', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['backend']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.monitoring-response.unverified',
+      outcome: 'unverified',
+      actionLevel: 'resolve-before-launch',
+      evidenceConfidence: 'insufficient',
+    });
+  });
+
+  it.each([
+    ['nested JSON aliases', 'docs/operations/monitoring.json', jsonNestedMonitoringEvidence],
+    ['nested YAML aliases', 'docs/operations/monitoring.yaml', yamlNestedMonitoringEvidence],
+    ['a look-alike JSON owner alias', 'docs/operations/monitoring.json', jsonLookalikeOwnerMonitoringEvidence],
+    ['TOML comments', 'docs/operations/monitoring.toml', tomlCommentBorrowingEvidence],
+    ['malformed TOML values', 'docs/operations/monitoring.toml', tomlMalformedMonitoringEvidence],
+    ['an unrelated TOML table', 'docs/operations/monitoring.toml', tomlUnrelatedTableMonitoringEvidence],
+    ['a look-alike TOML owner alias', 'docs/operations/monitoring.toml', tomlLookalikeOwnerMonitoringEvidence],
+  ])('keeps hostile structured monitoring evidence unverified for %s', async (_description, location, evidence) => {
     const root = await createRepository({ [location]: evidence });
 
     const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['backend']) });
