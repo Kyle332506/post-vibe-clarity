@@ -1,13 +1,157 @@
 import { createOperationsCheck } from './create-check.js';
+import {
+  hasEvidenceSubstance,
+  hasIncompleteEvidenceState,
+  hasNegatedEvidenceIntent,
+  labeledTextValueMatcher,
+  matchesAnyEvidence,
+  normalizeEvidenceValue,
+  orderedTextValueMatcher,
+  proseLineValueMatcher,
+  structuredFieldValueMatcher,
+} from './document-evidence.js';
 import type { EvidenceRequirement } from './types.js';
 
+type ValuePredicate = (value: string) => boolean;
+
+const artifactTerms = /\b(?:artifact|application|service|package|binary|mobile app|desktop app|container image|bundle|deliverable)\b/iu;
+const targetTerms = /\b(?:production|staging|registry|app store|play store|distribution channel|deployment target|environment)\b/iu;
+const prerequisiteTerms = /\b(?:obtain|confirm|ensure|require\w*|use|select|access|approved|revision|credential|permission|sign-off|environment)\b/iu;
+const procedureTerms = /\b(?:build|publish|deploy|release|upload|distribute|submit|promote)\b/iu;
+const verificationTerms = /\b(?:verify|verification|smoke test|confirm|check|expected|version|response|result|health|release|deployment)\b/iu;
+const releaseOwnerTerms = /\b(?:assign\w*|owner|responsible|maintainers?|team|lead|engineer|operator|responder)\b/iu;
+
+const artifactValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['artifact', 'release artifact', 'deliverable'],
+    minimumWords: 2,
+  }) && !hasNegatedEvidenceIntent(normalized, artifactTerms)
+    && artifactTerms.test(normalized);
+};
+
+const orderedArtifactValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return hasEvidenceSubstance(normalized, { fieldLabels: [], minimumWords: 3 })
+    && !hasNegatedEvidenceIntent(normalized, artifactTerms)
+    && /\b(?:build|package|publish|deploy|release|upload|distribute|submit)\b/iu.test(normalized)
+    && artifactTerms.test(normalized);
+};
+
+const targetValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['target', 'release target', 'deployment target', 'distribution channel'],
+    minimumWords: 2,
+  }) && !hasNegatedEvidenceIntent(normalized, targetTerms)
+    && targetTerms.test(normalized);
+};
+
+const prerequisiteValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['prerequisite', 'prerequisites'],
+    minimumWords: 5,
+  })
+    && !hasNegatedEvidenceIntent(normalized, prerequisiteTerms)
+    && /\b(?:obtain|confirm|ensure|require\w*|use|select)\b/iu.test(normalized)
+    && /\b(?:access|approved|revision|credential|permission|sign-off|environment)\b/iu.test(normalized);
+};
+
+const procedureValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['procedure', 'release procedure', 'deployment procedure', 'steps'],
+    minimumWords: 3,
+  }) && !hasNegatedEvidenceIntent(normalized, procedureTerms)
+    && procedureTerms.test(normalized);
+};
+
+const verificationValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['post-release verification', 'post-deployment verification'],
+    minimumWords: 5,
+  })
+    && !hasNegatedEvidenceIntent(normalized, verificationTerms)
+    && /\b(?:verify|verification|smoke test|confirm|check)\b/iu.test(normalized)
+    && /\b(?:expected|version|response|result|health|release|deployment)\b/iu.test(normalized);
+};
+
+const ownerValue: ValuePredicate = (value) => {
+  const normalized = normalizeEvidenceValue(value);
+  if (hasNegatedEvidenceIntent(normalized, releaseOwnerTerms)) return false;
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['owner', 'responsible', 'responsible role', 'maintainer', 'team', 'release team'],
+    minimumWords: 2,
+  }) || (!hasIncompleteEvidenceState(normalized)
+    && normalized !== 'release team'
+    && /\b(?:release|deployment|publishing|project|platform|operations?|on-call|incident|sre|mobile|desktop|service)[\t ]+(?:maintainers?|team|lead|engineer|operator|responder)\b/iu.test(normalized));
+};
+
 const releaseRequirements: readonly EvidenceRequirement[] = [
-  { id: 'artifact', patterns: [/\b(?:artifact|application|service|package|binary|mobile app|desktop app)\b/iu] },
-  { id: 'target', patterns: [/\b(?:production|staging|registry|app store|play store|distribution channel|deployment target)\b/iu] },
-  { id: 'prerequisites', patterns: [/\b(?:prerequisite|required access|before (?:release|deploy|publish)|approved revision)\b/iu] },
-  { id: 'procedure', patterns: [/^\s*(?:\d+[.)]|[-*]\s+\[[ xX]\])\s+\S/mu] },
-  { id: 'verification', patterns: [/\b(?:verification|verify|smoke test|confirm the expected version|post-release)\b/iu] },
-  { id: 'owner', patterns: [/\b(?:owner|responsible|maintainer|release team)\s*:/iu] },
+  {
+    id: 'artifact',
+    patterns: [],
+    textOnlyPatterns: true,
+    matches: matchesAnyEvidence(
+      labeledTextValueMatcher(['artifact', 'release artifact', 'deliverable'], artifactValue),
+      orderedTextValueMatcher(orderedArtifactValue),
+      proseLineValueMatcher(artifactValue),
+      structuredFieldValueMatcher(['artifact', 'releaseArtifact', 'release_artifact', 'deliverable'], artifactValue),
+    ),
+  },
+  {
+    id: 'target',
+    patterns: [],
+    textOnlyPatterns: true,
+    matches: matchesAnyEvidence(
+      labeledTextValueMatcher(['target', 'release target', 'deployment target', 'distribution channel'], targetValue),
+      proseLineValueMatcher(targetValue),
+      structuredFieldValueMatcher(['target', 'releaseTarget', 'release_target', 'deploymentTarget', 'deployment_target', 'distributionChannel', 'distribution_channel'], targetValue),
+    ),
+  },
+  {
+    id: 'prerequisites',
+    patterns: [],
+    textOnlyPatterns: true,
+    matches: matchesAnyEvidence(
+      labeledTextValueMatcher(['prerequisite', 'prerequisites', 'required access', 'before release', 'before deployment'], prerequisiteValue),
+      proseLineValueMatcher(prerequisiteValue),
+      structuredFieldValueMatcher(['prerequisite', 'prerequisites', 'requiredAccess', 'required_access'], prerequisiteValue),
+    ),
+  },
+  {
+    id: 'procedure',
+    patterns: [],
+    textOnlyPatterns: true,
+    matches: matchesAnyEvidence(
+      orderedTextValueMatcher(procedureValue),
+      labeledTextValueMatcher(['procedure', 'release procedure', 'deployment procedure', 'steps'], procedureValue),
+      proseLineValueMatcher(procedureValue),
+      structuredFieldValueMatcher(['procedure', 'releaseProcedure', 'release_procedure', 'deploymentProcedure', 'deployment_procedure', 'steps'], procedureValue),
+    ),
+  },
+  {
+    id: 'verification',
+    patterns: [],
+    textOnlyPatterns: true,
+    matches: matchesAnyEvidence(
+      labeledTextValueMatcher(['verification', 'post-release verification', 'post-deployment verification'], verificationValue),
+      proseLineValueMatcher(verificationValue),
+      structuredFieldValueMatcher(['verification', 'postReleaseVerification', 'post_release_verification', 'postDeploymentVerification', 'post_deployment_verification'], verificationValue),
+    ),
+  },
+  {
+    id: 'owner',
+    patterns: [],
+    textOnlyPatterns: true,
+    matches: matchesAnyEvidence(
+      labeledTextValueMatcher(['owner', 'responsible', 'responsible role', 'maintainer', 'release team'], ownerValue),
+      proseLineValueMatcher((value) => /\b(?:owns?|responsible|maintainer)\b/iu.test(value) && ownerValue(value)),
+      structuredFieldValueMatcher(['owner', 'responsible', 'responsibleRole', 'responsible_role', 'maintainer', 'releaseTeam', 'release_team'], ownerValue),
+    ),
+  },
 ];
 
 export const releaseProcessCheck = createOperationsCheck({

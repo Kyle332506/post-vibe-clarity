@@ -15,12 +15,18 @@ const universalChecks = new Set<OperationsCheckId>([
 
 function selectProfile(manifest: CapabilityManifest): OperationsApplicability['profile'] {
   const artifacts = new Set(manifest.artifacts.map(({ value }) => value));
-  if (artifacts.has('web') || artifacts.has('backend')) return 'service';
-  if (artifacts.has('worker')) return 'worker';
-  if (artifacts.has('mobile') || artifacts.has('desktop')) return 'mobile-desktop';
+  const families = new Set<string>();
+  if (artifacts.has('web') || artifacts.has('backend') || artifacts.has('worker')) families.add('service');
+  if (artifacts.has('mobile') || artifacts.has('desktop')) families.add('native');
+  if (artifacts.has('cli') || artifacts.has('library')) families.add('package');
+  if (families.size !== 1) return 'ambiguous';
+
+  if (families.has('service')) {
+    return artifacts.has('web') || artifacts.has('backend') ? 'service' : 'worker';
+  }
+  if (families.has('native')) return 'mobile-desktop';
   if (artifacts.has('cli')) return 'cli';
-  if (artifacts.has('library')) return 'library';
-  return 'ambiguous';
+  return 'library';
 }
 
 function isApplicableForProfile(
@@ -29,7 +35,10 @@ function isApplicableForProfile(
   manifest: CapabilityManifest,
 ): boolean {
   if (checkId === 'launch-operations.monitoring-response') {
-    return profile === 'service' || profile === 'worker' || profile === 'mobile-desktop';
+    return profile === 'service'
+      || profile === 'worker'
+      || profile === 'mobile-desktop'
+      || manifest.capabilities.some(({ value }) => value === 'network-service');
   }
   if (checkId === 'launch-operations.health-check') {
     return manifest.capabilities.some(({ value }) => value === 'network-service');

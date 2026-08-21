@@ -688,29 +688,35 @@ function scalarValues(value: unknown): string[] | undefined {
   return values;
 }
 
-function valuesForTopLevelStructuredFields(value: unknown, fields: ReadonlySet<string>): string[] {
+function valuesForTopLevelStructuredFields(
+  value: unknown,
+  fields: ReadonlySet<string>,
+  foldedFields: ReadonlySet<string>,
+): string[] {
   if (!isStructuredRecord(value)) return [];
-  const matchingFields = Object.entries(value)
-    .filter(([key]) => fields.has(key.toLowerCase()));
-  if (matchingFields.length !== 1) return [];
+  const entries = Object.entries(value);
+  const matchingFields = entries.filter(([key]) => fields.has(key));
+  const hasCaseLookalike = entries.some(([key]) => !fields.has(key) && foldedFields.has(key.toLowerCase()));
+  if (matchingFields.length !== 1 || hasCaseLookalike) return [];
   const values = scalarValues(matchingFields[0]![1]);
   return values !== undefined && values.every((item) => item.trim() !== '') ? values : [];
 }
 
 function structuredFieldValues(content: string, location: string, fieldNames: readonly string[]): string[] {
-  const fields = new Set(fieldNames.map((field) => field.toLowerCase()));
+  const fields = new Set(fieldNames);
+  const foldedFields = new Set(fieldNames.map((field) => field.toLowerCase()));
   const extension = extname(location).toLowerCase();
 
   try {
     if (extension === '.json') {
       const value = JSON.parse(content);
       const document = parseYamlDocument(content, { schema: 'json', uniqueKeys: true });
-      return document.errors.length === 0 ? valuesForTopLevelStructuredFields(value, fields) : [];
+      return document.errors.length === 0 ? valuesForTopLevelStructuredFields(value, fields, foldedFields) : [];
     }
     if (extension === '.yaml' || extension === '.yml') {
-      return valuesForTopLevelStructuredFields(parseYaml(content), fields);
+      return valuesForTopLevelStructuredFields(parseYaml(content), fields, foldedFields);
     }
-    if (extension === '.toml') return valuesForTopLevelStructuredFields(parseToml(content), fields);
+    if (extension === '.toml') return valuesForTopLevelStructuredFields(parseToml(content), fields, foldedFields);
   } catch {
     return [];
   }
@@ -741,11 +747,39 @@ export function normalizeEvidenceValue(value: string): string {
 
 const incompleteAssignmentPattern = /\b(?:(?:to[\t ]+be|await(?:ing|s)?|requires?|needs?)[\t ]+(?:(?:an?|the|owner|role|team|resource|mechanism|status)[\t ]+){0,2}(?:assign(?:ed|ment)|complet(?:ed|ion)|determin(?:ed|ation)|decid(?:ed|ision)|confirm(?:ed|ation)|document(?:ed|ation)|select(?:ed|ion)|defin(?:ed|ition)|provid(?:ed|ing)|resolv(?:ed|ution)|set)|(?:not[\t ]+)?yet[\t ]+to[\t ]+be[\t ]+(?:assigned|completed|determined|decided|confirmed|documented|selected|defined|provided|resolved|set))\b/iu;
 const incompleteStatePattern = /\b(?:no|not|none|never|disabled|unknown|unavailable|missing|pending|unassigned|unowned|undetermined|unspecified|undecided|unconfirmed|unset|unresolved|incomplete|n\/a|todo)\b|\bt(?:[.\t _-]*)b(?:[.\t _-]*)(?:a|c|d)\b/iu;
+const vagueTimingPattern = /\b(?:someday|eventually|at[\t ]+some[\t ]+point|(?:when|until|at)[\t ]+(?:a[\t ]+)?convenient[\t ]+time)\b/iu;
 
 export function hasIncompleteEvidenceState(value: string, allowed: readonly RegExp[] = []): boolean {
   let normalized = normalizeEvidenceValue(value);
   for (const pattern of allowed) normalized = normalized.replace(new RegExp(pattern.source, pattern.flags), ' ');
-  return incompleteStatePattern.test(normalized) || incompleteAssignmentPattern.test(normalized);
+  return incompleteStatePattern.test(normalized)
+    || incompleteAssignmentPattern.test(normalized)
+    || vagueTimingPattern.test(normalized);
+}
+
+// This is a bounded deterministic grammar, not general sentiment analysis. It supports:
+// explicit auxiliary negation, inability, refusal/failure, and action-suppression predicates.
+// Each syntax addition requires negative and affirmative-converse tests so the boundary stays versionable.
+const negativeEvidenceGovernor = /\b(?:(?<avoidance>avoid\w*)|(?<blocking>cannot|(?:can|won)['’]t|(?:isn|aren|wasn|weren|don|doesn|didn|couldn|wouldn|shouldn|mustn|haven|hasn|hadn)['’]t|(?:is|are|was|were|do|does|did|can|could|will|would|should|must|have|has|had)[\t ]+not|not[\t ]+able[\t ]+to|(?:unable|unwilling)[\t ]+to|(?:incapable)[\t ]+of|(?:impossible|infeasible)[\t ]+to|(?:refus(?:e|es|ed|ing)|declin(?:e|es|ed|ing)|fail(?:s|ed|ing)?)[\t ]+to|lack(?:s|ed|ing)?[\t ]+(?:the[\t ]+)?(?:ability|capacity)[\t ]+to|skip\w*|ignore\w*|omit\w*|bypass\w*))\b/giu;
+const negativeEvidenceClauseBoundary = /[.;]/u;
+const avoidancePurposeBoundary = /\b(?:by|using|through|in[\t ]+order[\t ]+to|so[\t ]+that)\b/iu;
+
+export function hasNegatedEvidenceIntent(value: string, protectedTerms: RegExp): boolean {
+  const normalized = normalizeEvidenceValue(value);
+  for (const governor of normalized.matchAll(negativeEvidenceGovernor)) {
+    const remainder = normalized.slice((governor.index ?? 0) + governor[0].length);
+    const clauseBoundary = negativeEvidenceClauseBoundary.exec(remainder);
+    const clause = clauseBoundary ? remainder.slice(0, clauseBoundary.index) : remainder;
+    const purposeBoundary = governor.groups?.avoidance ? avoidancePurposeBoundary.exec(clause) : null;
+    // Only "avoid <harm> by/using <required action>" has an affirmative purpose boundary.
+    // Missing purpose text is ambiguous, so inspect the whole clause and fail closed when it names the requirement.
+    const boundary = purposeBoundary && clause.slice(0, purposeBoundary.index).trim() !== ''
+      ? purposeBoundary
+      : null;
+    const scope = boundary ? clause.slice(0, boundary.index) : clause;
+    if (testPattern(protectedTerms, scope)) return true;
+  }
+  return false;
 }
 
 export function evidenceWordCount(value: string): number {
@@ -801,6 +835,46 @@ export function hasEvidenceSubstance(value: string, options: EvidenceSubstanceOp
   if (evidenceWordCount(normalized) < (options.minimumWords ?? 1)) return false;
 
   return !isFieldLabelEcho(normalized, options.fieldLabels, options.minimumWords ?? 1);
+}
+
+type ContentMatcher = (content: string, location: string) => boolean;
+type ValuePredicate = (value: string) => boolean;
+
+const plainTextEvidenceExtensions = new Set(['', '.md', '.mdx', '.txt']);
+
+function escapeRegularExpression(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+export function matchesAnyEvidence(...matchers: ContentMatcher[]): ContentMatcher {
+  return (content, location) => matchers.some((matcher) => matcher(content, location));
+}
+
+export function labeledTextValueMatcher(
+  labels: readonly string[],
+  predicate: ValuePredicate,
+): ContentMatcher {
+  const labelPattern = labels.map(escapeRegularExpression).join('|');
+  const fieldPattern = new RegExp(String.raw`^[\t ]*(?:${labelPattern})[\t ]*:[\t ]*(.+)$`, 'gimu');
+  return (content, location) => plainTextEvidenceExtensions.has(extname(location).toLowerCase())
+    && [...content.matchAll(fieldPattern)].some((match) => predicate(match[1] ?? ''));
+}
+
+export function orderedTextValueMatcher(predicate: ValuePredicate): ContentMatcher {
+  const stepPattern = /^[\t ]*(?:\d+[.)]|[-*][\t ]+\[[ xX]\])[\t ]+([^\r\n]+)$/gimu;
+  return (content, location) => plainTextEvidenceExtensions.has(extname(location).toLowerCase())
+    && [...content.matchAll(stepPattern)].some((match) => predicate(match[1] ?? ''));
+}
+
+export function proseLineValueMatcher(predicate: ValuePredicate): ContentMatcher {
+  return (content, location) => plainTextEvidenceExtensions.has(extname(location).toLowerCase())
+    && content.split(/\r?\n/gu).some((line) => {
+      const trimmed = line.trim();
+      return trimmed !== ''
+        && !/^(?:#{1,6}[\t ]|(?:\d+[.)]|[-*])[\t ]|>|`{3,}|~{3,})/u.test(trimmed)
+        && !/^[\p{L}\p{N}][\p{L}\p{N}\t _-]{0,60}:/u.test(trimmed)
+        && predicate(line);
+    });
 }
 
 function isSupportedEvidenceLocation(location: string, profile: DocumentEvidenceProfile): boolean {

@@ -224,6 +224,8 @@ Evidence may come from project documentation, ownership files, support policy, o
 
 The evaluator must be deterministic and versioned. It does not use model-generated semantic scoring inside the CLI.
 
+Negative evidence recognition has a bounded, versioned language contract rather than attempting unrestricted natural-language interpretation. The supported grammar covers explicit auxiliary negation and contractions, inability, refusal or failure, and action-suppression predicates. Avoidance wording has one narrow affirmative form: a non-empty harm or impact objective followed by `by`, `using`, or `through` and the required action. Empty or requirement-naming avoidance scopes remain negative. Every grammar addition requires adversarial negative cases and affirmative converse controls; wording outside this deterministic grammar is not a semantic verdict and must not be described as exhaustive natural-language analysis.
+
 Candidate discovery may recognize conventional repository locations and names, including existing operations, runbook, deployment, release, rollback, recovery, monitoring, incident, health, backup, restore, ownership, maintainers, support, workflow, and package metadata evidence. A filename alone never satisfies a content profile.
 
 The evaluator checks for concrete structural signals such as:

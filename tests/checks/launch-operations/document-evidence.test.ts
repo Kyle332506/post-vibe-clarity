@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   MAX_OPERATIONS_EVIDENCE_BYTES,
   evaluateDocumentEvidence,
+  hasNegatedEvidenceIntent,
   supportedOperationsEvidenceExtensions,
 } from '../../../src/checks/launch-operations/document-evidence.js';
 import type { DocumentEvidenceProfile } from '../../../src/checks/launch-operations/types.js';
@@ -35,6 +36,29 @@ async function createRepository(files: Record<string, string | Uint8Array>): Pro
   }));
   return root;
 }
+
+describe('hasNegatedEvidenceIntent', () => {
+  const recoveryTerms = /\b(?:restore|restoring|previously approved version)\b/iu;
+
+  it.each([
+    'The process declines to restore the previously approved version.',
+    'The process is incapable of restoring the previously approved version.',
+    'It is impossible to restore the previously approved version.',
+    'The process lacks the ability to restore the previously approved version.',
+  ])('recognizes the supported refusal or inability grammar: %s', (value) => {
+    expect(hasNegatedEvidenceIntent(value, recoveryTerms)).toBe(true);
+  });
+
+  it.each([
+    'The process chooses to restore the previously approved version.',
+    'The process is capable of restoring the previously approved version.',
+    'It is possible to restore the previously approved version.',
+    'The process has the ability to restore the previously approved version.',
+    'Avoid prolonged impact by restoring the previously approved version.',
+  ])('does not treat the affirmative converse as negative: %s', (value) => {
+    expect(hasNegatedEvidenceIntent(value, recoveryTerms)).toBe(false);
+  });
+});
 
 describe('evaluateDocumentEvidence', () => {
   it('aggregates requirement matches from multiple supported candidates with normalized relative evidence', async () => {
