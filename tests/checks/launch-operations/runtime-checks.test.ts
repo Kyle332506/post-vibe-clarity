@@ -37,6 +37,27 @@ Notification expectation: the maintainer reviews a new high-severity alert promp
 Owner: Mobile Incident Maintainer.
 `;
 
+const proseMonitoringEvidence = `# Monitoring and incident response
+
+Alerts for application errors and failed requests are reviewed in Grafana by SRE within 10 minutes.
+The SRE triages affected failures first and investigates the incident.
+`;
+
+const jsonMonitoringEvidence = JSON.stringify({
+  observedSignals: ['application errors', 'failed requests'],
+  reviewLocation: 'Grafana monitoring dashboard',
+  notificationExpectation: 'SRE reviews alerts within 10 minutes.',
+  firstResponse: 'Triage the alert and investigate failures.',
+  owner: 'SRE team',
+}, null, 2);
+
+const yamlMonitoringEvidence = `observed_signals: application errors and failed requests
+review_location: Grafana monitoring dashboard
+notification_expectation: SRE reviews alerts within 10 minutes
+first_response: triage the alert and investigate failures
+owner: SRE team
+`;
+
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -219,6 +240,22 @@ describe('monitoringResponseCheck', () => {
   });
 
   it.each([
+    ['concrete prose', 'docs/operations/monitoring-and-incident-response.md', proseMonitoringEvidence],
+    ['populated JSON fields', 'docs/operations/monitoring.json', jsonMonitoringEvidence],
+    ['populated YAML fields', 'docs/operations/monitoring.yaml', yamlMonitoringEvidence],
+  ])('accepts %s monitoring evidence without relying on Markdown labels or lists', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['backend']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.monitoring-response.passed',
+      outcome: 'passed',
+      evidenceConfidence: 'confirmed',
+    });
+  });
+
+  it.each([
     `# Monitoring and incident response
 
 Signals:
@@ -234,6 +271,14 @@ Review location: TBD.
 Notification expectation: TBD.
 1. Read the documentation.
 Owner: TBD.
+`,
+    `# Monitoring and incident response
+
+Signals: application errors.
+Review location: Grafana monitoring dashboard.
+Notification expectation: SRE reviews alerts within 10 minutes.
+1. Review the situation.
+Owner: SRE team.
 `,
   ])('does not accept headings or vague placeholders as usable monitoring evidence', async (evidence) => {
     const root = await createRepository({ 'docs/operations/monitoring-and-incident-response.md': evidence });
