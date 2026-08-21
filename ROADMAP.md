@@ -12,6 +12,8 @@ Optional Level 1 command evidence is implemented in v0.2. It runs only a fingerp
 
 Six deterministic repository-only launch-operations checks are implemented in v0.3. They content-check written release, recovery, monitoring, applicable health and backup, and maintenance-ownership evidence. They do not verify live systems or provider state.
 
+Separately approved Markdown runbooks and a fresh repository check are implemented for one operations finding at a time.
+
 ## Broader production preparation
 
 - Full live and provider operations verification remains open future work, including active environment verification, deployment state, alert delivery, health endpoint responses, backup creation, restore results, and rollback execution.
@@ -24,7 +26,7 @@ Six deterministic repository-only launch-operations checks are implemented in v0
 ## Later distribution and remediation
 
 - Host-native packages or plugins where evidence supports them.
-- Approval-gated remediation and fresh rechecks.
+- Broader approval-gated source, configuration, workflow, infrastructure, and external-service remediation, plus live rechecks.
 - Strong containment through sandboxing or container-backed command execution. The current local executor is not a security sandbox.
 
 See [current foundation coverage](docs/foundation-coverage.md) for what exists today.

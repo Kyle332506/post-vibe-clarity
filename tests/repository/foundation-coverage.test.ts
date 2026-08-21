@@ -102,6 +102,17 @@ describe('foundation coverage documentation', () => {
     expect(example).toMatch(/unknown[\s\S]{0,160}remain unknown/i);
   });
 
+  it('states the credential boundary without claiming repository credential-like bytes are inaccessible', async () => {
+    const coverage = await readRepositoryFile('docs/foundation-coverage.md');
+
+    expect(coverage).toContain(
+      'No credential value is requested or used to access an external service.',
+    );
+    expect(coverage).toMatch(/repository candidate files may contain credential-like content[\s\S]{0,140}(?:read|inspect)[\s\S]{0,100}(?:bytes|content)/i);
+    expect(coverage).not.toContain('They do not use credentials');
+    expect(coverage).not.toContain('No credential or external service is accessed.');
+  });
+
   it('documents separately approved Markdown-only operations remedies without widening audit authority', async () => {
     const [coverage, orchestrator] = await Promise.all([
       readRepositoryFile('docs/foundation-coverage.md'),
@@ -116,6 +127,18 @@ describe('foundation coverage documentation', () => {
       'A repository audit authorizes no source, configuration, workflow, infrastructure, external-service, staging, commit, or release change.',
     );
     expect(orchestrator).toMatch(/broad readiness request[\s\S]{0,80}not[\s\S]{0,80}(?:approval|authorization)[\s\S]{0,80}(?:write|change)/i);
+  });
+
+  it('separates implemented Markdown remedies from broader future remediation and live rechecks', async () => {
+    const roadmap = await readRepositoryFile('ROADMAP.md');
+
+    expect(roadmap).toContain(
+      'Separately approved Markdown runbooks and a fresh repository check are implemented for one operations finding at a time.',
+    );
+    expect(roadmap).toContain(
+      'Broader approval-gated source, configuration, workflow, infrastructure, and external-service remediation, plus live rechecks.',
+    );
+    expect(roadmap).not.toContain('- Approval-gated remediation and fresh rechecks.');
   });
 
   it('publishes v0.3 release evidence with pinned upgrade guides and unchanged limits', async () => {
