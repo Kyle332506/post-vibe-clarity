@@ -53,6 +53,22 @@ export function selectOperationsApplicability(
 ): OperationsApplicability {
   const profile = selectProfile(manifest);
   if (universalChecks.has(checkId)) {
+    if (checkId === 'launch-operations.release-process') {
+      if (profile === 'cli' || profile === 'library') {
+        return {
+          status: 'applicable',
+          profile,
+          reason: `This ${profileDescription(profile)} uses a publishing or distribution release profile.`,
+        };
+      }
+      if (profile === 'service') {
+        return {
+          status: 'applicable',
+          profile,
+          reason: 'This service uses a deployment release profile.',
+        };
+      }
+    }
     return {
       status: 'applicable',
       profile,
