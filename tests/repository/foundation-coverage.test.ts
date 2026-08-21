@@ -14,6 +14,19 @@ const publicGuidance = [
   'ROADMAP.md',
   'examples/launch-candidate/README.md',
 ] as const;
+const operationsDocuments = [
+  'release-and-deployment.md',
+  'rollback-and-recovery.md',
+  'monitoring-and-incident-response.md',
+  'health-check.md',
+  'backup-and-restore.md',
+  'maintenance-ownership.md',
+] as const;
+const demonstrationSchema = `CREATE TABLE signup_metrics (
+  id INTEGER PRIMARY KEY,
+  recorded_at TEXT NOT NULL
+);
+`;
 
 describe('foundation coverage documentation', () => {
   it('publishes the v0.2 executor package interface', async () => {
@@ -106,6 +119,46 @@ describe('foundation coverage documentation', () => {
         test: expect.stringContaining('node'),
       });
     }
+  });
+
+  it('keeps the operations walkthrough demonstration-only and repository-bounded', async () => {
+    const [beforeSchema, afterSchema, walkthrough] = await Promise.all([
+      readRepositoryFile('examples/launch-candidate/before/data/schema.sql'),
+      readRepositoryFile('examples/launch-candidate/after/data/schema.sql'),
+      readRepositoryFile('examples/launch-candidate/README.md'),
+    ]);
+
+    expect(beforeSchema).toBe(demonstrationSchema);
+    expect(afterSchema).toBe(demonstrationSchema);
+    for (const document of operationsDocuments) {
+      await expect(access(repositoryPath(`examples/launch-candidate/before/docs/operations/${document}`)))
+        .rejects.toMatchObject({ code: 'ENOENT' });
+      const path = `examples/launch-candidate/after/docs/operations/${document}`;
+      const source = await readRepositoryFile(path);
+      expect(source).toMatch(/example repository guidance/i);
+      expect(source).toMatch(/does not prove live behavior/i);
+      expect(source, `${path} contains a remote endpoint`).not.toMatch(/\bhttps?:\/\//iu);
+      expect(source, `${path} claims an operation was executed`).not.toMatch(
+        /\b(?:we|the\s+(?:team|maintainer|owner|operator))\s+(?:deployed|published|executed|ran|restored|rolled back|tested)\b/iu,
+      );
+      expectNoEmoji(source, path);
+    }
+
+    expect(walkthrough).toMatch(/schema[\s\S]{0,200}intended demonstration data[\s\S]{0,200}not connected[\s\S]{0,120}in-memory runtime/i);
+    expect(walkthrough).toMatch(/six repository evidence checks improve/i);
+    for (const boundary of [
+      'live deployment',
+      'alerting',
+      'health',
+      'backups',
+      'restoration',
+      'rollback',
+      'production behavior',
+      'uncovered domains',
+    ]) {
+      expect(walkthrough.toLowerCase()).toContain(boundary);
+    }
+    expect(walkthrough).toMatch(/neither example[\s\S]{0,160}production template[\s\S]{0,160}production-readiness verdict/i);
   });
 
   it('builds the compiled CLI through the launch walkthrough prerequisites', async () => {

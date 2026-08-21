@@ -55,6 +55,16 @@ describe('discoverOperationalSignals', () => {
     expect(result.capabilities).toEqual([]);
   });
 
+  it('recognizes the approved demonstration SQL schema path as persistent-data evidence', () => {
+    const result = discoverOperationalSignals(['package.json', 'data/schema.sql'], new Set());
+
+    expect(result.capabilities).toEqual([{
+      value: 'persistent-data',
+      confidence: 'likely',
+      evidence: [{ kind: 'file', location: 'data/schema.sql', summary: 'SQL schema detected' }],
+    }]);
+  });
+
   it('does not infer a worker from a worker test', () => {
     const result = discoverOperationalSignals(['package.json', 'src/worker.test.ts'], new Set());
 

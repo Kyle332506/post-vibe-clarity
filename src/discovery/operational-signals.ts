@@ -44,7 +44,7 @@ export function discoverOperationalSignals(
   const backendFile = firstMatchingFile(files, /^(?:src\/server\.[^/]+|server\.[^/]+|api\/)/);
   const workerFile = firstMatchingFile(files, /^(?:src\/worker\.[^/]+|worker\.[^/]+|cron\/)/);
   const prismaSchema = firstMatchingFile(files, /^prisma\/schema\.prisma$/);
-  const sqlSchema = firstMatchingFile(files, /^schema\.sql$/);
+  const sqlSchema = firstMatchingFile(files, /^(?:data\/)?schema\.sql$/);
   const migration = firstMatchingFile(files, /^migrations\//);
   const hasBackendDependency = hasDependency(dependencies, backendDependencies);
 
