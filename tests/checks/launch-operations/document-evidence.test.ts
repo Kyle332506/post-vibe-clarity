@@ -261,4 +261,36 @@ describe('evaluateDocumentEvidence', () => {
 
     expect(result.riskEvidence).toEqual([]);
   });
+
+  it.each([
+    ['an ASCII single quote after introductory prose', "The guide says, '\nno rollback path\n'\n"],
+    ['a second double quote after an earlier inline quote', 'The guide calls this "an example" and then says "\nno rollback path\n"\n'],
+  ])('does not report rollback risk inside %s', async (_description, evidence) => {
+    const root = await createRepository({ 'deployment.md': evidence });
+
+    const result = await evaluateDocumentEvidence(root, [], {
+      ...profile,
+      riskPatterns: [/^[\t ]*no rollback path[.!;,]*[\t ]*$/imu],
+    });
+
+    expect(result.riskEvidence).toEqual([]);
+  });
+
+  it.each([
+    ["an abbreviated year", "The '24 launch remains active.\nno rollback path\n"],
+    ["an abbreviated word", "The release runs 'til Friday.\nno rollback path\n"],
+  ])('keeps a standalone rollback risk after %s active', async (_description, evidence) => {
+    const root = await createRepository({ 'deployment.md': evidence });
+
+    const result = await evaluateDocumentEvidence(root, [], {
+      ...profile,
+      riskPatterns: [/^[\t ]*no rollback path[.!;,]*[\t ]*$/imu],
+    });
+
+    expect(result.riskEvidence).toEqual([{
+      kind: 'file',
+      location: 'deployment.md',
+      summary: 'Repository text explicitly describes the check-specific risky condition.',
+    }]);
+  });
 });

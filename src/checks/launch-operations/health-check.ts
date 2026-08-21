@@ -2,9 +2,8 @@ import { extname } from 'node:path';
 import { createOperationsCheck } from './create-check.js';
 import {
   descriptiveSourceEvidence,
-  evidenceWordCount,
   executableSourceEvidence,
-  hasNegativeEvidenceAssertion,
+  hasEvidenceSubstance,
   normalizeEvidenceValue,
   structuredFieldValueMatcher,
 } from './document-evidence.js';
@@ -28,35 +27,47 @@ const expectedResultExecutablePatterns = [
 
 const probeValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized)
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['probe', 'endpoint', 'health check'],
+    minimumWords: 2,
+  })
     && /\b(?:get|head)\b[\t ]+\/\S*|\/(?:health|readiness|liveness)\b/iu.test(normalized);
 };
 
 const expectedResultValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized)
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['healthy result', 'expected result', 'success response'],
+    minimumWords: 2,
+  })
     && /\bhttp[\t ]+2\d\d\b|\bstatus(?: code)?[\t ]+(?:is[\t ]+)?2\d\d\b|\bstatus[\t ]+ok\b/iu.test(normalized);
 };
 
 const coverageBoundaryValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized, [/\bdoes[\t ]+not[\t ]+verify\b/giu])
-    && evidenceWordCount(normalized) >= 6
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['coverage', 'boundary', 'limitation', 'limitations', 'coverage boundary'],
+    minimumWords: 6,
+    allowedIncompleteAssertions: [/\bdoes[\t ]+not[\t ]+verify\b/giu],
+  })
     && /\b(?:does[\t ]+not[\t ]+verify|doesn't[\t ]+verify|excludes?|excluding|outside|without|limited[\t ]+to|only)\b/iu.test(normalized);
 };
 
 const failureSurfacingValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized)
-    && evidenceWordCount(normalized) >= 4
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['failure handling', 'failure surfacing', 'alerting', 'notification'],
+    minimumWords: 4,
+  })
     && /\b(?:alerts?|notifies?|notifications?|pages?|reports?|routes?|sends?|surfaces?)\b/iu.test(normalized);
 };
 
 const ownerValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized)
-    && evidenceWordCount(normalized) >= 2
-    && !/^(?:owner|team|maintainer|support)$/iu.test(normalized);
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['owner', 'team', 'maintainer', 'support', 'responsible role'],
+    minimumWords: 2,
+  });
 };
 
 function testPattern(pattern: RegExp, value: string): boolean {

@@ -71,18 +71,153 @@ type SourceEvidence = {
   descriptions: string;
 };
 
-function scanSourceEvidence(content: string, location: string): SourceEvidence | undefined {
-  if (!isSourceEvidenceLocation(location)) return undefined;
+const javaScriptEvidenceExtensions = new Set(['.js', '.jsx', '.ts', '.tsx']);
 
-  const extension = extname(location).toLowerCase();
+function maskSourceFragment(fragment: string): string {
+  return fragment.replace(/[^\n]/gu, ' ');
+}
+
+function canStartJavaScriptRegex(codeTail: string): boolean {
+  const trimmed = codeTail.trimEnd();
+  if (trimmed === '') return true;
+  if (/[({\[=,:;!?&|+\-*%^~<>]$/u.test(trimmed)) return true;
+  return /(?:^|[^\p{L}\p{N}_$])(?:return|throw|case|delete|void|typeof|instanceof|in|of|yield|await)$/u.test(trimmed);
+}
+
+function javaScriptRegexEnd(source: string, start: number): number | undefined {
+  let characterClass = false;
+
+  for (let index = start + 1; index < source.length; index += 1) {
+    const character = source[index]!;
+    if (character === '\n') return undefined;
+    if (character === '\\') {
+      index += 1;
+      if (index >= source.length || source[index] === '\n') return undefined;
+      continue;
+    }
+    if (character === '[') characterClass = true;
+    else if (character === ']') characterClass = false;
+    else if (character === '/' && !characterClass) {
+      let end = index + 1;
+      while (end < source.length && /[\p{L}]/u.test(source[end]!)) end += 1;
+      return end;
+    }
+  }
+
+  return undefined;
+}
+
+function javaScriptStringEnd(source: string, start: number, quote: "'" | '"'): number | undefined {
+  for (let index = start + 1; index < source.length; index += 1) {
+    const character = source[index]!;
+    if (character === '\\') {
+      index += 1;
+      if (index >= source.length) return undefined;
+      continue;
+    }
+    if (character === quote) return index + 1;
+    if (character === '\n') return undefined;
+  }
+  return undefined;
+}
+
+function javaScriptTemplateEnd(source: string, start: number): number | undefined {
+  for (let index = start + 1; index < source.length; index += 1) {
+    const character = source[index]!;
+    if (character === '\\') {
+      index += 1;
+      if (index >= source.length) return undefined;
+      continue;
+    }
+    if (character === '$' && source[index + 1] === '{') return undefined;
+    if (character === '`') return index + 1;
+  }
+  return undefined;
+}
+
+function scanJavaScriptSourceEvidence(content: string): SourceEvidence | undefined {
+  const source = content.replace(/\r\n?/gu, '\n');
+  const executable: string[] = [];
+  const descriptions: string[] = [];
+  let codeTail = '';
+
+  const appendExecutable = (fragment: string): void => {
+    executable.push(fragment);
+    codeTail = (codeTail + fragment).slice(-160);
+  };
+  const appendMasked = (fragment: string): void => {
+    appendExecutable(maskSourceFragment(fragment));
+  };
+
+  for (let index = 0; index < source.length;) {
+    const character = source[index]!;
+    const next = source[index + 1];
+
+    if (character === '/' && next === '/') {
+      const lineEnd = source.indexOf('\n', index + 2);
+      const end = lineEnd === -1 ? source.length : lineEnd;
+      descriptions.push(source.slice(index + 2, end));
+      appendMasked(source.slice(index, end));
+      index = end;
+      continue;
+    }
+
+    if (character === '/' && next === '*') {
+      const close = source.indexOf('*/', index + 2);
+      if (close === -1) return undefined;
+      descriptions.push(source.slice(index + 2, close));
+      const end = close + 2;
+      appendMasked(source.slice(index, end));
+      index = end;
+      continue;
+    }
+
+    if (character === "'" || character === '"') {
+      const end = javaScriptStringEnd(source, index, character);
+      if (end === undefined) return undefined;
+      appendExecutable(source.slice(index, end).replace(/\\\n/gu, '  '));
+      index = end;
+      continue;
+    }
+
+    if (character === '`') {
+      const end = javaScriptTemplateEnd(source, index);
+      if (end === undefined) return undefined;
+      appendMasked(source.slice(index, end));
+      index = end;
+      continue;
+    }
+
+    const jsxClosingTag = character === '/'
+      && codeTail.trimEnd().endsWith('<')
+      && next !== undefined
+      && /[A-Za-z_$>]/u.test(next);
+    if (character === '/' && !jsxClosingTag && canStartJavaScriptRegex(codeTail)) {
+      const end = javaScriptRegexEnd(source, index);
+      if (end === undefined) return undefined;
+      appendMasked(source.slice(index, end));
+      index = end;
+      continue;
+    }
+
+    appendExecutable(character);
+    index += 1;
+  }
+
+  return {
+    executable: executable.join(''),
+    descriptions: descriptions.join('\n'),
+  };
+}
+
+function scanLineOrientedSourceEvidence(content: string, extension: string): SourceEvidence | undefined {
+
   const hashComments = new Set(['.py', '.rb']).has(extension);
-  const templateLiterals = new Set(['.js', '.jsx', '.ts', '.tsx']).has(extension);
   const executableLines: string[] = [];
   const descriptionLines: string[] = [];
   let blockComment = false;
   let docstring: '"""' | "'''" | undefined;
   let rubyDocumentation = false;
-  let templateLiteral = false;
 
   for (const sourceLine of content.replace(/\r\n?/gu, '\n').split('\n')) {
     let line = sourceLine;
@@ -93,11 +228,6 @@ function scanSourceEvidence(content: string, location: string): SourceEvidence |
     }
     if (extension === '.rb' && /^[\t ]*=begin\b/u.test(line)) {
       rubyDocumentation = true;
-      continue;
-    }
-
-    if (templateLiteral) {
-      if (/(?<!\\)`/u.test(line)) templateLiteral = false;
       continue;
     }
 
@@ -153,21 +283,22 @@ function scanSourceEvidence(content: string, location: string): SourceEvidence |
       descriptionLines.push(line.slice(lineComment + markerLength));
       line = line.slice(0, lineComment);
     }
-    if (templateLiterals) {
-      const backticks = [...line.matchAll(/(?<!\\)`/gu)];
-      if (backticks.length % 2 === 1) {
-        line = line.slice(0, backticks[0]?.index ?? 0);
-        templateLiteral = true;
-      }
-    }
     if (line.trim() !== '') executableLines.push(line);
   }
 
-  if (blockComment || docstring || rubyDocumentation || templateLiteral) return undefined;
+  if (blockComment || docstring || rubyDocumentation) return undefined;
   return {
     executable: executableLines.join('\n'),
     descriptions: descriptionLines.join('\n'),
   };
+}
+
+function scanSourceEvidence(content: string, location: string): SourceEvidence | undefined {
+  if (!isSourceEvidenceLocation(location)) return undefined;
+  const extension = extname(location).toLowerCase();
+  return javaScriptEvidenceExtensions.has(extension)
+    ? scanJavaScriptSourceEvidence(content)
+    : scanLineOrientedSourceEvidence(content, extension);
 }
 
 export function executableSourceEvidence(content: string, location: string): string | undefined {
@@ -192,11 +323,80 @@ function markdownBoundary(line: string): boolean {
   return /^[\t ]{0,3}(?:#{1,6}[\t ]|(?:[-+*]|\d+[.)])[\t ]|`{3,}|~{3,}|<pre\b)/iu.test(line);
 }
 
+type ProseQuotation = '"' | "'" | '“' | '‘';
+
+function quotationClose(quotation: ProseQuotation): '"' | "'" | '”' | '’' {
+  if (quotation === '“') return '”';
+  if (quotation === '‘') return '’';
+  return quotation;
+}
+
+function isEscapedDelimiter(line: string, index: number): boolean {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && line[cursor] === '\\'; cursor -= 1) backslashes += 1;
+  return backslashes % 2 === 1;
+}
+
+function isEvidenceWordCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[\p{L}\p{N}_]/u.test(character);
+}
+
+function canOpenAsciiQuotation(line: string, index: number, quotation: '"' | "'"): boolean {
+  const previous = line[index - 1];
+  const next = line[index + 1];
+  if (quotation === "'" && isEvidenceWordCharacter(previous) && isEvidenceWordCharacter(next)) return false;
+  if (previous !== undefined && isEvidenceWordCharacter(previous)) return false;
+  if (quotation === '"' || line.slice(index + 1).trim() === '') return true;
+
+  for (let cursor = index + 1; cursor < line.length; cursor += 1) {
+    if (line[cursor] !== "'" || isEscapedDelimiter(line, cursor)) continue;
+    if (isEvidenceWordCharacter(line[cursor - 1]) && isEvidenceWordCharacter(line[cursor + 1])) continue;
+    return true;
+  }
+  return false;
+}
+
+function scanProseQuotationLine(
+  line: string,
+  initial: ProseQuotation | undefined,
+): { quotation: ProseQuotation | undefined; quoted: boolean } {
+  let quotation = initial;
+  let quoted = quotation !== undefined;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index]!;
+    if (isEscapedDelimiter(line, index)) continue;
+
+    if (quotation) {
+      if (character !== quotationClose(quotation)) continue;
+      if (quotation === "'"
+        && isEvidenceWordCharacter(line[index - 1])
+        && isEvidenceWordCharacter(line[index + 1])) continue;
+      quotation = undefined;
+      quoted = true;
+      continue;
+    }
+
+    if (character === '“' || character === '‘') {
+      quotation = character;
+      quoted = true;
+      continue;
+    }
+    if ((character === '"' || character === "'")
+      && canOpenAsciiQuotation(line, index, character)) {
+      quotation = character;
+      quoted = true;
+    }
+  }
+
+  return { quotation, quoted };
+}
+
 function sanitizeProseRiskContent(content: string, location: string): string {
   const markdown = new Set(['.md', '.mdx']).has(extname(location).toLowerCase());
   let fence: { marker: '`' | '~'; length: number } | undefined;
   let blockquote = false;
-  let quotation: '"' | "'" | '“' | '‘' | undefined;
+  let quotation: ProseQuotation | undefined;
   let preformatted = false;
   const sanitized: string[] = [];
 
@@ -236,19 +436,9 @@ function sanitizeProseRiskContent(content: string, location: string): string {
       }
     }
 
-    if (quotation) {
-      const closing = quotation === '“' ? '”' : quotation === '‘' ? '’' : quotation;
-      if (line.includes(closing)) quotation = undefined;
-      sanitized.push('');
-      continue;
-    }
-    const quotationMatch = /(["“‘])|^[\t ]{0,3}(')/u.exec(line);
-    if (quotationMatch) {
-      const opening = (quotationMatch[1] ?? quotationMatch[2]) as '"' | "'" | '“' | '‘';
-      const closing = opening === '“' ? '”' : opening === '‘' ? '’' : opening;
-      const openingIndex = line.indexOf(opening, quotationMatch.index);
-      const afterOpening = line.slice(openingIndex + opening.length);
-      if (!afterOpening.includes(closing)) quotation = opening;
+    const quotationResult = scanProseQuotationLine(line, quotation);
+    quotation = quotationResult.quotation;
+    if (quotationResult.quoted) {
       sanitized.push('');
       continue;
     }
@@ -318,14 +508,57 @@ export function normalizeEvidenceValue(value: string): string {
   return value.normalize('NFKC').trim().replace(/[\t ]+/gu, ' ').replace(/[.!;,]+$/gu, '').toLowerCase();
 }
 
-export function hasNegativeEvidenceAssertion(value: string, allowed: readonly RegExp[] = []): boolean {
+const incompleteAssignmentPattern = /\b(?:(?:to[\t ]+be|await(?:ing|s)?|requires?|needs?)[\t ]+(?:(?:an?|the|owner|role|team|resource|mechanism)[\t ]+){0,2}(?:assign(?:ed|ment)|determin(?:ed|ation)|decid(?:ed|ision)|confirm(?:ed|ation)|document(?:ed|ation)|select(?:ed|ion)|defin(?:ed|ition)|provid(?:ed|ing))|yet[\t ]+to[\t ]+be[\t ]+(?:assigned|determined|decided|confirmed|documented|selected|defined|provided))\b/iu;
+const incompleteStatePattern = /\b(?:no|not|none|never|disabled|unknown|unavailable|missing|pending|unassigned|unowned|undetermined|unspecified|undecided|unconfirmed|n\/a|todo)\b|\bt(?:[.\t _-]*)b(?:[.\t _-]*)(?:a|d)\b/iu;
+const fieldEchoFunctionWords = new Set(['a', 'an', 'the', 'been', 'has', 'is']);
+const fieldEchoStateWord = /^(?:approved|assigned|available|configured|current|defined|designated|documented|existing|identified|listed|maintained|named|present|provided|recorded|specified|stated)$/u;
+
+export function hasIncompleteEvidenceState(value: string, allowed: readonly RegExp[] = []): boolean {
   let normalized = normalizeEvidenceValue(value);
   for (const pattern of allowed) normalized = normalized.replace(new RegExp(pattern.source, pattern.flags), ' ');
-  return /\b(?:no|not|none|never|disabled|unknown|unavailable|missing|pending|n\/a|tbd|todo)\b/iu.test(normalized);
+  return incompleteStatePattern.test(normalized) || incompleteAssignmentPattern.test(normalized);
 }
 
 export function evidenceWordCount(value: string): number {
   return normalizeEvidenceValue(value).match(/[\p{L}\p{N}]+(?:[-'][\p{L}\p{N}]+)*/gu)?.length ?? 0;
+}
+
+type EvidenceSubstanceOptions = {
+  fieldLabels: readonly string[];
+  minimumWords?: number;
+  allowedIncompleteAssertions?: readonly RegExp[];
+};
+
+function fieldEchoWords(value: string): string[] {
+  return normalizeEvidenceValue(value).match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+function isFieldLabelEcho(value: string, labels: readonly string[]): boolean {
+  const words = fieldEchoWords(value);
+  return labels.some((label) => {
+    const labelWords = fieldEchoWords(label);
+    if (labelWords.length === 0 || labelWords.length > words.length) return false;
+
+    for (let start = 0; start <= words.length - labelWords.length; start += 1) {
+      const matchesLabel = labelWords.every((word, offset) => words[start + offset] === word);
+      if (!matchesLabel) continue;
+      const surroundingWords = [...words.slice(0, start), ...words.slice(start + labelWords.length)];
+      if (surroundingWords.length === 0
+        || surroundingWords.some((word) => fieldEchoStateWord.test(word))
+        || surroundingWords.every((word) => fieldEchoFunctionWords.has(word) || word.endsWith('ly'))) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
+export function hasEvidenceSubstance(value: string, options: EvidenceSubstanceOptions): boolean {
+  const normalized = normalizeEvidenceValue(value);
+  if (hasIncompleteEvidenceState(normalized, options.allowedIncompleteAssertions)) return false;
+  if (evidenceWordCount(normalized) < (options.minimumWords ?? 1)) return false;
+
+  return !isFieldLabelEcho(normalized, options.fieldLabels);
 }
 
 function isSupportedEvidenceLocation(location: string, profile: DocumentEvidenceProfile): boolean {

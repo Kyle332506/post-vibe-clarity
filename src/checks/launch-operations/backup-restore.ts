@@ -1,8 +1,7 @@
 import { extname } from 'node:path';
 import { createOperationsCheck } from './create-check.js';
 import {
-  evidenceWordCount,
-  hasNegativeEvidenceAssertion,
+  hasEvidenceSubstance,
   normalizeEvidenceValue,
   structuredFieldValueMatcher,
 } from './document-evidence.js';
@@ -18,51 +17,69 @@ const duration = String.raw`${quantity}[\t ]+(?:minutes?|hours?|days?|weeks?|mon
 const durationPattern = new RegExp(String.raw`\b${duration}\b`, 'iu');
 const explicitCadencePattern = new RegExp(String.raw`\b(?:(?:once|twice|${quantity}[\t ]+times?)[\t ]+per[\t ]+(?:hour|day|week|month|year)|hourly|daily|weekly|monthly|quarterly|annually|yearly|every[\t ]+${duration})\b`, 'iu');
 
-const concreteValue = (value: string, generic: RegExp, minimumWords = 2): boolean => {
+const dataValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
+  fieldLabels: ['data', 'database', 'resource', 'storage', 'store', 'protected data', 'data source'],
+  minimumWords: 2,
+});
+const mechanismValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
+  fieldLabels: ['backup', 'backup mechanism', 'mechanism', 'restore'],
+  minimumWords: 2,
+});
+const durationValue = (fieldLabels: readonly string[]): ValuePredicate => (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized)
-    && evidenceWordCount(normalized) >= minimumWords
-    && !generic.test(normalized);
+  return hasEvidenceSubstance(normalized, { fieldLabels, minimumWords: 2 })
+    && durationPattern.test(normalized);
 };
-
-const dataValue: ValuePredicate = (value) => concreteValue(value, /^(?:data|database|resource|storage|store)$/iu);
-const mechanismValue: ValuePredicate = (value) => concreteValue(value, /^(?:backup|backup mechanism|mechanism|restore)$/iu);
-const durationValue: ValuePredicate = (value) => {
-  const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized) && durationPattern.test(normalized);
-};
+const retentionValue = durationValue(['retention']);
+const recoveryTimeValue = durationValue(['recovery time', 'recovery time expectation', 'recovery time objective', 'rto']);
 const frequencyValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized)
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['frequency', 'backup frequency', 'recovery point', 'recovery point expectation', 'recovery point objective', 'rpo'],
+    minimumWords: 2,
+  })
     && (durationPattern.test(normalized) || explicitCadencePattern.test(normalized));
 };
 const restoreValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized)
-    && evidenceWordCount(normalized) >= 4
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['restore step', 'restore steps', 'restore procedure', 'recovery procedure'],
+    minimumWords: 4,
+  })
     && !/^(?:run|follow|execute)[\t ]+(?:the[\t ]+)?(?:restore|recovery)[\t ]+procedure$/iu.test(normalized)
     && /\b(?:approved|maintained|documented|referenced|provider|private|snapshot|runbook|operations[\t ]+system|recovery[\t ]+environment)\b/iu.test(normalized);
 };
-const ownerValue: ValuePredicate = (value) => concreteValue(value, /^(?:owner|team|maintainer|support|operator)$/iu);
+const ownerValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
+  fieldLabels: ['owner', 'team', 'maintainer', 'support', 'operator', 'responsible role'],
+  minimumWords: 2,
+});
 const notificationValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized)
-    && evidenceWordCount(normalized) >= 5
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['failure notification', 'backup failure handling', 'alerting'],
+    minimumWords: 5,
+  })
     && /\b(?:alerts?|notif(?:y|ies|ied|ication\w*)|pages?|reports?|routes?|sends?|surfaces?)\b/iu.test(normalized);
 };
 const testingValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized)
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['restore testing', 'restoration testing', 'recovery testing'],
+    minimumWords: 3,
+  })
     && explicitCadencePattern.test(normalized)
     && /\b(?:in|against|within|using)[\t ]+(?:(?:a|an|the)[\t ]+)?[\p{L}\p{N}][\p{L}\p{N}-]*/iu.test(normalized);
 };
 const substantiveBoundaryValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
-  return !hasNegativeEvidenceAssertion(normalized, [
-    /\bnot[\t ]+stored\b/giu,
-    /\bdoes[\t ]+not[\t ]+include\b/giu,
-  ])
-    && evidenceWordCount(normalized) >= 5
+  return hasEvidenceSubstance(normalized, {
+    fieldLabels: ['boundary', 'boundaries', 'limitation', 'limitations'],
+    minimumWords: 5,
+    allowedIncompleteAssertions: [
+      /\bnot[\t ]+stored\b/giu,
+      /\bdoes[\t ]+not[\t ]+include\b/giu,
+    ],
+  })
     && /\b(?:not[\t ]+stored|excluded|outside|does[\t ]+not[\t ]+include|limited[\t ]+to|only)\b/iu.test(normalized);
 };
 
@@ -117,8 +134,8 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     textOnlyPatterns: true,
     patterns: [],
     matches: matchesAny(
-      labeledValueMatcher('retention', durationValue),
-      structuredFieldValueMatcher(['retention'], durationValue),
+      labeledValueMatcher('retention', retentionValue),
+      structuredFieldValueMatcher(['retention'], retentionValue),
     ),
   },
   {
@@ -136,8 +153,8 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     textOnlyPatterns: true,
     patterns: [],
     matches: matchesAny(
-      labeledValueMatcher('recovery time(?: expectation| objective)?|rto', durationValue),
-      structuredFieldValueMatcher(['recoveryTimeExpectation', 'recovery_time_expectation', 'recoveryTimeObjective', 'recovery_time_objective', 'rto'], durationValue),
+      labeledValueMatcher('recovery time(?: expectation| objective)?|rto', recoveryTimeValue),
+      structuredFieldValueMatcher(['recoveryTimeExpectation', 'recovery_time_expectation', 'recoveryTimeObjective', 'recovery_time_objective', 'rto'], recoveryTimeValue),
     ),
   },
   {

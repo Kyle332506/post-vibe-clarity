@@ -280,6 +280,7 @@ Verification: confirm the replacement version is available.
     'There is no rollback path.',
     'Rollback is impossible.',
     'We do not have a recovery path.',
+    "The '24 launch remains active.\nRollback is impossible.\n",
   ])('reports a likely issue for the affirmative risky statement %j', async (riskyStatement) => {
     const root = await createRepository({ 'docs/operations/rollback-and-recovery.md': riskyStatement });
 
@@ -300,6 +301,21 @@ Verification: confirm the replacement version is available.
     'What happens if there is no rollback path?',
   ])('does not treat a question, quotation, or discussion as affirmative risky evidence: %j', async (statement) => {
     const root = await createRepository({ 'docs/operations/rollback-and-recovery.md': statement });
+
+    const [finding] = await rollbackProcessCheck.run({ root, manifest: manifest(['web']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.rollback-process.unverified',
+      outcome: 'unverified',
+      actionLevel: 'resolve-before-launch',
+    });
+  });
+
+  it.each([
+    ['an ASCII single quote after introductory prose', "The guide says, '\nRollback is impossible.\n'\n"],
+    ['a second double quote after an earlier inline quote', 'The guide calls this "an example" and then says "\nThere is no rollback path.\n"\n'],
+  ])('keeps rollback risk inside %s unverified', async (_description, evidence) => {
+    const root = await createRepository({ 'docs/operations/rollback-and-recovery.md': evidence });
 
     const [finding] = await rollbackProcessCheck.run({ root, manifest: manifest(['web']) });
 
