@@ -6,12 +6,13 @@ import { validateReadinessManifest } from '../../src/validation/readiness-schema
 const skillsRoot = new URL('../../skills/', import.meta.url);
 const expectedSkills = [
   'launch-essentials',
+  'launch-operations',
   'post-vibe-clarity',
   'project-discovery',
   'secret-exposure',
   'universal-verification',
 ] as const;
-const skillsWithSidecars = new Set(['launch-essentials', 'secret-exposure']);
+const skillsWithSidecars = new Set(['launch-essentials', 'launch-operations', 'secret-exposure']);
 
 interface SkillFrontmatter {
   name?: unknown;
