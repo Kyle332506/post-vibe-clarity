@@ -1,6 +1,6 @@
 {
   "name": "post-vibe-clarity",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.12.0",
@@ -12,7 +12,7 @@
     "check": "pnpm build && pnpm test",
     "review": "tsx src/cli.ts review",
     "test": "vitest run",
-    "test:executor": "pnpm build && vitest run tests/verification tests/acceptance/universal-launch-baseline.acceptance.test.ts",
+    "test:executor": "pnpm build && vitest run tests/verification tests/checks/launch-operations tests/discovery/operational-signals.test.ts tests/acceptance/universal-launch-baseline.acceptance.test.ts tests/acceptance/launch-operations.acceptance.test.ts",
     "verify:foundation": "pnpm check && pnpm review fixtures/web-missing-basics --skills skills --format json"
   },
   "engines": {

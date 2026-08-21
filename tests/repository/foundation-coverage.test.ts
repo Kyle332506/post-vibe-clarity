@@ -29,14 +29,14 @@ const demonstrationSchema = `CREATE TABLE signup_metrics (
 `;
 
 describe('foundation coverage documentation', () => {
-  it('publishes the v0.2 executor package interface', async () => {
+  it('publishes the v0.3 executor package interface', async () => {
     const manifest = JSON.parse(await readRepositoryFile('package.json')) as {
       version?: string;
       scripts?: Record<string, string>;
     };
-    expect(manifest.version).toBe('0.2.0');
+    expect(manifest.version).toBe('0.3.0');
     expect(manifest.scripts?.['test:executor']).toBe(
-      'pnpm build && vitest run tests/verification tests/acceptance/universal-launch-baseline.acceptance.test.ts',
+      'pnpm build && vitest run tests/verification tests/checks/launch-operations tests/discovery/operational-signals.test.ts tests/acceptance/universal-launch-baseline.acceptance.test.ts tests/acceptance/launch-operations.acceptance.test.ts',
     );
   });
 

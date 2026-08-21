@@ -4,7 +4,7 @@
 
 PostVibeClarity reviews a project's visible launch risks and can optionally run its declared build, type-check, lint, and test commands after exact approval.
 
-`v0.2 · Universal verification` · [Apache-2.0](LICENSE)
+`v0.3 · Launch operations` · [Apache-2.0](LICENSE)
 
 [Install](#install-with-your-coding-agent) · [Example project](examples/launch-candidate/README.md) · [Example report](docs/examples/sample-report.md) · [Current coverage](docs/foundation-coverage.md)
 
@@ -14,7 +14,7 @@ PostVibeClarity reduces uncertainty. It does not guarantee production readiness 
 
 Paste this into your coding agent:
 
-> Install PostVibeClarity for this project from `github.com/Kyle332506/post-vibe-clarity` at `v0.2.0`. Follow the guide for this agent, install only inside the current project, verify all five skills are available, and run a read-only launch review. Do not change project files during the review.
+> Install PostVibeClarity for this project from `github.com/Kyle332506/post-vibe-clarity` at `v0.3.0`. Follow the guide for this agent, install only inside the current project, verify all six skills are available, and run a read-only launch review. Do not change project files during the review.
 
 Installation is project-scoped and pinned to a release tag plus its resolved commit.
 
@@ -26,7 +26,7 @@ Installation is project-scoped and pinned to a release tag plus its resolved com
 | [Windsurf](docs/installation/windsurf.md) | `.agents/skills` | `@post-vibe-clarity` | Documented |
 | [Other Agent Skills hosts](docs/installation/agent-skills.md) | Host-defined | Host-defined | Format compatible |
 
-The [compatibility manifest](docs/installation/compatibility.yaml) records the pinned release, five canonical skills, and evidence labels. Documented and Format compatible are packaging claims, not runtime acceptance claims.
+The [compatibility manifest](docs/installation/compatibility.yaml) records the pinned release, six canonical skills, and evidence labels. Documented and Format compatible are packaging claims, not runtime acceptance claims.
 
 ## Important limitation
 
@@ -120,7 +120,7 @@ Reports use plain action and outcome labels. They do not calculate an overall nu
 
 The [foundation coverage map](docs/foundation-coverage.md) is the source of truth.
 
-| Capability | v0.2 status | Boundary |
+| Capability | v0.3 status | Boundary |
 | --- | --- | --- |
 | Project discovery | Automated for documented Node and static-project signals | Other or ambiguous shapes require guided classification |
 | Secret exposure checks | Automated, redacted scanning with a manual fallback | Not a complete security audit or proof of hardening |
@@ -135,7 +135,7 @@ The model can represent web, native mobile, desktop, CLI, backend, worker, libra
 
 ## Foundation scope
 
-The v0.2 foundation provides read-only discovery and two Level 0 checks, validated evidence reports, five portable skills, and optional Level 1 verification of declared commands. The executor records the approved fingerprint, results, output boundaries, visible file changes, exclusions, and remaining gaps.
+The v0.3 foundation provides read-only discovery and two Level 0 checks, validated evidence reports, six portable skills, and optional Level 1 verification of declared commands. The executor records the approved fingerprint, results, output boundaries, visible file changes, exclusions, and remaining gaps.
 
 It does not provide deployment or production access, operational validation, performance testing, legal-sufficiency review, deep shape packs, automatic remediation, or strong sandboxing.
 

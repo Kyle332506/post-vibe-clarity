@@ -15,7 +15,7 @@ describe('repository homepage', () => {
     expect(readme).toContain('## Install with your coding agent');
     expect(headingPosition(readme, 'Install with your coding agent')).toBeGreaterThan(0);
     expect(headingPosition(readme, 'Install with your coding agent')).toBeLessThan(headingPosition(readme, 'How it works'));
-    expect(readme).toContain('v0.2 · Universal verification');
+    expect(readme).toContain('v0.3 · Launch operations');
     expect(readme).toContain('[Install](#install-with-your-coding-agent)');
     expect(readme).toContain('[Example project](examples/launch-candidate/README.md)');
     expect(readme).toContain('[Example report](docs/examples/sample-report.md)');
@@ -30,6 +30,8 @@ describe('repository homepage', () => {
     const architecture = headingPosition(readme, 'Project shapes represented by the architecture');
 
     expect(prompt).toBeGreaterThan(0);
+    expect(readme).toContain('at `v0.3.0`');
+    expect(readme).toContain('verify all six skills are available');
     expect(guideTable).toBeGreaterThan(prompt);
     expect(guideTable).toBeLessThan(limitation);
     expect(guideTable).toBeLessThan(architecture);
