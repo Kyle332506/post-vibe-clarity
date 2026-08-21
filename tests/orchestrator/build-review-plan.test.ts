@@ -7,7 +7,7 @@ const secretExposure: SkillDescriptor = {
   schemaVersion: '0.1',
   id: 'secret-exposure',
   skillVersion: '0.1.0',
-  domains: ['security-privacy'],
+  domains: ['release-delivery', 'operations-observability'],
   modes: ['audit'],
   maxActionLevel: 0,
   checks: ['secret-exposure.scan', 'secret-exposure.entropy'],
@@ -17,6 +17,7 @@ const secretExposure: SkillDescriptor = {
 const readyCheck: CheckImplementation = {
   id: 'secret-exposure.scan',
   version: '0.1.0',
+  domains: ['release-delivery'],
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
   async run() {
@@ -25,7 +26,7 @@ const readyCheck: CheckImplementation = {
 };
 
 describe('buildReviewPlan', () => {
-  it('marks registered Level 0 checks ready and missing checks unavailable', () => {
+  it('preserves exact check domains for ready checks while unavailable checks use skill domains', () => {
     const registry: CheckRegistry = new Map([[readyCheck.id, readyCheck]]);
 
     expect(buildReviewPlan([secretExposure], registry)).toEqual([
@@ -34,6 +35,7 @@ describe('buildReviewPlan', () => {
         checkVersion: '0.1.0',
         skillId: 'secret-exposure',
         skillVersion: '0.1.0',
+        domains: ['release-delivery'],
         status: 'ready',
         actionLevel: 0,
         requiredAccess: ['filesystem-read'],
@@ -43,6 +45,7 @@ describe('buildReviewPlan', () => {
         checkVersion: 'unknown',
         skillId: 'secret-exposure',
         skillVersion: '0.1.0',
+        domains: ['release-delivery', 'operations-observability'],
         status: 'unavailable',
         reason: 'No check implementation is registered.',
       },

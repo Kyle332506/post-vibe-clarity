@@ -1,10 +1,11 @@
 schemaVersion: "0.1"
-releaseVersion: v0.2.0
+releaseVersion: v0.3.0
 canonicalSkills:
   - post-vibe-clarity
   - project-discovery
   - secret-exposure
   - launch-essentials
+  - launch-operations
   - universal-verification
 agents:
   - id: codex

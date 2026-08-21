@@ -1,5 +1,6 @@
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { SkillDescriptor } from '../../src/catalog/load-catalog.js';
+import { loadSkillCatalog, type SkillDescriptor } from '../../src/catalog/load-catalog.js';
 import { routeSkills } from '../../src/catalog/route-skills.js';
 import type { CapabilityManifest } from '../../src/model/capability.js';
 
@@ -12,6 +13,7 @@ const manifest: CapabilityManifest = {
   services: [],
   capabilities: [],
 };
+const skillsRoot = fileURLToPath(new URL('../../skills', import.meta.url));
 
 const auditSkill: SkillDescriptor = {
   schemaVersion: '0.1',
@@ -36,6 +38,15 @@ const verifySkill: SkillDescriptor = {
 };
 
 describe('routeSkills', () => {
+  it.each(['audit', 'propose', 'remediate', 'verify'] as const)(
+    'routes launch operations in %s mode for an ambiguous manifest',
+    async (mode) => {
+      const catalog = await loadSkillCatalog(skillsRoot);
+
+      expect(routeSkills(manifest, catalog, mode).map(({ id }) => id)).toContain('launch-operations');
+    },
+  );
+
   it('routes only audit skills by default', () => {
     expect(routeSkills(manifest, [auditSkill, verifySkill])).toEqual([auditSkill]);
   });

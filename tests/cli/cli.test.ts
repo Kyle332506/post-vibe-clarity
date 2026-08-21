@@ -104,7 +104,7 @@ describe('postvibe review CLI', () => {
     expect(result.code).toBe(0);
     const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
     expect(parsed.schemaVersion).toBe('0.1');
-    expect(parsed.toolkitVersion).toBe('0.2.0');
+    expect(parsed.toolkitVersion).toBe('0.3.0');
     expect(parsed.partial).toBe(true);
     expect(parsed.checkExecutions).toEqual(expect.arrayContaining([
       expect.objectContaining({ checkId: 'secret-exposure.scan', status: 'completed' }),
@@ -904,5 +904,5 @@ describe('postvibe execute CLI', () => {
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });

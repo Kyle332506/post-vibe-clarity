@@ -12,8 +12,10 @@ const skillNames = [
   'project-discovery',
   'secret-exposure',
   'launch-essentials',
+  'launch-operations',
   'universal-verification',
 ] as const;
+const orderedSkillLoop = 'for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials launch-operations universal-verification; do';
 
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((directory) => rm(directory, { force: true, recursive: true })));
@@ -40,7 +42,7 @@ describe('agent installation documentation', () => {
       agents: AgentEntry[];
     };
     expect(manifest.schemaVersion).toBe('0.1');
-    expect(manifest.releaseVersion).toBe('v0.2.0');
+    expect(manifest.releaseVersion).toBe('v0.3.0');
     expect(manifest.canonicalSkills).toEqual([...skillNames]);
     expect(manifest.agents.map(({ id }) => id)).toEqual(['codex', 'claude-code', 'cursor', 'windsurf', 'agent-skills']);
     for (const agent of manifest.agents) {
@@ -63,7 +65,9 @@ describe('agent installation documentation', () => {
     }
     expect(guide).toContain('project');
     expect(guide).toContain('read-only');
-    expect(guide).toContain('universal-verification');
+    expect(guide).toMatch(/\bsix\b/);
+    expect(guide).toContain(orderedSkillLoop);
+    for (const skillName of skillNames) expect(guide).toContain(skillName);
     expectNoEmoji(guide, path);
     await expectLocalLinksResolve(path, guide);
   });
@@ -75,7 +79,7 @@ describe('agent installation documentation', () => {
     ['windsurf', '.agents/skills'],
   ])('%s pins provenance and preserves existing skill directories before replacement', async (id, projectPath) => {
     const guide = await readRepositoryFile(`docs/installation/${id}.md`);
-    expect(guide).toContain('PVC_VERSION="v0.2.0"');
+    expect(guide).toContain('PVC_VERSION="v0.3.0"');
     expect(guide).toContain('git clone --branch "$PVC_VERSION" --depth 1 --single-branch "$PVC_REPO_URL" "$PVC_SOURCE"');
     expect(guide).toContain('PVC_REVISION="$(git -C "$PVC_SOURCE" rev-parse HEAD)"');
     expect(guide).toContain(`PVC_INSTALL_ROOT="${projectPath}"`);
@@ -113,7 +117,7 @@ describe('agent installation documentation', () => {
       '#!/bin/sh',
       'if [ "$1" = "clone" ]; then',
       '  for PVC_ARGUMENT in "$@"; do PVC_DESTINATION="$PVC_ARGUMENT"; done',
-      '  for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials; do',
+      '  for PVC_SKILL in post-vibe-clarity project-discovery secret-exposure launch-essentials launch-operations; do',
       '    mkdir -p "$PVC_DESTINATION/skills/$PVC_SKILL"',
       '    printf "staged-%s\\n" "$PVC_SKILL" > "$PVC_DESTINATION/skills/$PVC_SKILL/SKILL.md"',
       '  done',
@@ -145,11 +149,11 @@ describe('agent installation documentation', () => {
 
   it('gives the fallback guide equivalent pinned provenance and preservation semantics', async () => {
     const guide = await readRepositoryFile('docs/installation/agent-skills.md');
-    expect(guide).toContain('PVC_VERSION="v0.2.0"');
+    expect(guide).toContain('PVC_VERSION="v0.3.0"');
     expect(guide).toContain('PVC_INSTALL_ROOT="<host-project-skill-directory>"');
     expect(guide).toContain('.postvibeclarity-revision');
     expect(guide).toContain('.postvibeclarity-backups');
-    expect(guide).toContain('stage the five pinned skill directories');
+    expect(guide).toContain('stage the six pinned skill directories');
     expect(guide).toContain('compare each existing destination with the staged copy');
     expect(guide).toContain('move every existing destination into the bounded backup directory before replacement');
   });

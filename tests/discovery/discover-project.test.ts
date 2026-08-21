@@ -85,4 +85,28 @@ describe('discoverProject', () => {
     expect(manifest.artifacts.map((item) => item.value)).toEqual(['cli']);
     expect(manifest.capabilities.map((item) => item.value)).not.toContain('collects-personal-data');
   });
+
+  it('detects backend service and persistent data signals', async () => {
+    const manifest = await discoverProject(fixture('operations-backend'), now);
+
+    expect(manifest.artifacts.map(({ value }) => value)).toContain('backend');
+    expect(manifest.capabilities.map(({ value }) => value)).toEqual([
+      'network-service',
+      'persistent-data',
+    ]);
+  });
+
+  it('detects a desktop application without a network-service capability', async () => {
+    const manifest = await discoverProject(fixture('operations-desktop'), now);
+
+    expect(manifest.artifacts.map(({ value }) => value)).toContain('desktop');
+    expect(manifest.capabilities.map(({ value }) => value)).not.toContain('network-service');
+  });
+
+  it('detects a worker without a network-service capability', async () => {
+    const manifest = await discoverProject(fixture('operations-worker'), now);
+
+    expect(manifest.artifacts.map(({ value }) => value)).toContain('worker');
+    expect(manifest.capabilities.map(({ value }) => value)).not.toContain('network-service');
+  });
 });

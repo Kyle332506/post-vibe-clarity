@@ -123,6 +123,12 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     expect(foundationCheckImplementations.map(({ id, actionLevel }) => ({ id, actionLevel }))).toEqual([
       { id: 'launch-essentials.privacy-notice', actionLevel: 0 },
       { id: 'secret-exposure.scan', actionLevel: 0 },
+      { id: 'launch-operations.backup-restore', actionLevel: 0 },
+      { id: 'launch-operations.health-check', actionLevel: 0 },
+      { id: 'launch-operations.maintenance-ownership', actionLevel: 0 },
+      { id: 'launch-operations.monitoring-response', actionLevel: 0 },
+      { id: 'launch-operations.release-process', actionLevel: 0 },
+      { id: 'launch-operations.rollback-process', actionLevel: 0 },
     ]);
   });
 
@@ -132,38 +138,51 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
   });
 
   it('keeps the runtime registration boundary deeply immutable', () => {
-    const firstRegistration = foundationCheckImplementations[0];
-    const secondRegistration = foundationCheckImplementations[1];
-    if (!firstRegistration || !secondRegistration) throw new Error('Expected two foundation registrations.');
+    const firstRegistration = foundationCheckImplementations.find(
+      ({ id }) => id === 'launch-essentials.privacy-notice',
+    );
+    const secondRegistration = foundationCheckImplementations.find(
+      ({ id }) => id === 'secret-exposure.scan',
+    );
+    if (!firstRegistration || !secondRegistration) throw new Error('Expected the named foundation registrations.');
+    const firstRegistrationIndex = foundationCheckImplementations.indexOf(firstRegistration);
 
     const originalRun = firstRegistration.run;
     const originalActionLevel = firstRegistration.actionLevel;
     const originalAccess = firstRegistration.requiredAccess[0];
+    const originalDomain = firstRegistration.domains[0];
     const replacementRun = async () => [];
     let arrayMutationApplied = false;
     let actionLevelMutationApplied = false;
     let runMutationApplied = false;
     let accessMutationApplied = false;
+    let domainMutationApplied = false;
 
     try {
-      arrayMutationApplied = Reflect.set(foundationCheckImplementations, '0', secondRegistration)
-        && foundationCheckImplementations[0] === secondRegistration;
+      arrayMutationApplied = Reflect.set(foundationCheckImplementations, String(firstRegistrationIndex), secondRegistration)
+        && foundationCheckImplementations[firstRegistrationIndex] === secondRegistration;
       actionLevelMutationApplied = Reflect.set(firstRegistration, 'actionLevel', 4)
         && firstRegistration.actionLevel === 4;
       runMutationApplied = Reflect.set(firstRegistration, 'run', replacementRun)
         && firstRegistration.run === replacementRun;
       accessMutationApplied = Reflect.set(firstRegistration.requiredAccess, '0', 'network')
         && firstRegistration.requiredAccess[0] === 'network';
+      domainMutationApplied = Reflect.set(firstRegistration.domains, '0', 'release-delivery')
+        && firstRegistration.domains[0] === 'release-delivery';
     } finally {
-      if (arrayMutationApplied) Reflect.set(foundationCheckImplementations, '0', firstRegistration);
+      if (arrayMutationApplied) {
+        Reflect.set(foundationCheckImplementations, String(firstRegistrationIndex), firstRegistration);
+      }
       if (actionLevelMutationApplied) Reflect.set(firstRegistration, 'actionLevel', originalActionLevel);
       if (runMutationApplied) Reflect.set(firstRegistration, 'run', originalRun);
       if (accessMutationApplied) Reflect.set(firstRegistration.requiredAccess, '0', originalAccess);
+      if (domainMutationApplied) Reflect.set(firstRegistration.domains, '0', originalDomain);
     }
 
     expect(Object.isFrozen(foundationCheckImplementations)).toBe(true);
     expect(foundationCheckImplementations.every((implementation) => Object.isFrozen(implementation))).toBe(true);
     expect(foundationCheckImplementations.every(({ requiredAccess }) => Object.isFrozen(requiredAccess))).toBe(true);
+    expect(foundationCheckImplementations.every(({ domains }) => Object.isFrozen(domains))).toBe(true);
     expect(foundationCheckImplementations.every(({ run }) => Object.isFrozen(run))).toBe(true);
     expect(isReachableGraphFrozen(foundationCheckImplementations)).toBe(true);
     expect(firstRegistration.run).not.toBe(privacyNoticeCheck.run);
@@ -172,6 +191,7 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     expect(actionLevelMutationApplied).toBe(false);
     expect(runMutationApplied).toBe(false);
     expect(accessMutationApplied).toBe(false);
+    expect(domainMutationApplied).toBe(false);
   });
 
   it('keeps running captured implementations after an imported check object is mutated', async () => {
@@ -199,14 +219,18 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     }
   });
 
-  it('routes real web and CLI fixtures to deterministic artifact-specific checks', () => {
+  it('preserves the deterministic foundation findings for real web and CLI fixtures', () => {
     expect(webReport.manifest.artifacts.map(({ value }) => value)).toEqual(['web']);
-    expect(webReport.findings.map(({ checkId }) => checkId)).toEqual([
+    expect(webReport.findings
+      .filter(({ checkId }) => checkId === 'launch-essentials.privacy-notice' || checkId === 'secret-exposure.scan')
+      .map(({ checkId }) => checkId)).toEqual([
       'launch-essentials.privacy-notice',
       'secret-exposure.scan',
     ]);
     expect(cliReport.manifest.artifacts.map(({ value }) => value)).toEqual(['cli']);
-    expect(cliReport.findings).toEqual([]);
+    expect(cliReport.findings
+      .filter(({ checkId }) => checkId === 'launch-essentials.privacy-notice' || checkId === 'secret-exposure.scan'))
+      .toEqual([]);
   });
 
   it('routes the privacy check only when its capability is detected', () => {
@@ -264,14 +288,16 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     const parsed = JSON.parse(json) as ReviewReport;
 
     expect(parsed.generatedAt).toBe(fixedTimestamp);
-    expect(parsed.toolkitVersion).toBe('0.2.0');
-    expect(parsed.findings.map(({ checkId, checkVersion, skillVersion }) => ({ checkId, checkVersion, skillVersion }))).toEqual([
+    expect(parsed.toolkitVersion).toBe('0.3.0');
+    expect(parsed.findings
+      .filter(({ checkId }) => checkId === 'launch-essentials.privacy-notice' || checkId === 'secret-exposure.scan')
+      .map(({ checkId, checkVersion, skillVersion }) => ({ checkId, checkVersion, skillVersion }))).toEqual([
       { checkId: 'launch-essentials.privacy-notice', checkVersion: '0.1.0', skillVersion: '0.1.0' },
       { checkId: 'secret-exposure.scan', checkVersion: '0.1.0', skillVersion: '0.1.0' },
     ]);
     expect(parsed.disclaimer).toBe(disclaimer);
     expect(markdown).toContain(`Generated at: ${fixedTimestamp}`);
-    expect(markdown).toContain('Toolkit version: 0.2.0');
+    expect(markdown).toContain('Toolkit version: 0.3.0');
     expect(markdown).toContain('Check: launch-essentials.privacy-notice (check version 0.1.0; skill version 0.1.0)');
     expect(markdown).toContain('Check: secret-exposure.scan (check version 0.1.0; skill version 0.1.0)');
     expect(markdown.endsWith(`${disclaimer}\n`)).toBe(true);

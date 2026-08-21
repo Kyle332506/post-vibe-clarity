@@ -1,0 +1,7 @@
+{
+  "name": "fixture-operations-desktop",
+  "private": true,
+  "dependencies": {
+    "electron": "999.0.0-fixture"
+  }
+}

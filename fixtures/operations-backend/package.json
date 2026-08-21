@@ -1,0 +1,7 @@
+{
+  "name": "fixture-operations-backend",
+  "private": true,
+  "dependencies": {
+    "fastify": "999.0.0-fixture"
+  }
+}

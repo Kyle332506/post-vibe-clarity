@@ -1,0 +1,111 @@
+import type { CapabilityManifest } from '../../model/capability.js';
+import type { OperationsCheckId } from './types.js';
+
+export interface OperationsApplicability {
+  status: 'applicable' | 'not-applicable' | 'unverified';
+  profile: 'service' | 'worker' | 'mobile-desktop' | 'cli' | 'library' | 'ambiguous';
+  reason: string;
+}
+
+const universalChecks = new Set<OperationsCheckId>([
+  'launch-operations.release-process',
+  'launch-operations.rollback-process',
+  'launch-operations.maintenance-ownership',
+]);
+
+function selectProfile(manifest: CapabilityManifest): OperationsApplicability['profile'] {
+  const artifacts = new Set(manifest.artifacts.map(({ value }) => value));
+  const families = new Set<string>();
+  if (artifacts.has('web') || artifacts.has('backend') || artifacts.has('worker')) families.add('service');
+  if (artifacts.has('mobile') || artifacts.has('desktop')) families.add('native');
+  if (artifacts.has('cli') || artifacts.has('library')) families.add('package');
+  if (families.size !== 1) return 'ambiguous';
+
+  if (families.has('service')) {
+    return artifacts.has('web') || artifacts.has('backend') ? 'service' : 'worker';
+  }
+  if (families.has('native')) return 'mobile-desktop';
+  if (artifacts.has('cli')) return 'cli';
+  return 'library';
+}
+
+function isApplicableForProfile(
+  checkId: OperationsCheckId,
+  profile: OperationsApplicability['profile'],
+  manifest: CapabilityManifest,
+): boolean {
+  const hasCapability = (value: string, confirmedOnly = false): boolean => manifest.capabilities.some(
+    (capability) => capability.value === value && (!confirmedOnly || capability.confidence === 'confirmed'),
+  );
+  if (checkId === 'launch-operations.monitoring-response') {
+    return profile !== 'ambiguous' && (profile === 'service'
+      || profile === 'worker'
+      || profile === 'mobile-desktop'
+      || hasCapability('network-service'));
+  }
+  if (checkId === 'launch-operations.health-check') {
+    return profile !== 'cli'
+      && profile !== 'library'
+      && hasCapability('network-service', profile === 'ambiguous');
+  }
+  return checkId === 'launch-operations.backup-restore'
+    && hasCapability('persistent-data', profile === 'ambiguous');
+}
+
+function profileDescription(profile: OperationsApplicability['profile']): string {
+  if (profile === 'service') return 'service';
+  if (profile === 'worker') return 'background worker';
+  if (profile === 'mobile-desktop') return 'mobile or desktop application';
+  if (profile === 'cli') return 'command-line application';
+  if (profile === 'library') return 'library';
+  return 'unrecognized project shape';
+}
+
+export function selectOperationsApplicability(
+  checkId: OperationsCheckId,
+  manifest: CapabilityManifest,
+): OperationsApplicability {
+  const profile = selectProfile(manifest);
+  if (universalChecks.has(checkId)) {
+    if (checkId === 'launch-operations.release-process') {
+      if (profile === 'cli' || profile === 'library') {
+        return {
+          status: 'applicable',
+          profile,
+          reason: `This ${profileDescription(profile)} uses a publishing or distribution release profile.`,
+        };
+      }
+      if (profile === 'service') {
+        return {
+          status: 'applicable',
+          profile,
+          reason: 'This service uses a deployment release profile.',
+        };
+      }
+    }
+    return {
+      status: 'applicable',
+      profile,
+      reason: 'Release, rollback, and maintenance ownership evidence is relevant to every project shape.',
+    };
+  }
+  if (profile === 'ambiguous' && !isApplicableForProfile(checkId, profile, manifest)) {
+    return {
+      status: 'unverified',
+      profile,
+      reason: 'The project manifest does not identify a recognized artifact shape for this shape-dependent operations review.',
+    };
+  }
+  if (isApplicableForProfile(checkId, profile, manifest)) {
+    return {
+      status: 'applicable',
+      profile,
+      reason: `This ${profileDescription(profile)} has the capability or delivery shape that makes this operations review relevant.`,
+    };
+  }
+  return {
+    status: 'not-applicable',
+    profile,
+    reason: `This ${profileDescription(profile)} does not have the capability or delivery shape that requires this operations review.`,
+  };
+}

@@ -1,0 +1,22 @@
+schemaVersion: "0.1"
+id: launch-operations
+skillVersion: "0.1.0"
+domains:
+  - data-correctness
+  - reliability-recovery
+  - operations-observability
+  - maintainability-change-safety
+  - release-delivery
+modes:
+  - audit
+  - propose
+  - remediate
+  - verify
+maxActionLevel: 2
+checks:
+  - launch-operations.release-process
+  - launch-operations.rollback-process
+  - launch-operations.monitoring-response
+  - launch-operations.health-check
+  - launch-operations.backup-restore
+  - launch-operations.maintenance-ownership

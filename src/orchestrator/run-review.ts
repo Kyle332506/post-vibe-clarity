@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { loadSkillCatalog, type SkillDescriptor } from '../catalog/load-catalog.js';
 import { routeSkills } from '../catalog/route-skills.js';
 import { privacyNoticeCheck } from '../checks/launch-essentials.js';
+import { launchOperationsChecks } from '../checks/launch-operations/index.js';
 import { secretExposureCheck } from '../checks/secret-exposure.js';
 import { discoverProject } from '../discovery/discover-project.js';
 import type { Finding } from '../model/finding.js';
@@ -35,6 +36,7 @@ function freezeRegistration(implementation: CheckImplementation): CheckImplement
   return Object.freeze({
     id: implementation.id,
     version: implementation.version,
+    domains: Object.freeze([...implementation.domains]),
     actionLevel: implementation.actionLevel,
     requiredAccess: Object.freeze([...implementation.requiredAccess]),
     run,
@@ -44,6 +46,7 @@ function freezeRegistration(implementation: CheckImplementation): CheckImplement
 export const foundationCheckImplementations: readonly CheckImplementation[] = Object.freeze([
   freezeRegistration(privacyNoticeCheck),
   freezeRegistration(secretExposureCheck),
+  ...launchOperationsChecks.map(freezeRegistration),
 ]);
 
 function compareFindings(left: Finding, right: Finding): number {
@@ -59,7 +62,7 @@ function unavailableFinding(
     checkId: item.checkId,
     checkVersion: 'unknown',
     skillVersion: item.skillVersion,
-    domains: skill.domains,
+    domains: [...item.domains],
     actionLevel: 'human-review-needed',
     outcome: 'unverified',
     title: `${item.checkId} could not be run`,
@@ -80,7 +83,7 @@ function failedFinding(item: Extract<ReviewPlanItem, { status: 'ready' }>, skill
     checkId: item.checkId,
     checkVersion: item.checkVersion,
     skillVersion: item.skillVersion,
-    domains: skill.domains,
+    domains: [...item.domains],
     actionLevel: 'human-review-needed',
     outcome: 'unverified',
     title: `${item.checkId} did not complete`,
@@ -137,7 +140,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
         checkVersion: item.checkVersion,
         skillId: item.skillId,
         skillVersion: item.skillVersion,
-        domains: skill.domains,
+        domains: [...item.domains],
         status: 'unavailable',
         findingIds: [finding.id],
       });
@@ -146,7 +149,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
         checkId: item.checkId,
         skillId: item.skillId,
         status: 'unavailable',
-        domains: skill.domains,
+        domains: [...item.domains],
         reason: item.reason,
       });
       continue;
@@ -165,7 +168,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
         checkVersion: item.checkVersion,
         skillId: item.skillId,
         skillVersion: item.skillVersion,
-        domains: skill.domains,
+        domains: [...item.domains],
         status,
         findingIds: checkFindings.map(({ id }) => id).sort(compareOrdinal),
       });
@@ -176,7 +179,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
           checkId: item.checkId,
           skillId: item.skillId,
           status,
-          domains: skill.domains,
+          domains: [...item.domains],
           reason: reasons.length > 0
             ? [...new Set(reasons)].sort(compareOrdinal).join(' ')
             : 'The check completed without enough evidence to verify this area.',
@@ -190,7 +193,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
         checkVersion: item.checkVersion,
         skillId: item.skillId,
         skillVersion: item.skillVersion,
-        domains: skill.domains,
+        domains: [...item.domains],
         status: 'failed',
         findingIds: [finding.id],
       });
@@ -199,7 +202,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReadinessRep
         checkId: item.checkId,
         skillId: item.skillId,
         status: 'failed',
-        domains: skill.domains,
+        domains: [...item.domains],
         reason: 'The check failed before it could complete. Run it again after resolving the local execution problem.',
       });
     }

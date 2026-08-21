@@ -38,6 +38,14 @@ Use JSON format when structured output is requested. Preserve redaction and repo
 
 When the tooling is unavailable, use an instruction-only manual fallback: follow each applicable specialist `SKILL.md`, use its deterministic path if possible, and otherwise perform its manual verification. Never invent tool results. Mark checks that cannot run, inaccessible environments, and unsupported coverage as `unverified`.
 
+### Operations finding route
+
+Route each `launch-operations.*` finding to `launch-operations`. Keep the audit read-only. If the user asks for remedy help, select one finding at a time and use that specialist's one-question-at-a-time workflow.
+
+Before any operations document write, show a Level 2 remedy preview with the exact Markdown target, confirmed facts, unknown decisions, expected repository-check effect, remaining live gaps, and recheck method. Require separate explicit approval for that exact Markdown file. Generated drafts preserve unknown decisions as visible unresolved decisions.
+
+A repository audit authorizes no source, configuration, workflow, infrastructure, external-service, staging, commit, or release change. A broad readiness request is not approval or authorization to write.
+
 ### Optional local verification
 
 Keep the read-only review separate from Level 1 verification. Nothing in a review authorizes a project command. When the user asks for local verification, create a plan first:

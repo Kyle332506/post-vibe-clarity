@@ -1,9 +1,10 @@
 import type { SkillDescriptor } from '../catalog/load-catalog.js';
+import type { Domain } from '../model/finding.js';
 import type { CheckRegistry, RequiredAccess } from './check-registry.js';
 
 export type ReviewPlanItem =
-  | { checkId: string; checkVersion: string; skillId: string; skillVersion: string; status: 'ready'; actionLevel: 0 | 1; requiredAccess: readonly RequiredAccess[] }
-  | { checkId: string; checkVersion: 'unknown'; skillId: string; skillVersion: string; status: 'unavailable'; reason: string };
+  | { checkId: string; checkVersion: string; skillId: string; skillVersion: string; domains: readonly Domain[]; status: 'ready'; actionLevel: 0 | 1; requiredAccess: readonly RequiredAccess[] }
+  | { checkId: string; checkVersion: 'unknown'; skillId: string; skillVersion: string; domains: readonly Domain[]; status: 'unavailable'; reason: string };
 
 export function buildReviewPlan(skills: SkillDescriptor[], registry: CheckRegistry): ReviewPlanItem[] {
   return skills.flatMap((skill) => skill.checks.map((checkId): ReviewPlanItem => {
@@ -14,6 +15,7 @@ export function buildReviewPlan(skills: SkillDescriptor[], registry: CheckRegist
         checkVersion: 'unknown',
         skillId: skill.id,
         skillVersion: skill.skillVersion,
+        domains: skill.domains,
         status: 'unavailable',
         reason: 'No check implementation is registered.',
       };
@@ -27,6 +29,7 @@ export function buildReviewPlan(skills: SkillDescriptor[], registry: CheckRegist
       checkVersion: implementation.version,
       skillId: skill.id,
       skillVersion: skill.skillVersion,
+      domains: implementation.domains,
       status: 'ready',
       actionLevel,
       requiredAccess: implementation.requiredAccess,
