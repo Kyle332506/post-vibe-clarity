@@ -184,6 +184,22 @@ describe('maintenanceOwnershipCheck', () => {
     ]);
   });
 
+  it.each([
+    '.github/CODEOWNERS',
+    'MAINTAINERS',
+  ])('accepts complete ownership evidence from the extensionless %s convention', async (location) => {
+    const root = await createRepository({ [location]: ownershipEvidence });
+
+    const [finding] = await maintenanceOwnershipCheck.run({ root, manifest: manifest(['web']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.maintenance-ownership.passed',
+      outcome: 'passed',
+      evidenceConfidence: 'confirmed',
+    });
+    expect(finding?.evidence.map(({ location: evidenceLocation }) => evidenceLocation)).toEqual([location]);
+  });
+
   it('does not use excluded ownership evidence', async () => {
     const root = await createRepository({ 'docs/operations/maintenance-ownership.md': ownershipEvidence });
 
@@ -191,6 +207,18 @@ describe('maintenanceOwnershipCheck', () => {
       root,
       manifest: manifest(['web']),
       excludedArtifactPaths: ['docs/operations/maintenance-ownership.md'],
+    });
+
+    expect(finding).toMatchObject({ outcome: 'unverified', evidence: [] });
+  });
+
+  it('does not use excluded extensionless ownership evidence', async () => {
+    const root = await createRepository({ '.github/CODEOWNERS': ownershipEvidence });
+
+    const [finding] = await maintenanceOwnershipCheck.run({
+      root,
+      manifest: manifest(['web']),
+      excludedArtifactPaths: ['.github/CODEOWNERS'],
     });
 
     expect(finding).toMatchObject({ outcome: 'unverified', evidence: [] });

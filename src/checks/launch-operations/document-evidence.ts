@@ -31,8 +31,10 @@ function testPattern(pattern: RegExp, value: string): boolean {
   return new RegExp(pattern.source, pattern.flags).test(value);
 }
 
-function isSupportedEvidenceLocation(location: string): boolean {
-  return supportedOperationsEvidenceExtensions.has(extname(location).toLowerCase());
+function isSupportedEvidenceLocation(location: string, profile: DocumentEvidenceProfile): boolean {
+  if (supportedOperationsEvidenceExtensions.has(extname(location).toLowerCase())) return true;
+  return extname(location) === ''
+    && profile.extensionlessCandidatePaths?.some((pattern) => testPattern(pattern, location)) === true;
 }
 
 async function readBoundedCandidate(root: string, location: string): Promise<BoundedCandidate> {
@@ -79,7 +81,7 @@ export async function evaluateDocumentEvidence(
   profile: DocumentEvidenceProfile,
 ): Promise<DocumentEvidenceResult> {
   const candidates = (await listProjectFiles(root, excludedArtifactPaths))
-    .filter(isSupportedEvidenceLocation)
+    .filter((location) => isSupportedEvidenceLocation(location, profile))
     .filter((location) => profile.candidatePaths.some((pattern) => testPattern(pattern, location)));
 
   const matched = new Set<string>();

@@ -8,6 +8,10 @@ const maintenanceOwnershipRequirements: readonly EvidenceRequirement[] = [
   { id: 'handoff', patterns: [/\b(?:handoff|continuity|transition)\s*:\s*\S|\bCODEOWNERS\b/iu] },
 ];
 
+const extensionlessOwnershipCandidatePaths = [
+  /(?:^|\/)(?:CODEOWNERS|MAINTAINERS[^/]*|SUPPORT[^/]*)$/iu,
+];
+
 export const maintenanceOwnershipCheck = createOperationsCheck({
   id: 'launch-operations.maintenance-ownership',
   label: 'Maintenance ownership',
@@ -15,9 +19,10 @@ export const maintenanceOwnershipCheck = createOperationsCheck({
   actionLevel: 'plan-soon',
   profile: () => ({
     candidatePaths: [
-      /(?:^|\/)(?:CODEOWNERS|MAINTAINERS[^/]*|SUPPORT[^/]*)$/iu,
+      ...extensionlessOwnershipCandidatePaths,
       /(?:^|\/)[^/]*(?:operations?|ownership|maintainers?|support)[^/]*\.(?:md|mdx|txt|json|ya?ml|toml)$/iu,
     ],
+    extensionlessCandidatePaths: extensionlessOwnershipCandidatePaths,
     requirements: maintenanceOwnershipRequirements,
     riskPatterns: [],
   }),

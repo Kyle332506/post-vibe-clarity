@@ -15,6 +15,7 @@ export interface EvidenceRequirement {
 
 export interface DocumentEvidenceProfile {
   candidatePaths: readonly RegExp[];
+  extensionlessCandidatePaths?: readonly RegExp[];
   requirements: readonly EvidenceRequirement[];
   riskPatterns: readonly RegExp[];
 }
