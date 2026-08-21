@@ -71,6 +71,7 @@ function missingPolicyFinding(evidence: Finding['evidence']): Finding {
 export const privacyNoticeCheck: CheckImplementation = {
   id: checkId,
   version: '0.1.0',
+  domains: ['policy-business-essentials', 'security-privacy'],
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
   async run({ root, manifest, excludedArtifactPaths }) {

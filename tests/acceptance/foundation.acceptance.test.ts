@@ -139,11 +139,13 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     const originalRun = firstRegistration.run;
     const originalActionLevel = firstRegistration.actionLevel;
     const originalAccess = firstRegistration.requiredAccess[0];
+    const originalDomain = firstRegistration.domains[0];
     const replacementRun = async () => [];
     let arrayMutationApplied = false;
     let actionLevelMutationApplied = false;
     let runMutationApplied = false;
     let accessMutationApplied = false;
+    let domainMutationApplied = false;
 
     try {
       arrayMutationApplied = Reflect.set(foundationCheckImplementations, '0', secondRegistration)
@@ -154,16 +156,20 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
         && firstRegistration.run === replacementRun;
       accessMutationApplied = Reflect.set(firstRegistration.requiredAccess, '0', 'network')
         && firstRegistration.requiredAccess[0] === 'network';
+      domainMutationApplied = Reflect.set(firstRegistration.domains, '0', 'release-delivery')
+        && firstRegistration.domains[0] === 'release-delivery';
     } finally {
       if (arrayMutationApplied) Reflect.set(foundationCheckImplementations, '0', firstRegistration);
       if (actionLevelMutationApplied) Reflect.set(firstRegistration, 'actionLevel', originalActionLevel);
       if (runMutationApplied) Reflect.set(firstRegistration, 'run', originalRun);
       if (accessMutationApplied) Reflect.set(firstRegistration.requiredAccess, '0', originalAccess);
+      if (domainMutationApplied) Reflect.set(firstRegistration.domains, '0', originalDomain);
     }
 
     expect(Object.isFrozen(foundationCheckImplementations)).toBe(true);
     expect(foundationCheckImplementations.every((implementation) => Object.isFrozen(implementation))).toBe(true);
     expect(foundationCheckImplementations.every(({ requiredAccess }) => Object.isFrozen(requiredAccess))).toBe(true);
+    expect(foundationCheckImplementations.every(({ domains }) => Object.isFrozen(domains))).toBe(true);
     expect(foundationCheckImplementations.every(({ run }) => Object.isFrozen(run))).toBe(true);
     expect(isReachableGraphFrozen(foundationCheckImplementations)).toBe(true);
     expect(firstRegistration.run).not.toBe(privacyNoticeCheck.run);
@@ -172,6 +178,7 @@ describe('PostVibeClarity v0.1 foundation acceptance', () => {
     expect(actionLevelMutationApplied).toBe(false);
     expect(runMutationApplied).toBe(false);
     expect(accessMutationApplied).toBe(false);
+    expect(domainMutationApplied).toBe(false);
   });
 
   it('keeps running captured implementations after an imported check object is mutated', async () => {

@@ -154,6 +154,83 @@ describe('runReview', () => {
     }
   });
 
+  it('uses the registered check domains in executions and check-specific coverage gaps', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'postvibe-exact-domains-'));
+    const exactDomainSkill = join(temporaryRoot, 'exact-domain-check');
+
+    try {
+      await mkdir(exactDomainSkill);
+      await writeFile(join(exactDomainSkill, 'SKILL.md'), [
+        '---',
+        'name: exact-domain-check',
+        'description: Use when testing exact registered check domains.',
+        'license: Apache-2.0',
+        '---',
+        '',
+        '# Exact domain check',
+        '',
+      ].join('\n'));
+      await writeFile(join(exactDomainSkill, 'readiness.yaml'), [
+        'schemaVersion: "0.1"',
+        'id: exact-domain-check',
+        'skillVersion: "0.1.0"',
+        'domains:',
+        '  - release-delivery',
+        '  - operations-observability',
+        'modes:',
+        '  - audit',
+        'maxActionLevel: 0',
+        'checks:',
+        '  - exact-domain-check.release',
+        '',
+      ].join('\n'));
+
+      const report = await runReview({
+        root: fixture('cli-clean'),
+        skillsRoot: temporaryRoot,
+        now: () => fixedTimestamp,
+        checkImplementations: [{
+          id: 'exact-domain-check.release',
+          version: '0.1.0',
+          domains: ['release-delivery'],
+          actionLevel: 0,
+          requiredAccess: ['filesystem-read'],
+          async run() {
+            return [{
+              id: 'exact-domain-check.release.unverified',
+              checkId: 'exact-domain-check.release',
+              checkVersion: '0.1.0',
+              skillVersion: '0.1.0',
+              domains: ['release-delivery'],
+              actionLevel: 'human-review-needed',
+              outcome: 'unverified',
+              title: 'Release evidence unavailable',
+              impact: 'Release delivery remains unverified.',
+              evidence: [],
+              evidenceConfidence: 'insufficient',
+              applicability: 'The exact-domain fixture check was routed.',
+              recommendation: 'Provide release evidence.',
+              verification: 'Run the fixture check again.',
+              humanReviewRequired: true,
+              unverifiedBoundaries: ['The fixture evidence was unavailable.'],
+            }];
+          },
+        }],
+      });
+
+      expect(report.checkExecutions[0]).toMatchObject({
+        checkId: 'exact-domain-check.release',
+        domains: ['release-delivery'],
+      });
+      expect(report.coverageGaps).toContainEqual(expect.objectContaining({
+        id: 'check.exact-domain-check.release',
+        domains: ['release-delivery'],
+      }));
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
   it('records a completed routed check even when it produces no findings', async () => {
     const report = await runReview({
       root: fixture('cli-clean'),
@@ -188,6 +265,7 @@ describe('runReview', () => {
         {
           id: 'secret-exposure.scan',
           version: '0.1.0',
+          domains: ['security-privacy'],
           actionLevel: 0,
           requiredAccess: ['filesystem-read'],
           async run() {
@@ -230,6 +308,7 @@ describe('runReview', () => {
       checkImplementations: [{
         id: 'secret-exposure.scan',
         version: '0.1.0',
+        domains: ['security-privacy'],
         actionLevel: 0,
         requiredAccess: ['filesystem-read'],
         async run() {
@@ -275,6 +354,7 @@ describe('runReview', () => {
       checkImplementations: [{
         id: 'secret-exposure.scan',
         version: '0.1.0',
+        domains: ['security-privacy'],
         actionLevel: 0,
         requiredAccess: ['filesystem-read'],
         async run() {

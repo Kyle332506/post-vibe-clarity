@@ -236,6 +236,7 @@ export function detectSecretRule(line: string): SecretRule | undefined {
 export const secretExposureCheck: CheckImplementation = {
   id: 'secret-exposure.scan',
   version: '0.1.0',
+  domains: ['security-privacy'],
   actionLevel: 0,
   requiredAccess: ['filesystem-read'],
   async run({ root, excludedArtifactPaths }) {
