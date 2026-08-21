@@ -264,6 +264,9 @@ describe('evaluateDocumentEvidence', () => {
 
   it.each([
     ['an ASCII single quote after introductory prose', "The guide says, '\nno rollback path\n'\n"],
+    ['a content-bearing ASCII single quote after introductory prose', "The guide says, 'For example:\nno rollback path\n'\n"],
+    ['an unpunctuated content-bearing ASCII single quote', "The guide says 'Example follows\nno rollback path\n'\n"],
+    ['a plural possessive inside an ASCII single quote', "The guide says 'Teams' responsibilities:\nno rollback path\n'\n"],
     ['a second double quote after an earlier inline quote', 'The guide calls this "an example" and then says "\nno rollback path\n"\n'],
   ])('does not report rollback risk inside %s', async (_description, evidence) => {
     const root = await createRepository({ 'deployment.md': evidence });
@@ -277,8 +280,29 @@ describe('evaluateDocumentEvidence', () => {
   });
 
   it.each([
+    ['guillemets', 'The guide says, «For example:\nno rollback path\n»\n'],
+    ['single guillemets', 'The guide says, ‹For example:\nno rollback path\n›\n'],
+    ['German low-high double quotes', 'The guide says, „For example:\nno rollback path\n“\n'],
+    ['German low-high single quotes', 'The guide says, ‚For example:\nno rollback path\n‘\n'],
+    ['corner brackets', 'The guide says, 「For example:\nno rollback path\n」\n'],
+    ['white corner brackets', 'The guide says, 『For example:\nno rollback path\n』\n'],
+  ])('does not report rollback risk inside paired %s', async (_description, evidence) => {
+    const root = await createRepository({ 'deployment.md': evidence });
+
+    const result = await evaluateDocumentEvidence(root, [], {
+      ...profile,
+      riskPatterns: [/^[\t ]*no rollback path[.!;,]*[\t ]*$/imu],
+    });
+
+    expect(result.riskEvidence).toEqual([]);
+  });
+
+  it.each([
     ["an abbreviated year", "The '24 launch remains active.\nno rollback path\n"],
     ["an abbreviated word", "The release runs 'til Friday.\nno rollback path\n"],
+    ["a punctuated abbreviated word", "The release runs, 'til Friday.\nno rollback path\n"],
+    ["an unlisted leading apostrophe after punctuation", "The guide says: 'neath the canopy.\nno rollback path\n"],
+    ["an unlisted leading apostrophe before a later possessive", "The guide says: 'neath the canopy.\nno rollback path\nThe operators' guide remains current.\n"],
   ])('keeps a standalone rollback risk after %s active', async (_description, evidence) => {
     const root = await createRepository({ 'deployment.md': evidence });
 

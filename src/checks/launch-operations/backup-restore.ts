@@ -16,13 +16,54 @@ const duration = String.raw`${quantity}[\t ]+(?:minutes?|hours?|days?|weeks?|mon
 
 const durationPattern = new RegExp(String.raw`\b${duration}\b`, 'iu');
 const explicitCadencePattern = new RegExp(String.raw`\b(?:(?:once|twice|${quantity}[\t ]+times?)[\t ]+per[\t ]+(?:hour|day|week|month|year)|hourly|daily|weekly|monthly|quarterly|annually|yearly|every[\t ]+${duration})\b`, 'iu');
+const calendarRecurrencePattern = /\b(?:on[\t ]+)?(?:the[\t ]+)?(?:first|second|third|fourth|fifth|last|\d{1,2}(?:st|nd|rd|th))[\t ]+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)[\t ]+of[\t ]+(?:each|every)[\t ]+(?:month|quarter|year)\b/iu;
+const restorationExercisePattern = /^(?:exercise|practice|rehearse|test|validate|verify)\b/iu;
+const procedureRelationshipPattern = /\b(?:according[\t ]+to|following|from|referenced[\t ]+in|through|to|under|using|via)\b/giu;
+const procedureStatePattern = /\b(?:is|are|was|were|be|been|being|exists?|remains?|available)\b/iu;
+const procedureDescriptionPattern = /\b(?:about|and|concerning|for|or|regarding|with)\b/iu;
+const procedureFunctionWords = new Set([
+  'a', 'an', 'and', 'according', 'at', 'for', 'following', 'from', 'in', 'into', 'it', 'its',
+  'of', 'on', 'referenced', 'the', 'then', 'through', 'to', 'under', 'using', 'via', 'with',
+]);
+
+function procedureWords(value: string): string[] {
+  return value.match(/[\p{L}\p{N}]+(?:[-'][\p{L}\p{N}]+)*/gu) ?? [];
+}
+
+function independentProcedureWordCount(value: string): number {
+  return procedureWords(value).filter((word) => !procedureFunctionWords.has(word)).length;
+}
+
+function hasActionableProcedureStructure(value: string): boolean {
+  return value.split(';').some((segment) => {
+    const normalized = normalizeEvidenceValue(segment);
+    const words = procedureWords(normalized);
+    if (words.length < 4
+      || procedureFunctionWords.has(words[0]!)
+      || procedureStatePattern.test(normalized)) {
+      return false;
+    }
+
+    for (const relationship of normalized.matchAll(procedureRelationshipPattern)) {
+      const start = relationship.index;
+      const end = start + relationship[0].length;
+      if (independentProcedureWordCount(normalized.slice(0, start)) >= 1
+        && independentProcedureWordCount(normalized.slice(end)) >= 2) {
+        return true;
+      }
+    }
+
+    return !procedureDescriptionPattern.test(normalized)
+      && independentProcedureWordCount(words.slice(1).join(' ')) >= 3;
+  });
+}
 
 const dataValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
-  fieldLabels: ['data', 'database', 'resource', 'storage', 'store', 'protected data', 'data source'],
+  fieldLabels: ['data', 'protected data', 'data source'],
   minimumWords: 2,
 });
 const mechanismValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
-  fieldLabels: ['backup', 'backup mechanism', 'mechanism', 'restore'],
+  fieldLabels: ['backup mechanism', 'mechanism'],
   minimumWords: 2,
 });
 const durationValue = (fieldLabels: readonly string[]): ValuePredicate => (value) => {
@@ -47,10 +88,14 @@ const restoreValue: ValuePredicate = (value) => {
     minimumWords: 4,
   })
     && !/^(?:run|follow|execute)[\t ]+(?:the[\t ]+)?(?:restore|recovery)[\t ]+procedure$/iu.test(normalized)
-    && /\b(?:approved|maintained|documented|referenced|provider|private|snapshot|runbook|operations[\t ]+system|recovery[\t ]+environment)\b/iu.test(normalized);
+    && hasActionableProcedureStructure(normalized);
 };
 const ownerValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
-  fieldLabels: ['owner', 'team', 'maintainer', 'support', 'operator', 'responsible role'],
+  fieldLabels: ['owner', 'responsible', 'responsible role'],
+  minimumWords: 2,
+});
+const maintainerValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
+  fieldLabels: ['maintainer'],
   minimumWords: 2,
 });
 const notificationValue: ValuePredicate = (value) => {
@@ -67,7 +112,8 @@ const testingValue: ValuePredicate = (value) => {
     fieldLabels: ['restore testing', 'restoration testing', 'recovery testing'],
     minimumWords: 3,
   })
-    && explicitCadencePattern.test(normalized)
+    && restorationExercisePattern.test(normalized)
+    && (explicitCadencePattern.test(normalized) || calendarRecurrencePattern.test(normalized))
     && /\b(?:in|against|within|using)[\t ]+(?:(?:a|an|the)[\t ]+)?[\p{L}\p{N}][\p{L}\p{N}-]*/iu.test(normalized);
 };
 const substantiveBoundaryValue: ValuePredicate = (value) => {
@@ -162,8 +208,10 @@ const backupRestoreRequirements: readonly EvidenceRequirement[] = [
     textOnlyPatterns: true,
     patterns: [],
     matches: matchesAny(
-      labeledValueMatcher('owner|responsible(?: role)?|maintainer', ownerValue),
-      structuredFieldValueMatcher(['owner', 'responsibleRole', 'responsible_role', 'maintainer'], ownerValue),
+      labeledValueMatcher('owner|responsible(?: role)?', ownerValue),
+      labeledValueMatcher('maintainer', maintainerValue),
+      structuredFieldValueMatcher(['owner', 'responsibleRole', 'responsible_role'], ownerValue),
+      structuredFieldValueMatcher(['maintainer'], maintainerValue),
     ),
   },
   {

@@ -65,10 +65,14 @@ const failureSurfacingValue: ValuePredicate = (value) => {
 const ownerValue: ValuePredicate = (value) => {
   const normalized = normalizeEvidenceValue(value);
   return hasEvidenceSubstance(normalized, {
-    fieldLabels: ['owner', 'team', 'maintainer', 'support', 'responsible role'],
+    fieldLabels: ['owner', 'responsible', 'responsible role'],
     minimumWords: 2,
   });
 };
+const maintainerValue: ValuePredicate = (value) => hasEvidenceSubstance(value, {
+  fieldLabels: ['maintainer'],
+  minimumWords: 2,
+});
 
 function testPattern(pattern: RegExp, value: string): boolean {
   return new RegExp(pattern.source, pattern.flags).test(value);
@@ -146,9 +150,12 @@ const healthRequirements: readonly EvidenceRequirement[] = [
     textOnlyPatterns: true,
     patterns: [],
     matches: matchesAny(
-      labeledValueMatcher('owner|responsible(?: role)?|maintainer', ownerValue, false),
-      structuredFieldValueMatcher(['owner', 'responsibleRole', 'responsible_role', 'maintainer'], ownerValue),
-      sourceDescriptionMatcher('owner|responsible(?: role)?|maintainer', ownerValue),
+      labeledValueMatcher('owner|responsible(?: role)?', ownerValue, false),
+      labeledValueMatcher('maintainer', maintainerValue, false),
+      structuredFieldValueMatcher(['owner', 'responsibleRole', 'responsible_role'], ownerValue),
+      structuredFieldValueMatcher(['maintainer'], maintainerValue),
+      sourceDescriptionMatcher('owner|responsible(?: role)?', ownerValue),
+      sourceDescriptionMatcher('maintainer', maintainerValue),
     ),
   },
 ];

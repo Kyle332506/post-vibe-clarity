@@ -150,6 +150,20 @@ describe('healthCheck', () => {
     expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
   });
 
+  it('accepts a real non-interpolated JavaScript template route path', async () => {
+    const root = await createRepository({
+      'src/health.ts': `app.get(\`/health\`, (_request, response) => response.status(200).json({ status: 'ok' }));
+// Coverage: process availability only; this does not verify every dependency.
+// Failure handling: monitoring notifies the on-call maintainer.
+// Owner: On-call Maintainer.
+`,
+    });
+
+    const [finding] = await healthCheck.run({ root, manifest: manifest(['backend'], ['network-service']) });
+
+    expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
+  });
+
   it('accepts health evidence from approved top-level structured fields', async () => {
     const root = await createRepository({
       'deploy/health.json': JSON.stringify(structuredHealthEvidence),
@@ -285,6 +299,70 @@ const sentinel = \`closed\`;
   });
 
   it.each([
+    ['a raw Python module docstring', 'src/health.py', `r"""
+app.get('/health', lambda: response.status(200))
+# Coverage: process availability only; this does not verify every dependency.
+# Failure handling: monitoring notifies the on-call maintainer.
+# Owner: On-call Maintainer."""
+`],
+    ['an assigned Python triple-quoted string', 'src/health.py', `documentation = """
+app.get('/health', lambda: response.status(200))
+# Coverage: process availability only; this does not verify every dependency.
+# Failure handling: monitoring notifies the on-call maintainer.
+# Owner: On-call Maintainer."""
+`],
+    ['a Go raw string', 'src/health.go', `const documentation = \`
+app.get('/health', () => response.status(200))
+// Coverage: process availability only; this does not verify every dependency.
+// Failure handling: monitoring notifies the on-call maintainer.
+// Owner: On-call Maintainer.
+\`
+`],
+    ['a TSX preformatted text node', 'src/health.tsx', `const documentation = <pre>
+app.get('/health', (_request, response) => response.status(200).json({ status: 'ok' }));
+// Coverage: process availability only; this does not verify every dependency.
+// Failure handling: monitoring notifies the on-call maintainer.
+// Owner: On-call Maintainer.
+</pre>;
+`],
+    ['Ruby data after __END__', 'src/health.rb', `__END__
+get '/health' do
+  status 200
+end
+# Coverage: process availability only; this does not verify every dependency.
+# Failure handling: monitoring notifies the on-call maintainer.
+# Owner: On-call Maintainer.
+`],
+    ['a TSX fragment text node', 'src/health.tsx', `const documentation = <>
+app.get('/health', (_request, response) => response.status(200).json({ status: 'ok' }));
+// Coverage: process availability only; this does not verify every dependency.
+// Failure handling: monitoring notifies the on-call maintainer.
+// Owner: On-call Maintainer.
+</>;
+`],
+    ['a TSX underscore-prefixed component text node', 'src/health.tsx', `const documentation = <_Doc>
+app.get('/health', (_request, response) => response.status(200).json({ status: 'ok' }));
+// Coverage: process availability only; this does not verify every dependency.
+// Failure handling: monitoring notifies the on-call maintainer.
+// Owner: On-call Maintainer.
+</_Doc>;
+`],
+    ['a TSX dollar-prefixed component text node', 'src/health.tsx', `const documentation = <$Doc>
+app.get('/health', (_request, response) => response.status(200).json({ status: 'ok' }));
+// Coverage: process availability only; this does not verify every dependency.
+// Failure handling: monitoring notifies the on-call maintainer.
+// Owner: On-call Maintainer.
+</$Doc>;
+`],
+  ])('keeps complete apparent health evidence in %s unverified', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await healthCheck.run({ root, manifest: manifest(['backend'], ['network-service']) });
+
+    expect(finding).toMatchObject({ outcome: 'unverified', evidenceConfidence: 'insufficient' });
+  });
+
+  it.each([
     ['a Python module docstring', 'src/health.py', `"""Example syntax: app.get('/health') and response.status(200)."""
 @app.get('/health')
 def health():
@@ -408,6 +486,8 @@ end
 
   it.each([
     ['TBA probe', 'Probe: GET /health.', 'Probe: TBA; GET /health.'],
+    ['TBC owner', 'Owner: On-call Maintainer.', 'Owner: TBC; Data Recovery Maintainer.'],
+    ['currently unset owner', 'Owner: On-call Maintainer.', 'Owner: currently unset role; On-call Maintainer.'],
     ['TBA owner', 'Owner: On-call Maintainer.', 'Owner: TBA; On-call Maintainer.'],
     ['unassigned owner', 'Owner: On-call Maintainer.', 'Owner: unassigned; On-call Maintainer.'],
     ['deferred failure handling', 'Failure handling: the monitoring system notifies the on-call maintainer.', 'Failure handling: to be assigned; monitoring notifies the on-call maintainer.'],
@@ -416,6 +496,9 @@ end
     ['assignment-only owner label echo', 'Owner: On-call Maintainer.', 'Owner: currently assigned owner.'],
     ['adverb-decorated owner label echo', 'Owner: On-call Maintainer.', 'Owner: clearly documented owner.'],
     ['hyphenated owner label echo', 'Owner: On-call Maintainer.', 'Owner: currently-assigned owner.'],
+    ['arbitrarily decorated owner label echo', 'Owner: On-call Maintainer.', 'Owner: operational owner.'],
+    ['relationship-suffixed owner label echo', 'Owner: On-call Maintainer.', 'Owner: documented owner for operations.'],
+    ['recursive relationship owner echo', 'Owner: On-call Maintainer.', 'Owner: owner for the owner.'],
   ])('rejects Markdown health evidence with incomplete or echoed %s', async (_description, validLine, invalidLine) => {
     const root = await createRepository({
       'docs/operations/health-check.md': healthEvidence.replace(validLine, invalidLine),
@@ -428,6 +511,8 @@ end
 
   it.each([
     ['TBA probe', { probe: 'TBA; GET /health' }],
+    ['TBC owner', { owner: 'TBC; Data Recovery Maintainer' }],
+    ['currently unset owner', { owner: 'currently unset role; On-call Maintainer' }],
     ['TBA owner', { owner: 'TBA; On-call Maintainer' }],
     ['unassigned owner', { owner: 'unassigned; On-call Maintainer' }],
     ['deferred failure handling', { failureHandling: 'awaiting assignment; monitoring notifies the on-call maintainer' }],
@@ -435,6 +520,11 @@ end
     ['decorated owner label echo', { owner: 'fully documented owner' }],
     ['assignment-only owner label echo', { owner: 'currently assigned owner' }],
     ['adverb-decorated owner label echo', { owner: 'properly assigned owner' }],
+    ['arbitrarily decorated owner label echo', { owner: 'operational owner' }],
+    ['relationship-suffixed owner label echo', { owner: 'documented owner for operations' }],
+    ['recursive relationship owner echo', { owner: 'owner for the owner' }],
+    ['an unresolved owner array', { owner: ['unassigned', 'On-call Maintainer'] }],
+    ['an empty owner array element', { owner: ['', 'On-call Maintainer'] }],
   ])('rejects structured health evidence with incomplete or echoed %s', async (_description, override) => {
     const root = await createRepository({
       'deploy/health.json': JSON.stringify({ ...structuredHealthEvidence, ...override }),
@@ -456,6 +546,56 @@ end
       evidence: [],
       evidenceConfidence: 'insufficient',
     });
+  });
+
+  it.each([
+    ['Markdown', 'docs/operations/health-check.md', healthEvidence.replace('Owner: On-call Maintainer.', 'Owner: owner for Payment Operations.')],
+    ['structured JSON', 'deploy/health.json', JSON.stringify({
+      ...structuredHealthEvidence,
+      owner: 'owner for Payment Operations',
+    })],
+  ])('accepts an owner label only when followed by concrete independent semantics in %s', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await healthCheck.run({ root, manifest: manifest(['backend'], ['network-service']) });
+
+    expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
+  });
+
+  it.each([
+    ['Markdown', 'docs/operations/health-check.md', healthEvidence.replace('Owner: On-call Maintainer.', 'Maintainer: documented maintainer.')],
+    ['structured JSON', 'deploy/health.json', JSON.stringify({
+      ...structuredHealthEvidence,
+      owner: undefined,
+      maintainer: 'documented maintainer',
+    })],
+    ['Markdown responsible alias', 'docs/operations/health-check.md', healthEvidence.replace('Owner: On-call Maintainer.', 'Responsible: documented responsible.')],
+    ['structured responsible-role alias', 'deploy/health.json', JSON.stringify({
+      ...structuredHealthEvidence,
+      owner: undefined,
+      responsibleRole: 'documented responsible role',
+    })],
+  ])('rejects a decorated role-field echo in the actual %s field', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await healthCheck.run({ root, manifest: manifest(['backend'], ['network-service']) });
+
+    expect(finding).toMatchObject({ outcome: 'unverified', evidenceConfidence: 'insufficient' });
+  });
+
+  it.each([
+    ['Markdown', 'docs/operations/health-check.md', healthEvidence.replace('Owner: On-call Maintainer.', 'Maintainer: On-call Maintainer.')],
+    ['structured JSON', 'deploy/health.json', JSON.stringify({
+      ...structuredHealthEvidence,
+      owner: undefined,
+      maintainer: 'On-call Maintainer',
+    })],
+  ])('accepts concrete role content that repeats the %s maintainer label', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await healthCheck.run({ root, manifest: manifest(['backend'], ['network-service']) });
+
+    expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
   });
 
   it('is not applicable without the network-service capability and does not scan files', async () => {
@@ -578,10 +718,18 @@ describe('backupRestoreCheck', () => {
     ['generic data', /^Data:.*$/mu, 'Data: database.'],
     ['semantic negative data', /^Data:.*$/mu, 'Data: the provider has no database assigned; customer records.'],
     ['label-echo restore action', /^1\..*\n2\..*$/mu, 'Restore procedure: run the restore procedure.'],
+    ['descriptive recovery text without an action', /^1\..*\n2\..*$/mu, 'Restore procedure: resilient recovery guidance is available.'],
+    ['generic restoration action', /^1\..*\n2\..*$/mu, 'Restore procedure: perform a database restore.'],
+    ['vague allowlisted restoration action', /^1\..*\n2\..*$/mu, 'Restore procedure: use the documented procedure available.'],
+    ['noun-only recovery description', /^1\..*\n2\..*$/mu, 'Restore procedure: database recovery documentation and operational instructions.'],
+    ['noun-only recovery description with a participle', /^1\..*\n2\..*$/mu, 'Restore procedure: database recovery documentation and hardened operational principles.'],
+    ['noun-only recovery description with an incidental suffix', /^1\..*\n2\..*$/mu, 'Restore procedure: database recovery documentation and garden operational principles.'],
     ['generic owner role', /^Owner:.*$/mu, 'Owner: owner.'],
     ['generic team role', /^Owner:.*$/mu, 'Owner: team.'],
     ['negated frequency', /^Frequency:.*$/mu, 'Frequency: not applicable; 24 hours.'],
     ['unperformed restoration test', /^Restore testing:.*$/mu, 'Restore testing: not performed quarterly in the recovery environment.'],
+    ['calendar review without a restoration exercise', /^Restore testing:.*$/mu, 'Restore testing: review notes on the first Monday of each month in staging.'],
+    ['calendar review of restoration test notes', /^Restore testing:.*$/mu, 'Restore testing: review restoration test notes on the first Monday of each month in staging.'],
   ])('rejects normalized Markdown backup evidence with %s', async (_description, validPattern, invalidLine) => {
     const root = await createRepository({
       'docs/operations/backup-and-restore.md': backupRestoreEvidence.replace(validPattern, invalidLine),
@@ -596,10 +744,18 @@ describe('backupRestoreCheck', () => {
     ['generic data', { data: 'database' }],
     ['semantic negative data', { data: 'the provider has no database assigned; customer records' }],
     ['label-echo restore action', { restoreSteps: ['run the restore procedure'] }],
+    ['descriptive recovery text without an action', { restoreSteps: ['resilient recovery guidance is available'] }],
+    ['generic restoration action', { restoreSteps: ['perform a database restore'] }],
+    ['vague allowlisted restoration action', { restoreSteps: ['use the documented procedure available'] }],
+    ['noun-only recovery description', { restoreSteps: ['database recovery documentation and operational instructions'] }],
+    ['noun-only recovery description with a participle', { restoreSteps: ['database recovery documentation and hardened operational principles'] }],
+    ['noun-only recovery description with an incidental suffix', { restoreSteps: ['database recovery documentation and garden operational principles'] }],
     ['generic owner role', { owner: 'owner' }],
     ['generic team role', { owner: 'team' }],
     ['negated frequency', { frequency: 'not applicable; 24 hours' }],
     ['unperformed restoration test', { restoreTesting: 'not performed quarterly in the recovery environment' }],
+    ['calendar review without a restoration exercise', { restoreTesting: 'review notes on the first Monday of each month in staging' }],
+    ['calendar review of restoration test notes', { restoreTesting: 'review restoration test notes on the first Monday of each month in staging' }],
   ])('rejects normalized structured backup evidence with %s', async (_description, override) => {
     const root = await createRepository({
       'docs/operations/backup.json': JSON.stringify({ ...structuredBackupRestoreEvidence, ...override }),
@@ -659,6 +815,9 @@ describe('backupRestoreCheck', () => {
     ['mechanism label echo', /^Backup mechanism:.*$/mu, 'Backup mechanism: documented backup mechanism.'],
     ['decorated mechanism label echo', /^Backup mechanism:.*$/mu, 'Backup mechanism: fully documented backup mechanism.'],
     ['adverb-decorated mechanism label echo', /^Backup mechanism:.*$/mu, 'Backup mechanism: clearly documented backup mechanism.'],
+    ['arbitrarily decorated mechanism label echo', /^Backup mechanism:.*$/mu, 'Backup mechanism: resilient backup mechanism.'],
+    ['relationship-suffixed mechanism label echo', /^Backup mechanism:.*$/mu, 'Backup mechanism: backup mechanism for backups.'],
+    ['recursive relationship mechanism echo', /^Backup mechanism:.*$/mu, 'Backup mechanism: backup mechanism for the backup mechanism.'],
   ])('rejects Markdown backup evidence with incomplete or echoed %s', async (_description, validPattern, invalidLine) => {
     const root = await createRepository({
       'docs/operations/backup-and-restore.md': backupRestoreEvidence.replace(validPattern, invalidLine),
@@ -677,6 +836,11 @@ describe('backupRestoreCheck', () => {
     ['decorated mechanism label echo', { backupMechanism: 'fully documented backup mechanism' }],
     ['adverb-decorated mechanism label echo', { backupMechanism: 'properly configured backup mechanism' }],
     ['hyphenated mechanism label echo', { backupMechanism: 'properly-configured backup mechanism' }],
+    ['arbitrarily decorated mechanism label echo', { backupMechanism: 'resilient backup mechanism' }],
+    ['relationship-suffixed mechanism label echo', { backupMechanism: 'backup mechanism for backups' }],
+    ['recursive relationship mechanism echo', { backupMechanism: 'backup mechanism for the backup mechanism' }],
+    ['an unresolved mechanism array', { backupMechanism: ['TBC', 'provider-managed encrypted snapshots'] }],
+    ['an unsupported mechanism array element', { backupMechanism: [null, 'provider-managed encrypted snapshots'] }],
   ])('rejects structured backup evidence with incomplete or echoed %s', async (_description, override) => {
     const root = await createRepository({
       'docs/operations/backup.json': JSON.stringify({ ...structuredBackupRestoreEvidence, ...override }),
@@ -697,6 +861,104 @@ describe('backupRestoreCheck', () => {
       restoreSteps: ['execute the maintained provider recovery runbook'],
     })],
   ])('accepts flexible recovery action and cadence wording in %s', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await backupRestoreCheck.run({ root, manifest: manifest(['backend'], ['persistent-data']) });
+
+    expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
+  });
+
+  it.each([
+    ['a Markdown action and reference', 'docs/operations/backup-and-restore.md', backupRestoreEvidence
+      .replace(/^1\..*\n2\..*$/mu, 'Restore procedure: use point-in-time recovery following the database disaster playbook.')],
+    ['a structured action and reference', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      restoreSteps: ['use point-in-time recovery following the database disaster playbook'],
+    })],
+    ['a Markdown referenced rehydration action', 'docs/operations/backup-and-restore.md', backupRestoreEvidence
+      .replace(/^1\..*\n2\..*$/mu, 'Restore procedure: follow the database disaster playbook to rehydrate the primary database.')],
+    ['a structured referenced rehydration action', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      restoreSteps: ['follow the database disaster playbook to rehydrate the primary database'],
+    })],
+    ['a Markdown direct rehydration action', 'docs/operations/backup-and-restore.md', backupRestoreEvidence
+      .replace(/^1\..*\n2\..*$/mu, 'Restore procedure: rehydrate the primary datastore from the selected snapshot.')],
+    ['a structured direct rehydration action', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      restoreSteps: ['rehydrate the primary datastore from the selected snapshot'],
+    })],
+    ['a Markdown direct object and source action', 'docs/operations/backup-and-restore.md', backupRestoreEvidence
+      .replace(/^1\..*\n2\..*$/mu, 'Restore procedure: restore production database from latest snapshot.')],
+    ['a structured direct object and source action', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      restoreSteps: ['restore production database from latest snapshot'],
+    })],
+    ['a Markdown compact procedure reference', 'docs/operations/backup-and-restore.md', backupRestoreEvidence
+      .replace(/^1\..*\n2\..*$/mu, 'Restore procedure: execute provider recovery runbook.')],
+    ['a structured compact procedure reference', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      restoreSteps: ['execute provider recovery runbook'],
+    })],
+    ['a Markdown calendar recurrence', 'docs/operations/backup-and-restore.md', backupRestoreEvidence
+      .replace('Restore testing: test quarterly in a non-production recovery environment.', 'Restore testing: exercise restoration on the first Monday of each month in staging.')],
+    ['a structured calendar recurrence', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      restoreTesting: 'exercise restoration on the first Monday of each month in staging',
+    })],
+  ])('accepts structurally credible recovery evidence with %s', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await backupRestoreCheck.run({ root, manifest: manifest(['backend'], ['persistent-data']) });
+
+    expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
+  });
+
+  it.each([
+    ['Markdown', 'docs/operations/backup-and-restore.md', backupRestoreEvidence.replace(
+      'Backup mechanism: provider-managed encrypted snapshots.',
+      'Backup mechanism: backup mechanism for PostgreSQL WAL archiving.',
+    )],
+    ['structured JSON', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      backupMechanism: 'backup mechanism for PostgreSQL WAL archiving',
+    })],
+  ])('accepts a mechanism label only when followed by concrete independent semantics in %s', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await backupRestoreCheck.run({ root, manifest: manifest(['backend'], ['persistent-data']) });
+
+    expect(finding).toMatchObject({ outcome: 'passed', evidenceConfidence: 'confirmed' });
+  });
+
+  it.each([
+    ['Markdown', 'docs/operations/backup-and-restore.md', backupRestoreEvidence.replace('Owner: Data Recovery Maintainer.', 'Maintainer: documented maintainer.')],
+    ['structured JSON', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      owner: undefined,
+      maintainer: 'documented maintainer',
+    })],
+    ['Markdown responsible alias', 'docs/operations/backup-and-restore.md', backupRestoreEvidence.replace('Owner: Data Recovery Maintainer.', 'Responsible: documented responsible.')],
+    ['structured responsible-role alias', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      owner: undefined,
+      responsibleRole: 'documented responsible role',
+    })],
+  ])('rejects a decorated role-field echo in the actual %s field', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
+
+    const [finding] = await backupRestoreCheck.run({ root, manifest: manifest(['backend'], ['persistent-data']) });
+
+    expect(finding).toMatchObject({ outcome: 'unverified', evidenceConfidence: 'insufficient' });
+  });
+
+  it.each([
+    ['Markdown', 'docs/operations/backup-and-restore.md', backupRestoreEvidence.replace('Owner: Data Recovery Maintainer.', 'Maintainer: Data Recovery Maintainer.')],
+    ['structured JSON', 'docs/operations/backup.json', JSON.stringify({
+      ...structuredBackupRestoreEvidence,
+      owner: undefined,
+      maintainer: 'Data Recovery Maintainer',
+    })],
+  ])('accepts concrete role content that repeats the %s maintainer label', async (_description, location, evidence) => {
     const root = await createRepository({ [location]: evidence });
 
     const [finding] = await backupRestoreCheck.run({ root, manifest: manifest(['backend'], ['persistent-data']) });
@@ -807,6 +1069,10 @@ Backups are disabled.
     ['an unpunctuated Unicode quotation after introductory prose', 'docs/operations/backup.md', 'The guide says “\nBackups are disabled.\n”\n'],
     ['an ASCII quotation after introductory prose', 'docs/operations/backup.md', 'The guide says, "\nThere is no restore path.\n"\n'],
     ['an ASCII single quotation after introductory prose', 'docs/operations/backup.md', "The guide says, '\nBackups are disabled.\n'\n"],
+    ['a content-bearing ASCII single quotation after introductory prose', 'docs/operations/backup.md', "The guide says, 'For example:\nBackups are disabled.\n'\n"],
+    ['an unpunctuated content-bearing ASCII single quotation', 'docs/operations/backup.md', "The guide says 'Example follows\nBackups are disabled.\n'\n"],
+    ['a plural possessive inside an ASCII single quotation', 'docs/operations/backup.md', "The guide says 'Teams' responsibilities:\nBackups are disabled.\n'\n"],
+    ['a guillemet quotation after introductory prose', 'docs/operations/backup.md', 'The guide says, «For example:\nBackups are disabled.\n»\n'],
     ['a second multiline ASCII quotation after an inline quote', 'docs/operations/backup.md', 'The guide calls this "an example" and then says "\nThere is no restore path.\n"\n'],
   ])('keeps risky language in %s unverified', async (_description, location, evidence) => {
     const root = await createRepository({ [location]: evidence });
@@ -825,6 +1091,7 @@ Backups are disabled.
     ['CRLF Markdown', 'docs/operations/backup.md', 'Backups are disabled.\r\n'],
     ['an apostrophe and contraction in Markdown prose', 'docs/operations/backup.md', "The project's warning isn't hypothetical.\nBackups are disabled.\n"],
     ['an apostrophe abbreviation in Markdown prose', 'docs/operations/backup.md', "The '24 launch remains active.\nBackups are disabled.\n"],
+    ['an unlisted leading apostrophe after punctuation', 'docs/operations/backup.md', "The guide says: 'neath the canopy.\nBackups are disabled.\n"],
   ])('keeps a standalone affirmative risky statement with %s as a likely issue', async (_description, location, evidence) => {
     const root = await createRepository({ [location]: evidence });
 

@@ -281,6 +281,7 @@ Verification: confirm the replacement version is available.
     'Rollback is impossible.',
     'We do not have a recovery path.',
     "The '24 launch remains active.\nRollback is impossible.\n",
+    "The guide says: 'neath the canopy.\nRollback is impossible.\n",
   ])('reports a likely issue for the affirmative risky statement %j', async (riskyStatement) => {
     const root = await createRepository({ 'docs/operations/rollback-and-recovery.md': riskyStatement });
 
@@ -313,6 +314,10 @@ Verification: confirm the replacement version is available.
 
   it.each([
     ['an ASCII single quote after introductory prose', "The guide says, '\nRollback is impossible.\n'\n"],
+    ['a content-bearing ASCII single quote after introductory prose', "The guide says, 'For example:\nRollback is impossible.\n'\n"],
+    ['an unpunctuated content-bearing ASCII single quote', "The guide says 'Example follows\nRollback is impossible.\n'\n"],
+    ['a plural possessive inside an ASCII single quote', "The guide says 'Teams' responsibilities:\nRollback is impossible.\n'\n"],
+    ['a guillemet quote after introductory prose', 'The guide says, «For example:\nThere is no rollback path.\n»\n'],
     ['a second double quote after an earlier inline quote', 'The guide calls this "an example" and then says "\nThere is no rollback path.\n"\n'],
   ])('keeps rollback risk inside %s unverified', async (_description, evidence) => {
     const root = await createRepository({ 'docs/operations/rollback-and-recovery.md': evidence });
