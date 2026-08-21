@@ -410,6 +410,7 @@ describe('monitoringResponseCheck', () => {
     ['nested JSON aliases', 'docs/operations/monitoring.json', jsonNestedMonitoringEvidence],
     ['nested YAML aliases', 'docs/operations/monitoring.yaml', yamlNestedMonitoringEvidence],
     ['a look-alike JSON owner alias', 'docs/operations/monitoring.json', jsonLookalikeOwnerMonitoringEvidence],
+    ['YAML syntax with a JSON extension', 'docs/operations/monitoring.json', yamlMonitoringEvidence],
     ['TOML comments', 'docs/operations/monitoring.toml', tomlCommentBorrowingEvidence],
     ['malformed TOML values', 'docs/operations/monitoring.toml', tomlMalformedMonitoringEvidence],
     ['an unrelated TOML table', 'docs/operations/monitoring.toml', tomlUnrelatedTableMonitoringEvidence],
@@ -440,6 +441,26 @@ describe('monitoringResponseCheck', () => {
     ['a duplicate approved TOML alias', `${tomlMonitoringEvidence}observedSignals = ["application errors"]\n`],
   ])('keeps malformed or duplicate top-level TOML evidence unverified for %s', async (_description, evidence) => {
     const root = await createRepository({ 'docs/operations/monitoring.toml': evidence });
+
+    const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['backend']) });
+
+    expect(finding).toMatchObject({
+      id: 'launch-operations.monitoring-response.unverified',
+      outcome: 'unverified',
+      actionLevel: 'resolve-before-launch',
+      evidenceConfidence: 'insufficient',
+    });
+  });
+
+  it.each([
+    ['an exact duplicate JSON key', 'docs/operations/monitoring.json', jsonMonitoringEvidence.replace('"owner": "SRE team"', '"owner": "none",\n  "owner": "SRE team"')],
+    ['a case-folded duplicate JSON key', 'docs/operations/monitoring.json', jsonMonitoringEvidence.replace('"owner": "SRE team"', '"owner": "SRE team",\n  "OWNER": "SRE team"')],
+    ['alternate approved JSON aliases', 'docs/operations/monitoring.json', jsonMonitoringEvidence.replace('"owner": "SRE team"', '"owner": "SRE team",\n  "incident_owner": "SRE team"')],
+    ['an exact duplicate YAML key', 'docs/operations/monitoring.yaml', yamlMonitoringEvidence.replace('owner: SRE team', 'owner: none\nowner: SRE team')],
+    ['a case-folded duplicate YAML key', 'docs/operations/monitoring.yaml', yamlMonitoringEvidence.replace('owner: SRE team', 'owner: SRE team\nOWNER: SRE team')],
+    ['alternate approved YAML aliases', 'docs/operations/monitoring.yaml', yamlMonitoringEvidence.replace('owner: SRE team', 'owner: SRE team\nincident_owner: SRE team')],
+  ])('keeps duplicate approved structured keys unverified for %s', async (_description, location, evidence) => {
+    const root = await createRepository({ [location]: evidence });
 
     const [finding] = await monitoringResponseCheck.run({ root, manifest: manifest(['backend']) });
 

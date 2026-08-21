@@ -1,6 +1,6 @@
 import { extname } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, parseDocument as parseYamlDocument } from 'yaml';
 import { createOperationsCheck } from './create-check.js';
 import type { EvidenceRequirement } from './types.js';
 
@@ -37,7 +37,11 @@ function structuredFieldValues(content: string, location: string, fieldNames: re
   const extension = extname(location).toLowerCase();
 
   try {
-    if (extension === '.json') return valuesForTopLevelStructuredFields(JSON.parse(content), fields);
+    if (extension === '.json') {
+      const value = JSON.parse(content);
+      const document = parseYamlDocument(content, { schema: 'json', uniqueKeys: true });
+      return document.errors.length === 0 ? valuesForTopLevelStructuredFields(value, fields) : [];
+    }
     if (extension === '.yaml' || extension === '.yml') return valuesForTopLevelStructuredFields(parseYaml(content), fields);
     if (extension === '.toml') return valuesForTopLevelStructuredFields(parseToml(content), fields);
   } catch {
