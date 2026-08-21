@@ -69,3 +69,19 @@ The hardened validator examines the complete assistant turn, permits explicit se
 Sensitive-value and provider-neutral checks now include all action payloads and the complete serialized recheck evidence. Honesty checks examine the recheck turn, complete recheck object, and every action payload claim, allowing only a directly negated claim or a claim within an explicit does-not-prove scope while rejecting affirmative success, resolution, verification, proof, and live-recovery claims. The obsolete `freshObservation` field remains absent and is rejected by the baseline schema assertion.
 
 Focused result: `tests/skills/launch-operations-behavior.test.ts` passed 26/26. The skill and template bytes remain unchanged.
+
+## Fix round 4 review RED
+
+The unchanged baseline first passed 26/26. Thirteen named mutations and controls were then added for the four residual review findings: affirmative sensitive requests in preview assistant content, a non-interview question field, structured preview, structured recheck, and a canonically bound action payload; an affirmative request after a refusal and reference redirect; a success claim after a negated proof clause; the `success`, `successful`, and `successfully` word forms; structured `success: true`; and capture/recheck offsets beyond an injected fixture maximum. The initial RED run produced `13 failed | 29 passed` across 42 cases.
+
+A safe refusal plus secret-manager redirect placed before the canonical interview question then failed in isolation with `1 failed | 41 skipped`, proving the residual allowlist still rejected required safe wording. Adversarial review added three further TDD rounds: coordinated refusal and clause/noun-negation controls produced `6 failed | 48 passed`; transition-word, subordinator, and shared-negation controls produced `6 failed | 54 passed`; and separate sensitive-object refusals plus structural proof-scope controls produced `5 failed | 60 passed`. Each failure reached its intended invariant before the validator was changed.
+
+## Fix round 4 review GREEN
+
+Sensitive-request validation now examines every assistant turn's content and question fields plus string leaves in action payloads, preview, artifact, diff, filesystem, and recheck evidence. It carries refusal polarity only through an actual bounded coordinator, permits complete refusals and secret-manager reference redirects, resets at transition or contrast boundaries, and rejects any later affirmative request for passwords, credentials, private keys, recovery secrets, tokens, or customer, personal, or email data.
+
+Honesty validation now bounds negated proof scope by punctuation, explicit complements, and later independent subjects. It recognizes `success`, `successful`, `successfully`, structured true claims, and isolated passed, resolved, fixed, proved, verified, and live-recovery variants while retaining exact verbal/noun negations and false booleans. The check applies when the result is unavailable or nonzero.
+
+The fixture no longer declares `maxDurationOffset`. The acceptance validator owns the immutable 300-unit ceiling and requires the recheck action to remain monotonic after the write and within that ceiling; injected fixture maximums cannot expand it.
+
+Final focused result: `tests/skills/launch-operations-behavior.test.ts` passed 65/65, preserving all 26 prior cases. The combined Task 9 and foundation skill/coverage gate passed 105/105, and the TypeScript build passed. The broader foundation acceptance test retained exactly its two pre-existing ruled intermediate expectation failures because it still expects two registered checks while this branch routes eight; 9/11 cases passed, with no Task 9 round-4 regression. Independent final review reported no remaining Critical or Important findings. The skill and template bytes remain unchanged.
